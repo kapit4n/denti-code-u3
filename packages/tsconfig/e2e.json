@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Denti-Code U3 · Playwright end-to-end tests",
+  "extends": "./base.json",
+  "compilerOptions": {
+    // Both DOM libs and node types are needed, and neither alone is enough.
+    // The test bodies run in node, but every `page.evaluate` callback is compiled
+    // to a string and executed inside the browser, so its body is typechecked
+    // against the DOM. Extending node.json would leave `document` and
+    // `getComputedStyle` as undeclared names.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"]
+  }
+}

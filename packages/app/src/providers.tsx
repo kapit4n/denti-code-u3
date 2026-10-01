@@ -1,9 +1,11 @@
 /**
  * App-wide React context.
  *
- * Kept deliberately small: providers arrive later (TanStack Router, TanStack
- * Query) when there is something to provide. This file exists so the shells
- * mount a stable, inspectable tree and so `AppRoot` stays testable.
+ * Platform capabilities are already resolved before they reach here: the root
+ * route reads them from the router context, where `createAppRouter` has always
+ * filled them in from the target. So this provider is required rather than
+ * optional — a second "fall back to web" path would be exactly the ambiguity
+ * that let the desktop shell render "Web" while running as desktop.
  */
 
 import { createContext, useContext, type ReactNode } from 'react';
@@ -15,14 +17,10 @@ export function PlatformProvider({
   capabilities,
   children,
 }: {
-  readonly capabilities?: PlatformCapabilities;
+  readonly capabilities: PlatformCapabilities;
   readonly children: ReactNode;
 }): ReactNode {
-  return (
-    <PlatformContext.Provider value={capabilities ?? defaultWebCapabilities}>
-      {children}
-    </PlatformContext.Provider>
-  );
+  return <PlatformContext.Provider value={capabilities}>{children}</PlatformContext.Provider>;
 }
 
 /** The current platform capabilities. Always defined; never throws. */

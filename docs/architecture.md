@@ -155,6 +155,10 @@ apps/desktop
 - Platform capabilities (filesystem, printing, notifications, settings,
   window control) are accessed **only** through
   `packages/app/src/platform/` — see [ADR 0009](./decisions/0009-platform-abstraction.md).
+- A shell's whole source is `mountApp({ target })`. It declares its target and, when
+  it has native implementations, its capabilities. It never builds a router,
+  provider tree, history or route — see
+  [ADR 0013](./decisions/0013-shells-declare-a-target-the-app-owns-the-rest.md).
 - Tauri never talks to PostgreSQL. `dental` rules 3 and 4 forbid it.
 
 ## 6. API architecture

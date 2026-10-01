@@ -169,3 +169,95 @@ live table, finds an undeclared column, and offers to drop it.
 - Native Tauri build not run (needs WebKitGTK system libraries on Linux).
 - `design-mockup/dashboard-design.png` still not analysed.
 - Repository shape for enforcing `clinic_id` is a Milestone 2 decision.
+
+---
+
+## Session 4 — Milestone 2, step 1: routing, query client, API client
+
+**Goal.** Make the shared application a real routed app and reduce both shells to a
+single call, so that no future feature has a reason to touch `apps/web` or
+`apps/desktop`.
+
+**Done**
+
+- `packages/app/src/mount.tsx` — one entry point. Builds the query client, reads
+  the API base URL, resolves capabilities and renders
+  `StrictMode → QueryClientProvider → ApiClientProvider → RouterProvider`.
+- `packages/app/src/router.tsx` — router factory. Chooses browser history for web
+  and memory history for desktop; a Tauri window has no URL to restore.
+- `packages/app/src/routes/__root.tsx` — real root route; the application frame
+  renders here once, so no feature route repeats it.
+- `packages/app/src/routes/index.tsx` — one proof route, rendered through the
+  generated tree.
+- `packages/app/src/query/api-client-provider.tsx` — `ApiClient` in context rather
+  than a module singleton, so a test can inject a stubbed client and the desktop
+  build can point at a different backend. Memoised, because an unmemoised client
+  gets a new identity every render and invalidates every consumer.
+- `apps/{web,desktop}/src/main.tsx` — reduced to `mountApp({ target })`.
+- `@tanstack/router-plugin` added to both shell Vite configs and to the app's
+  Vitest config, so the route tree is generated on dev start, test and build.
+
+**Three defects the browser suite found that unit tests could not**
+
+1. **The desktop app rendered `Web` in its runtime badge.** The shell passed
+   `target: 'desktop'` and no capabilities; `mountApp` forwarded
+   `{ capabilities: undefined }`; `createRouter` accepted that present-but-empty
+   object; `AppRoot` fell back to the web defaults. Fixed at the single point that
+   can decide — `createAppRouter` fills capabilities from the target, `mountApp`
+   omits the context entirely when the shell supplies nothing, and
+   `RootRouteContext.capabilities` is now required so no consumer needs a fallback.
+   Also switched to `createRootRouteWithContext<RootRouteContext>()`, because the
+   plain constructor made the generated tree infer the context as `{}` and the type
+   system disagreed with the runtime.
+2. **`VITE_API_URL` was silently `undefined`.** Vite resolves `.env` against its own
+   root (`apps/web`), but the documented `.env` is at the monorepo root. The app
+   threw on startup; every unit test passed because tests supply `apiBaseUrl`
+   explicitly. Fixed with `envDir` in both shells.
+3. **A fresh clone failed typecheck.** `routeTree.gen.ts` was gitignored, and
+   `tsc` runs with no Vite plugin in the process. The file is now committed;
+   generation is deterministic, so a stale copy shows up as a diff. It stays in
+   `.prettierignore`.
+
+Also corrected the API base URL contract: `.env` carries an origin
+(`http://localhost:3010`), not a versioned path. The API has no `/api/v1` prefix
+yet — `apps/api/src/app.ts` says so explicitly — so the comments promising one were
+wrong.
+
+**Tests added**
+
+- `packages/app/src/mount.test.tsx` — the mount contract: supplied container,
+  `#root` default, missing-mount-point error, exactly one frame, and the
+  target-specific env lookup.
+- `packages/app/src/query/api-client-provider.test.tsx` — injected client wins,
+  identity is stable across re-renders, a new client only when the base URL
+  changes, and a clear error outside a provider.
+- `packages/app/src/router.test.tsx` — target-specific history, capability
+  defaulting and injection.
+- `e2e/web/smoke.spec.ts` — real browser: the route tree mounts, the frame renders
+  once, design tokens resolve to hex values, and the console is clean.
+- `packages/tsconfig/e2e.json` — `page.evaluate` bodies are compiled into strings
+  and run in the browser, so e2e specs need DOM libs alongside node types.
+
+Recorded in `docs/decisions/0013-shells-declare-a-target-the-app-owns-the-rest.md`.
+
+**Verification**
+
+| Check                       | Result                                                             |
+| --------------------------- | ------------------------------------------------------------------ |
+| `pnpm run typecheck`        | 12/12                                                              |
+| `pnpm run lint`             | 12/12, `BOUNDARY GUARD OK`                                         |
+| `pnpm run test`             | 165 pass (domain 81, validation 28, api-client 14, api 12, app 30) |
+| `pnpm run test:integration` | 5/5 against PostgreSQL 17                                          |
+| `pnpm run build`            | 5/5                                                                |
+| `pnpm run format:check`     | clean                                                              |
+| `pnpm run test:e2e`         | 5/5 in headless Chromium                                           |
+| Web dev server `:5173`      | route mounts, badge `Web`, console clean                           |
+| Desktop Vite `:5174`        | route mounts, badge `Desktop`, console clean                       |
+
+**Still open**
+
+- Native Tauri build not run (needs WebKitGTK system libraries on Linux).
+- `design-mockup/dashboard-design.png` still not analysed — now the top item, since
+  every feature inherits the tokens it defines.
+- The desktop shell declares `hasNativeShell: true` but has no native
+  implementations; `saveFile` rejects. Nothing consumes it yet.

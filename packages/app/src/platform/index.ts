@@ -5,9 +5,18 @@
  * Tauri API directly (architecture rule 5). Instead it declares the capabilities
  * it needs, and the deployment shell provides an implementation.
  *
- * This is the *contract* only. The web implementation lives in
- * `apps/web/src/platform.ts` and the desktop implementation in
- * `apps/desktop/src/platform.ts`, so neither shell's API leaks inward.
+ * This module holds the contract and the browser-only defaults. It is NOT the
+ * implementation split: no per-shell `platform.ts` file exists yet, because the only
+ * capability that genuinely needs a per-shell implementation — a native save
+ * dialog — has no consumer until a feature needs to export a file.
+ *
+ * Until then `capabilitiesForTarget` answers for both targets, and the desktop
+ * shell's native operations reject with `UNSUPPORTED` rather than pretending to
+ * work. That keeps architecture rule 5 satisfied (no Tauri import in the app,
+ * no `window` assumption in a native window) without inventing an abstraction
+ * nothing calls yet. When a feature does need a native dialog, this is the file
+ * that changes: add a desktop `platform.ts` implementation, and have the desktop shell
+ * pass its capabilities through `mountApp({ capabilities })`.
  */
 
 /** How the app is being presented. Useful for layout decisions, not branching logic. */
@@ -41,23 +50,43 @@ export class PlatformUnsupportedError extends Error {
 }
 
 /**
- * Capabilities used when nothing has been injected.
+ * Capabilities for a target, used when the shell injects none.
+ *
+ * `target` is reported honestly from the argument rather than hardcoded to
+ * `web`, so a desktop build renders "Desktop" in the runtime badge instead of
+ * lying about where it is running. Everything that needs the OS still rejects:
+ * a missing native call must be visible in development, not discovered when a
+ * clinician exports a report.
+ */
+export function capabilitiesForTarget(target: RuntimeTarget): PlatformCapabilities {
+  const locale = typeof navigator === 'undefined' ? 'es' : navigator.language;
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  return {
+    target,
+    // Reported from the target rather than from a Tauri probe: the app may not
+    // import Tauri APIs (rule 5), and the shell is what knows it is native.
+    hasNativeShell: target === 'desktop',
+    locale,
+    timeZone,
+    async openExternal(url) {
+      // Both targets use the browser for now. The desktop shell will replace
+      // this through mountApp({ capabilities }) when a real OS handler exists.
+      if (typeof window === 'undefined') {
+        throw new PlatformUnsupportedError('openExternal');
+      }
+      window.open(url, '_blank', 'noopener,noreferrer');
+    },
+    async saveFile() {
+      throw new PlatformUnsupportedError('saveFile');
+    },
+  };
+}
+
+/**
+ * Capabilities used when nothing has been injected and no target was declared.
  *
  * A safe default is deliberate: a forgotten `PlatformProvider` must degrade to
  * "web, no native shell", never to a crash in the middle of a clinical screen.
  */
-export const defaultWebCapabilities: PlatformCapabilities = {
-  target: 'web',
-  hasNativeShell: false,
-  locale: typeof navigator === 'undefined' ? 'es' : navigator.language,
-  timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-  async openExternal(url) {
-    if (typeof window === 'undefined') {
-      throw new PlatformUnsupportedError('openExternal');
-    }
-    window.open(url, '_blank', 'noopener,noreferrer');
-  },
-  async saveFile() {
-    throw new PlatformUnsupportedError('saveFile');
-  },
-};
+export const defaultWebCapabilities: PlatformCapabilities = capabilitiesForTarget('web');

@@ -1,14 +1,15 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 3 (scheduling invariant reconciled with the schema)
+> Last updated: session 4 (router, query client and API client wired into the shared app)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
 
-**PHASE 1 — ARCHITECTURE / FOUNDATION** (Milestone 1 of `docs/roadmap.md`)
+**PHASE 2 — APPLICATION SHELL** (Milestone 2 of `docs/roadmap.md`)
 
-**Status: Milestone 1 complete and verified.** Phase 2 (application shell) has not
-started.
+**Status: Milestone 2 started.** Step 1 (routing, query client, API client) is
+complete and verified. Milestone 1 remains complete; its checklist below is kept as
+the record of what the foundation guarantees.
 
 ## Task origin
 
@@ -26,7 +27,8 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
       0007 TanStack Query vs Zustand, 0008 one React app package with thin
       shells, 0009 platform abstraction, 0010 Tailwind v4 + shadcn design
       system, 0011 FullCalendar as a view adapter, 0012 appointment end time is
-      computed and never stored
+      computed and never stored, 0013 shells declare a target and the shared app
+      owns everything else
 - [x] pnpm + Turborepo workspace that installs cleanly
 - [x] TypeScript strict everywhere (base + per-package configs)
 - [x] ESLint (flat config, ESLint 9) + Prettier + boundary guard wired into
@@ -44,22 +46,25 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run)
+## Verification log (last run, session 4)
 
 | Command                     | Result                                                    |
 | --------------------------- | --------------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                          |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`                     |
 | `pnpm run format:check`     | All files match Prettier                                  |
-| `pnpm run test`             | 12/12 tasks, 142 tests pass (5 integration tests skipped) |
-| `pnpm run test:integration` | 4/4 pass against real PostgreSQL                          |
+| `pnpm run test`             | 12/12 tasks, 165 tests pass (5 integration tests skipped) |
+| `pnpm run test:integration` | 5/5 pass against real PostgreSQL 17                       |
 | `pnpm run build`            | 5/5 tasks pass                                            |
-| `pnpm run db:migrate`       | 2 migrations applied to PostgreSQL 17                     |
-| `pnpm run db:generate`      | 23 tables generated                                       |
+| `pnpm run test:e2e`         | 5/5 pass in headless Chromium                             |
 | API boot                    | `/health` ok, `/ready` reports `database: ok`             |
-| Web / desktop build         | Both emit identical CSS with the design tokens present    |
+| Web dev server (`:5173`)    | Serves, route tree mounts, console clean                  |
+| Desktop Vite (`:5174`)      | Serves, badge reports `Desktop`, console clean            |
 
-Full detail in `docs/progress/LOG.md`.
+Per-package unit tests: domain 81, validation 28, api-client 14, api 12, app 30.
+
+Three defects were found by the browser suite that no unit test could have caught;
+all three are described in ADR 0013.
 
 ## Decisions made this session (not yet in ADRs)
 
@@ -97,22 +102,30 @@ column is **closed** by ADR 0012. Still open:
   brand palette in `packages/app/src/styles/globals.css` needs to be confirmed
   against the supplied reference before any feature work begins.
 - **Clinic-scoped queries are not yet enforced.** Every clinical row carries
-  `clinic_id`, but nothing stops a repository from forgetting it. Decided in
-  Milestone 2, where the repository shape is designed.
+  `clinic_id`, but nothing stops a repository from forgetting it. Belongs with the
+  repository shape, which is a feature milestone rather than shell work.
+- **The desktop shell has no native capability implementations yet.** It reports
+  `hasNativeShell: true` from its declared target, but `saveFile` and OS-level
+  `openExternal` still reject with `PlatformUnsupportedError`. Nothing consumes
+  them yet; the seam is `mountApp({ capabilities })` when a feature needs one.
 
-## Next milestone after this phase
+## Remaining work in this milestone
 
-**Milestone 2 — APPLICATION SHELL** (sidebar, header, global search, user menu,
-routing, responsive layout, theme, shared UI primitives). Dashboard only after.
+**Milestone 2 — APPLICATION SHELL.** Step 1 (routing, query client, API client) is
+done. What remains:
 
-Concretely, the next session should:
+1. Analyse `design-mockup/dashboard-design.png` and confirm or correct the
+   provisional palette in `packages/app/src/styles/globals.css`. This blocks
+   feature work: everything downstream inherits these tokens.
+2. Add shadcn/ui primitives to `packages/ui` (button, input, dialog, table, select,
+   toast).
+3. Build the shell layout: sidebar, header, global search, user menu, responsive
+   breakpoints.
+4. Theme: light/dark with a persisted preference.
+5. A not-found route and an error boundary, now that there are routes to miss.
+6. Decide clinic scoping in the repository shape (open question above).
 
-1. Wire TanStack Router into `packages/app` using the generated
-   `routeTree.gen.ts`; `apps/web` and `apps/desktop` already point the Vite plugin
-   at `packages/app/src/routes`.
-2. Add TanStack Query and the `ApiClient` provider using `VITE_API_URL`.
-3. Confirm the design tokens against `design-mockup/dashboard-design.png`.
-4. Add shadcn/ui primitives to `packages/ui`.
+Dashboard and every clinical feature come after the shell.
 
 ## Last session log
 
@@ -137,3 +150,14 @@ config, redacting structured logs and a single error envelope, the migration and
 seed tooling, and the appointment overlap guard as a real PostgreSQL exclusion
 constraint proven by 4 integration tests. Rewrote the boundary guard to scan the
 import graph. Whole-workspace typecheck, lint, format, tests and build are green.
+
+Session 4: Milestone 2 step 1. Wired TanStack Router, TanStack Query and the
+`ApiClient` into `packages/app` behind a single `mountApp` entry point, and reduced
+both shells to `mountApp({ target })`. The browser suite then exposed three defects
+that every unit test had passed straight through: the desktop app reported itself
+as `Web` because a present-but-empty router context suppressed the default, the app
+never saw `VITE_API_URL` because Vite resolves `.env` against the shell root rather
+than the monorepo root, and the gitignored route tree made a fresh clone fail
+typecheck. Fixed all three, recorded the reasoning in ADR 0013, and added 15 tests
+covering the mount contract, the provider identity guarantees and capability
+defaulting. Suite: 165 unit, 5 integration, 5 e2e, all green.

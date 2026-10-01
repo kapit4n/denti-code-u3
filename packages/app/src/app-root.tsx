@@ -4,11 +4,12 @@ import { PlatformProvider, usePlatform } from './providers.js';
 
 export interface AppRootProps {
   /**
-   * Injected by the deployment shell. Omitted on web, where the safe web
-   * defaults apply.
+   * Resolved platform capabilities. Required: the root route gets them from the
+   * router context, and `createAppRouter` has already supplied the target's
+   * defaults, so there is no correct case for omitting them.
    */
-  readonly capabilities?: PlatformCapabilities;
-  /** Mount point for routes. Supplied once TanStack Router is wired. */
+  readonly capabilities: PlatformCapabilities;
+  /** Mount point for routes. Supplied by the root route's `<Outlet />`. */
   readonly children?: React.ReactNode;
 }
 
@@ -58,7 +59,7 @@ export function AppRoot({ capabilities, children }: AppRootProps): React.ReactNo
 
         <footer className="border-t bg-card">
           <div className="mx-auto w-full max-w-7xl px-4 py-2 text-xs text-muted-foreground sm:px-6 lg:px-8">
-            Denti-Code U3 · Phase 1 foundation
+            Denti-Code U3 · Milestone 2 · application shell
           </div>
         </footer>
       </div>

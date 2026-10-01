@@ -1,4 +1,4 @@
 {
-  "extends": "@denti-code-u3/tsconfig/node.json",
+  "extends": "@denti-code-u3/tsconfig/e2e.json",
   "include": ["web", "playwright.config.ts"]
 }

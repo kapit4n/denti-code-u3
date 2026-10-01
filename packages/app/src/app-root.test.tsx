@@ -25,13 +25,13 @@ const desktopCapabilities: PlatformCapabilities = {
 
 describe('AppRoot', () => {
   it('renders the application identity', () => {
-    render(<AppRoot />);
+    render(<AppRoot capabilities={defaultWebCapabilities} />);
 
     expect(screen.getByRole('heading', { name: 'Denti-Code U3' })).toBeInTheDocument();
   });
 
-  it('reports the web runtime by default, with no shell-specific branch', () => {
-    render(<AppRoot />);
+  it('reports the web runtime with no shell-specific branch', () => {
+    render(<AppRoot capabilities={defaultWebCapabilities} />);
 
     expect(screen.getByText(/^Web · /)).toBeInTheDocument();
   });
@@ -44,7 +44,7 @@ describe('AppRoot', () => {
 
   it('renders children as the route mount point', () => {
     render(
-      <AppRoot>
+      <AppRoot capabilities={defaultWebCapabilities}>
         <p>Route content</p>
       </AppRoot>,
     );

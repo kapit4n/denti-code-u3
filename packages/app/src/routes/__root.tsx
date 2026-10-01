@@ -1,24 +1,76 @@
 /**
- * The router's document shell.
+ * The root route: the outermost route in the tree.
  *
- * `__root.tsx` is the outermost route: it wraps every page, so the app frame
- * lives here exactly once instead of being repeated in each route.
+ * Every page renders inside it, which is why the application frame lives here
+ * exactly once (ADR-0008). A feature route never repeats the header, the footer
+ * or the provider tree — it renders content and nothing else.
  *
- * Phase 1 note: the router is wired in the deployment shells' build (the
- * TanStack Router Vite plugin generates `routeTree.gen.ts` from this folder),
- * but `AppRoot` is not yet mounted behind it. Feature routes are deliberately
- * empty until their milestones.
+ * Note what is NOT here: no navigation, no data fetching, no business logic.
+ * Those belong to the features this route will eventually host.
  */
-import type { ReactNode } from 'react';
+
+import { Outlet, createRootRouteWithContext, useRouteContext } from '@tanstack/react-router';
+
 import { AppRoot } from '../app-root.js';
 import type { PlatformCapabilities } from '../platform/index.js';
 
-export interface RouteShellProps {
-  readonly children?: ReactNode;
-  /** Forwarded by the shell so the root frame knows its runtime. */
-  readonly capabilities?: PlatformCapabilities;
+/**
+ * The root route's context.
+ *
+ * `capabilities` is a context value rather than a component prop because the
+ * router renders this route itself, so a shell cannot hand it a prop. The shell
+ * passes capabilities to `mountApp`, which forwards them to
+ * `createAppRouter` and from there into the router's context.
+ */
+export interface RootRouteContext {
+  /**
+   * Required, not optional.
+   *
+   * `createAppRouter` always fills this in from the target, so a router whose
+   * capabilities are `undefined` is a wiring bug rather than a legitimate state.
+   * Typing it as optional made every consumer write a fallback branch for a case
+   * that cannot happen — and hid the real bug that the desktop shell was hitting.
+   */
+  readonly capabilities: PlatformCapabilities;
 }
 
-export function Root({ children, capabilities }: RouteShellProps): ReactNode {
-  return <AppRoot capabilities={capabilities}>{children}</AppRoot>;
+/**
+ * `createRootRouteWithContext`, not plain `createRootRoute`.
+ *
+ * The context type has to be attached to the route itself for the generated route
+ * tree to carry it, which is what makes `router.options.context` type as
+ * `RootRouteContext`. With the plain constructor the tree inferred `{}` and every
+ * read of `context.capabilities` failed to typecheck even though the value was
+ * there at runtime.
+ */
+export const Route = createRootRouteWithContext<RootRouteContext>()({
+  // No notFoundComponent yet: the shell has no routes to miss until features
+  // arrive. TanStack renders its default until one is provided.
+  component: RootLayout,
+});
+
+/**
+ * The application frame.
+ *
+ * Capabilities are read from the router context rather than imported, because the
+ * router renders this route: a shell cannot pass it a prop, and reading them here
+ * is what makes the desktop target actually report itself as desktop instead of
+ * silently falling back to the web defaults.
+ */
+function RootLayout(): React.ReactNode {
+  const { capabilities } = useRouteContext({ from: '__root__' });
+
+  return (
+    <AppRoot capabilities={capabilities}>
+      <Outlet />
+    </AppRoot>
+  );
+}
+
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: {
+      context: RootRouteContext;
+    };
+  }
 }

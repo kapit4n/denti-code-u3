@@ -5,6 +5,10 @@ import tailwindcss from '@tailwindcss/vite';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 
 export default defineConfig({
+  // Vite resolves `.env` against its own root, which is this shell. The
+  // documented `.env` lives at the monorepo root and is shared by both shells,
+  // so envDir has to point there or VITE_API_URL silently resolves to undefined.
+  envDir: fileURLToPath(new URL('../..', import.meta.url)),
   plugins: [
     tanstackRouter({
       target: 'react',

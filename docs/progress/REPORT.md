@@ -3,6 +3,11 @@
 > End-of-phase report for Milestone 1 of `docs/roadmap.md`.
 > Every claim here was verified by running the command shown; see
 > `docs/progress/LOG.md` for the raw session log.
+>
+> **Update after session 4 (Milestone 2, step 1).** Section 11 stated the router
+> was generated but not mounted, and that TanStack Query was Milestone 2. Both are
+> now done; the corrections are marked inline and explained in
+> `docs/decisions/0013-shells-declare-a-target-the-app-owns-the-rest.md`.
 
 ---
 
@@ -294,8 +299,14 @@ Testing rules adopted:
   is not implemented yet, rather than inserting fake clinical data.
 - No native Tauri command handlers. `PlatformCapabilities.saveFile` and
   `openExternal` are declared and unimplemented on desktop.
-- The router is generated but `AppRoot` is not yet mounted through the generated
-  route tree; TanStack Query and shadcn/ui primitives are Milestone 2.
+- No shadcn/ui primitives yet — only `cn` and the status-tone vocabulary. Milestone
+  2, after the design tokens are confirmed.
+- No sidebar, global search, user menu, theme toggle or not-found route. Milestone
+  2; the routing substrate they need is in place.
+- _(Corrected in session 4:)_ the router is no longer generated-but-unmounted.
+  `AppRoot` now renders through the generated route tree, with TanStack Query and
+  the `ApiClient` provider above it, and both shells are reduced to
+  `mountApp({ target })`.
 
 ## 12. Open architectural questions
 
@@ -321,14 +332,19 @@ Testing rules adopted:
 The foundation is deliberately featureless, so the next milestone makes the shell
 real without adding a single clinical feature:
 
-1. Mount TanStack Router in `packages/app` through the generated route tree, so
-   routing is proven in the shared package before any feature depends on it.
-2. Add TanStack Query and wire the `ApiClient` provider to `VITE_API_URL`, so the
-   data path is proven before any feature needs it.
+1. ~~Mount TanStack Router in `packages/app` through the generated route tree.~~
+   **Done in session 4.** Also required
+   [ADR 0013](../decisions/0013-shells-declare-a-target-the-app-owns-the-rest.md),
+   because wiring it up exposed three runtime defects that only a browser could
+   catch.
+2. ~~Add TanStack Query and wire the `ApiClient` provider to `VITE_API_URL`.~~
+   **Done in session 4.**
 3. Confirm the design tokens against the reference mockup and generate the
-   shadcn/ui primitives into `packages/ui`.
+   shadcn/ui primitives into `packages/ui`. **Now the highest-priority item**: every
+   feature inherits these tokens, so a wrong palette is cheapest to fix now.
 4. Build the shell: sidebar, header, global search, user menu, responsive
-   layout, theme toggle.
+   layout, theme toggle. Add a not-found route and an error boundary, now that
+   there are routes to miss.
 5. Settle open question 1 (how to make a query unable to forget `clinic_id`)
    before the first feature repository is written.
 
