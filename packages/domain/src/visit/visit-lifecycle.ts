@@ -1,0 +1,135 @@
+import type { Appointment, AppointmentStatus } from '../appointment/index.js';
+import type {
+  AppointmentId,
+  DentistId,
+  IsoDateTime,
+  PatientId,
+  VisitId,
+} from '@denti-code-u3/types';
+import { DomainError, illegalTransition } from '../shared/errors.js';
+import type { VisitStatus } from './visit-status.js';
+
+export interface Visit {
+  readonly id: VisitId;
+  readonly clinicId: string;
+  readonly patientId: PatientId;
+  readonly dentistId: DentistId;
+  readonly appointmentId?: AppointmentId;
+  readonly chairId?: string;
+  readonly startedAt?: IsoDateTime;
+  readonly endedAt?: IsoDateTime;
+  readonly status: VisitStatus;
+  readonly summary?: string;
+}
+
+const ALLOWED_TRANSITIONS: Readonly<Record<VisitStatus, readonly VisitStatus[]>> = {
+  OPEN: ['COMPLETED', 'CANCELLED'],
+  COMPLETED: ['OPEN'],
+  CANCELLED: [],
+};
+
+export function allowedVisitTransitions(from: VisitStatus): readonly VisitStatus[] {
+  return ALLOWED_TRANSITIONS[from];
+}
+
+export function canTransitionVisit(from: VisitStatus, to: VisitStatus): boolean {
+  return ALLOWED_TRANSITIONS[from].includes(to);
+}
+
+export function assertVisitTransition(from: VisitStatus, to: VisitStatus): void {
+  if (!canTransitionVisit(from, to)) {
+    throw illegalTransition('Visit', from, to);
+  }
+}
+
+/** Only an open visit may accept new clinical records. */
+export function acceptsClinicalRecords(visit: Visit): boolean {
+  return visit.status === 'OPEN';
+}
+
+export function assertAcceptsClinicalRecords(visit: Visit): void {
+  if (!acceptsClinicalRecords(visit)) {
+    throw new DomainError(
+      'ILLEGAL_TRANSITION',
+      `A ${visit.status.toLowerCase()} visit no longer accepts clinical records`,
+      { visitId: visit.id, status: visit.status },
+    );
+  }
+}
+
+/** The appointment status that means "the patient is now being treated". */
+export const APPOINTMENT_STATUS_WHEN_VISIT_STARTS: AppointmentStatus = 'IN_TREATMENT';
+
+export interface StartedVisit {
+  readonly visit: Visit;
+  readonly appointment: Appointment;
+}
+
+/**
+ * The single legal bridge from scheduling to clinical.
+ *
+ * The visit is created from the appointment and linked back to it, and the
+ * appointment moves to `IN_TREATMENT` — so the agenda and the clinical record
+ * can never disagree about whether the patient is being treated.
+ *
+ * This function is pure: it returns the new state rather than persisting it, so
+ * the use case controls the transaction.
+ */
+export function startVisitFromAppointment(
+  appointment: Appointment,
+  visitId: VisitId,
+  startedAt: IsoDateTime,
+): StartedVisit {
+  if (appointment.status === 'COMPLETED') {
+    throw new DomainError(
+      'ILLEGAL_TRANSITION',
+      'A completed appointment cannot start a new visit',
+      { appointmentId: appointment.id, status: appointment.status },
+    );
+  }
+
+  if (appointment.visitId) {
+    throw new DomainError(
+      'DUPLICATED_RECORD',
+      'This appointment already has a visit; an appointment becomes a visit exactly once',
+      { appointmentId: appointment.id, visitId: appointment.visitId },
+    );
+  }
+
+  return {
+    visit: {
+      id: visitId,
+      clinicId: appointment.clinicId,
+      patientId: appointment.patientId,
+      dentistId: appointment.dentistId,
+      appointmentId: appointment.id,
+      ...(appointment.chairId ? { chairId: appointment.chairId } : {}),
+      startedAt,
+      status: 'OPEN',
+    },
+    appointment: {
+      ...appointment,
+      status: APPOINTMENT_STATUS_WHEN_VISIT_STARTS,
+      visitId,
+    },
+  };
+}
+
+/**
+ * Close a visit. A visit may only be completed once it has started; reopening a
+ * completed visit is allowed (clinicians amend records) and is auditable.
+ */
+export function completeVisit(visit: Visit, endedAt: IsoDateTime): Visit {
+  assertVisitTransition(visit.status, 'COMPLETED');
+  if (!visit.startedAt) {
+    throw new DomainError('INVALID_INPUT', 'A visit must have started before it can be completed', {
+      visitId: visit.id,
+    });
+  }
+  return { ...visit, status: 'COMPLETED', endedAt };
+}
+
+export function reopenVisit(visit: Visit, reopenedAt: IsoDateTime): Visit {
+  assertVisitTransition(visit.status, 'OPEN');
+  return { ...visit, status: 'OPEN', endedAt: undefined, ...(reopenedAt ? {} : {}) };
+}

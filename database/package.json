@@ -1,0 +1,37 @@
+{
+  "name": "@denti-code-u3/database",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "description": "Drizzle schema, migrations, seeds and DB tooling for Denti-Code U3 (PostgreSQL only)",
+  "main": "schema/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint schema migrate.ts seed.ts",
+    "test": "vitest run --passWithNoTests",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "db:migrate": "tsx --env-file-if-exists=../.env migrate.ts",
+    "db:seed": "tsx --env-file-if-exists=../.env seed.ts",
+    "db:studio": "drizzle-kit studio --config drizzle.config.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.3",
+    "postgres": "3.4.9",
+    "zod": "4.6.5",
+    "@denti-code-u3/domain": "workspace:*",
+    "@denti-code-u3/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@denti-code-u3/tsconfig": "workspace:*",
+    "@types/node": "26.6.3",
+    "drizzle-kit": "0.31.11",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "5.0.3"
+  },
+  "exports": {
+    ".": "./schema/index.ts",
+    "./schema": "./schema/index.ts"
+  }
+}

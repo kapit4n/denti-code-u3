@@ -1,0 +1,8 @@
+/**
+ * `@denti-code-u3/ui` deliberately ships no stylesheet of its own.
+ *
+ * Design tokens and the base layer live in `packages/app/src/styles/globals.css`
+ * (see ADR-0009). Keeping them in one file means a component can never be styled
+ * by a second, competing source of truth. This entry exists so consumers can
+ * write `@denti-code-u3/ui/styles` if that decision is revisited.
+ */

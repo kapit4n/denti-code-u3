@@ -1,0 +1,9 @@
+{
+  "extends": "@denti-code-u3/tsconfig/library.json",
+  "include": ["src"],
+  "compilerOptions": {
+    "paths": {
+      "@denti-code-u3/types": ["./node_modules/@denti-code-u3/types/src/index.ts"]
+    }
+  }
+}

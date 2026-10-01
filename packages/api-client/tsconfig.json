@@ -1,0 +1,4 @@
+{
+  "extends": "@denti-code-u3/tsconfig/http-client.json",
+  "include": ["src", "vitest.config.ts"]
+}

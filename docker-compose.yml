@@ -1,0 +1,30 @@
+# Denti-Code U3 — local development infrastructure.
+#
+# PostgreSQL is the ONLY database (see docs/decisions/0003-postgresql-only-for-now.md).
+# Host port 5433 avoids clashing with a PostgreSQL already running on 5432.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: denti-code-u3-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: denti
+      POSTGRES_PASSWORD: denti_dev_password
+      POSTGRES_DB: denti_code_u3
+      # Deterministic collation for ORDER BY on names.
+      POSTGRES_INITDB_ARGS: '--locale=C --encoding=UTF8'
+    ports:
+      - '5433:5432'
+    volumes:
+      - denti-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U denti -d denti_code_u3']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  denti-postgres-data:
+    name: denti-postgres-data

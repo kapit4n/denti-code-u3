@@ -1,0 +1,4 @@
+{
+  "extends": "@denti-code-u3/tsconfig/vite-app.json",
+  "include": ["src", "vite.config.ts"]
+}

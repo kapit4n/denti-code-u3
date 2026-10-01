@@ -1,0 +1,13 @@
+{
+  "extends": "@denti-code-u3/tsconfig/node.json",
+  "include": ["src"],
+  "exclude": ["**/*.test.ts"],
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": true
+  }
+}

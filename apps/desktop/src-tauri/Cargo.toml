@@ -1,0 +1,23 @@
+[package]
+name = "denti-code-u3-desktop"
+version = "0.1.0"
+description = "Denti-Code U3 Desktop (Tauri 2)"
+authors = ["Denti-Code U3"]
+license = "UNLICENSED"
+edition = "2021"
+rust-version = "1.70"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+default = []

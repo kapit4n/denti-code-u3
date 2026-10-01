@@ -1,0 +1,10 @@
+{
+  "extends": "@denti-code-u3/tsconfig/base.json",
+  "include": ["typescript", "vitest", "tailwind"],
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "declaration": true,
+    "declarationMap": true
+  }
+}

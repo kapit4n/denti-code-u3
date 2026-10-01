@@ -1,0 +1,20 @@
+{
+  "name": "@denti-code-u3/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "description": "Playwright end-to-end tests (web and desktop strategy) for Denti-Code U3",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint web",
+    "test:e2e": "playwright test",
+    "test": "echo \"@denti-code-u3/e2e runs via test:e2e\""
+  },
+  "devDependencies": {
+    "@denti-code-u3/tsconfig": "workspace:*",
+    "@playwright/test": "1.63.0",
+    "@types/node": "26.6.3",
+    "typescript": "5.9.3"
+  }
+}

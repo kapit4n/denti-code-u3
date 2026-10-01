@@ -1,0 +1,54 @@
+{
+  "name": "@denti-code-u3/app",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "description": "THE Denti-Code U3 React application: routes, providers, features, platform abstraction and design-system wiring",
+  "exports": {
+    ".": "./src/index.ts",
+    "./app-root": "./src/app-root.tsx",
+    "./platform": "./src/platform/index.ts",
+    "./styles": "./src/styles/globals.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "build": "echo \"@denti-code-u3/app ships source; the web/desktop shells compile it\""
+  },
+  "dependencies": {
+    "@denti-code-u3/api-client": "workspace:*",
+    "@denti-code-u3/domain": "workspace:*",
+    "@denti-code-u3/types": "workspace:*",
+    "@denti-code-u3/ui": "workspace:*",
+    "@denti-code-u3/validation": "workspace:*",
+    "@tanstack/react-query": "5.104.0",
+    "@tanstack/react-router": "1.170.41",
+    "@tanstack/react-table": "9.2.4",
+    "lucide-react": "1.49.0",
+    "react-hook-form": "7.89.0",
+    "zod": "4.6.5",
+    "zustand": "5.0.15"
+  },
+  "devDependencies": {
+    "@denti-code-u3/tsconfig": "workspace:*",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.7",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "jsdom": "30.1.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "typescript": "5.9.3",
+    "vitest": "5.0.3",
+    "@vitejs/plugin-react": "6.1.1",
+    "@types/node": "26.6.3"
+  },
+  "peerDependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  }
+}
