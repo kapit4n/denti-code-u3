@@ -16,7 +16,6 @@ export interface Patient {
   readonly email?: string;
   readonly birthDate?: IsoDate;
   readonly isActive: boolean;
-  readonly deletedAt?: string;
 }
 
 export function patientFullName(patient: Patient): string {
@@ -70,5 +69,5 @@ export function patientAgeInYears(patient: Patient, today: IsoDate): number {
 }
 
 export function isActivePatient(patient: Patient): boolean {
-  return patient.isActive && !patient.deletedAt;
+  return patient.isActive;
 }

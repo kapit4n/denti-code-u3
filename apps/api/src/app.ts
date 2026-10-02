@@ -17,6 +17,7 @@ import {
 import { registerCors } from './http/plugins/cors.js';
 import { registerHealthRoutes } from './http/routes/health.js';
 import { registerDashboardRoutes } from './http/routes/dashboard.js';
+import { registerPatientsRoutes } from './http/routes/patients.js';
 import { sendProblem } from './http/problem.js';
 
 export interface ServerDependencies {
@@ -69,6 +70,7 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   await registerCors(app, config);
   await registerHealthRoutes(app, { config, connection });
   await registerDashboardRoutes(app, { connection });
+  await registerPatientsRoutes(app, { connection });
 
   app.get('/', async () => ({
     service: 'denti-code-u3-api',
