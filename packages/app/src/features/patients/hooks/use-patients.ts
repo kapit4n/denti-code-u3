@@ -39,6 +39,6 @@ export function usePatient(id: string) {
       const json = await (response as Response).json();
       return json as Patient;
     },
-    enabled: !!id,
+    enabled: Boolean(id),
   });
 }

@@ -31,10 +31,7 @@ export async function registerPatientsRoutes(
 
     try {
       const whereClause = q
-        ? and(
-            ilike(patients.firstName, `%${q}%`),
-            ilike(patients.lastName, `%${q}%`),
-          )
+        ? and(ilike(patients.firstName, `%${q}%`), ilike(patients.lastName, `%${q}%`))
         : undefined;
 
       const baseQuery = db.select().from(patients);
@@ -46,9 +43,7 @@ export async function registerPatientsRoutes(
         .offset(offset);
 
       const countQuery = db.select({ count: sql<number>`count(*)` }).from(patients);
-      const [totalResult] = whereClause
-        ? await countQuery.where(whereClause)
-        : await countQuery;
+      const [totalResult] = whereClause ? await countQuery.where(whereClause) : await countQuery;
 
       return {
         items,
@@ -74,7 +69,10 @@ export async function registerPatientsRoutes(
     const params = request.params as { id: string };
 
     try {
-      const [patient] = await db.select().from(patients).where(sql`${patients.id} = ${params.id}`);
+      const [patient] = await db
+        .select()
+        .from(patients)
+        .where(sql`${patients.id} = ${params.id}`);
 
       if (!patient) {
         return reply.status(404).send({
