@@ -1,6 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { Calendar, CheckCircle, Clock, XCircle, Users, DollarSign } from 'lucide-react';
-import { StatCard, QuickActions, TodayAppointments } from '../features/dashboard/index.js';
+import {
+  StatCard,
+  QuickActions,
+  TodayAppointments,
+  RecentPatients,
+  UpcomingVisits,
+  CalendarPreview,
+} from '../features/dashboard/index.js';
 import { useDashboardStats } from '../features/dashboard/hooks/use-dashboard-stats.js';
 
 export const Route = createFileRoute('/dashboard')({
@@ -49,8 +56,9 @@ function Dashboard(): React.ReactNode {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-4">
           <TodayAppointments />
+          <CalendarPreview />
         </div>
         <div className="space-y-4">
           <StatCard
@@ -72,6 +80,8 @@ function Dashboard(): React.ReactNode {
             title="Occupancy Rate"
             value={isLoading ? '...' : `${(stats?.occupancyRate ?? 0).toFixed(0)}%`}
           />
+          <RecentPatients />
+          <UpcomingVisits />
         </div>
       </div>
     </div>
