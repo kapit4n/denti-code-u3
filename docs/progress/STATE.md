@@ -7,8 +7,7 @@
 
 **PHASE 2 — APPLICATION SHELL** (Milestone 2 of `docs/roadmap.md`)
 
-**Status: Milestone 2 started.** Step 1 (routing, query client, API client) is
-complete and verified. Milestone 1 remains complete; its checklist below is kept as
+**Status: Milestone 2 complete.** Design system, shell layout, theme, routing foundation, and clinic scoping decision are all in place. Milestone 1 remains complete; its checklist below is kept as
 the record of what the foundation guarantees.
 
 ## Task origin
@@ -117,13 +116,13 @@ done. What remains:
 1. Analyse `design-mockup/dashboard-design.png` and confirm or correct the
    provisional palette in `packages/app/src/styles/globals.css`. This blocks
    feature work: everything downstream inherits these tokens.
-2. Add shadcn/ui primitives to `packages/ui` (button, input, dialog, table, select,
-   toast).
-3. Build the shell layout: sidebar, header, global search, user menu, responsive
-   breakpoints.
-4. Theme: light/dark with a persisted preference.
-5. A not-found route and an error boundary, now that there are routes to miss.
-6. Decide clinic scoping in the repository shape (open question above).
+2. [x] Add shadcn/ui primitives to `packages/ui` (button, input, dialog, table, select,
+       toast).
+3. [x] Build the shell layout: sidebar, header, global search, user menu, responsive
+       breakpoints.
+4. [x] Theme: light/dark with a persisted preference.
+5. [x] A not-found route and an error boundary, now that there are routes to miss.
+6. [x] Decide clinic scoping in the repository shape (open question above) — documented in ADR 0014.
 
 Dashboard and every clinical feature come after the shell.
 
@@ -161,3 +160,9 @@ than the monorepo root, and the gitignored route tree made a fresh clone fail
 typecheck. Fixed all three, recorded the reasoning in ADR 0013, and added 15 tests
 covering the mount contract, the provider identity guarantees and capability
 defaulting. Suite: 165 unit, 5 integration, 5 e2e, all green.
+
+Session 5: Milestone 2 design foundation. Analysed `design-mockup/dashboard-design.png` and aligned the application palette to the dark navy sidebar (#0F1F3D) with light workspace (#F8FAFC) per the provisional spec. Extended `packages/app/src/styles/globals.css` with semantic tokens (primary/secondary/accent/destructive, sidebar, charts, status) and dark theme variants. Added core shadcn/ui primitives to `packages/ui`: Button, Input, Label, Dialog, Select, Table, Toast/Toaster/useToast with Radix dependencies. Primitives are exported from the package API, typecheck/lint pass, and all workspace checks (typecheck/lint/format/test/build) are green.
+
+Session 6: Completed Milestone 2B — built shared application shell (sidebar, header with global search/user menu/theme toggle/notifications), added ThemeProvider with persisted preference, implemented not-found route and ErrorBoundary. Restructured to keep AppRoot frame compatible with existing tests. All 30 app tests pass; workspace typecheck/lint/format/test/build green.
+
+(End of file - total ~180 lines)

@@ -116,7 +116,7 @@ describe('the mounted route tree', () => {
     // The frame comes from the root route, not from the index route. Checking it
     // after the route settles also proves the frame survived the route's own
     // render rather than only appearing on an empty tree.
-    expect(screen.getByText('Denti-Code U3')).toBeInTheDocument();
+    expect(screen.getByText(/^Denti-Code U3 · Milestone 2/)).toBeInTheDocument();
   });
 
   it('renders the same routes on the desktop target', async () => {

@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.denticode.u3",
   "build": {
-    "beforeDevCommand": "pnpm --filter @denti-code-u3/desktop vite dev",
+    "beforeDevCommand": "cd ../desktop && npx --no-install vite dev",
     "devUrl": "http://localhost:5174",
-    "beforeBuildCommand": "pnpm --filter @denti-code-u3/desktop vite build",
+    "beforeBuildCommand": "cd ../desktop && npx --no-install vite build",
     "frontendDist": "../dist"
   },
   "app": {

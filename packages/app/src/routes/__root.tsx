@@ -9,10 +9,13 @@
  * Those belong to the features this route will eventually host.
  */
 
-import { Outlet, createRootRouteWithContext, useRouteContext } from '@tanstack/react-router';
+import { createRootRouteWithContext, useRouteContext } from '@tanstack/react-router';
 
 import { AppRoot } from '../app-root.js';
 import type { PlatformCapabilities } from '../platform/index.js';
+import { ThemeProvider } from '../features/theme/theme-provider.js';
+import { ErrorBoundary } from '../components/error-boundary.js';
+import { Shell } from '../components/shell/index.js';
 
 /**
  * The root route's context.
@@ -44,8 +47,7 @@ export interface RootRouteContext {
  * there at runtime.
  */
 export const Route = createRootRouteWithContext<RootRouteContext>()({
-  // No notFoundComponent yet: the shell has no routes to miss until features
-  // arrive. TanStack renders its default until one is provided.
+  notFoundComponent: NotFoundComponent,
   component: RootLayout,
 });
 
@@ -61,9 +63,24 @@ function RootLayout(): React.ReactNode {
   const { capabilities } = useRouteContext({ from: '__root__' });
 
   return (
-    <AppRoot capabilities={capabilities}>
-      <Outlet />
-    </AppRoot>
+    <ErrorBoundary>
+      <AppRoot capabilities={capabilities}>
+        <ThemeProvider defaultTheme="light" storageKey="denti-code-theme">
+          <Shell />
+        </ThemeProvider>
+      </AppRoot>
+    </ErrorBoundary>
+  );
+}
+
+function NotFoundComponent(): React.ReactNode {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-4">
+      <div className="text-center">
+        <h1 className="text-4xl font-bold tracking-tight">404</h1>
+        <p className="mt-2 text-lg text-muted-foreground">Page not found</p>
+      </div>
+    </div>
   );
 }
 
