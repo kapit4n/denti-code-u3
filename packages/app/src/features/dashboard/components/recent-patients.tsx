@@ -33,7 +33,10 @@ export function RecentPatients() {
         ) : (
           <div className="space-y-2">
             {data?.items.map((item) => (
-              <div key={item.id} className="flex items-center justify-between rounded-lg border p-3">
+              <div
+                key={item.id}
+                className="flex items-center justify-between rounded-lg border p-3"
+              >
                 <div>
                   <p className="text-sm font-medium">
                     {item.firstName} {item.lastName}

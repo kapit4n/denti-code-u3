@@ -33,7 +33,10 @@ export function UpcomingVisits() {
         ) : (
           <div className="space-y-2">
             {data?.items.map((item) => (
-              <div key={item.id} className="flex items-center justify-between rounded-lg border p-3">
+              <div
+                key={item.id}
+                className="flex items-center justify-between rounded-lg border p-3"
+              >
                 <div>
                   <p className="text-sm font-medium">Patient {item.patientId.slice(0, 8)}</p>
                   <p className="text-xs text-muted-foreground">

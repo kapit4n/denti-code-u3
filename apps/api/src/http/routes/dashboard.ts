@@ -35,9 +35,7 @@ export async function registerDashboardRoutes(
       const [todayAppointments] = await db
         .select({ count: sql<number>`count(*)` })
         .from(appointments)
-        .where(
-          and(gte(appointments.startsAt, startOfDay), lt(appointments.startsAt, endOfDay)),
-        );
+        .where(and(gte(appointments.startsAt, startOfDay), lt(appointments.startsAt, endOfDay)));
 
       const [completedToday] = await db
         .select({ count: sql<number>`count(*)` })

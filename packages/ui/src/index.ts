@@ -66,3 +66,4 @@ export {
 } from './toast.js';
 export { Toaster } from './toaster.js';
 export { useToast } from './use-toast.js';
+export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent } from './card.js';

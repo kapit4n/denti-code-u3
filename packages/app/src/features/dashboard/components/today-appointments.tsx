@@ -33,11 +33,18 @@ export function TodayAppointments() {
         ) : (
           <div className="space-y-2">
             {data?.items.map((item) => (
-              <div key={item.id} className="flex items-center justify-between rounded-lg border p-3">
+              <div
+                key={item.id}
+                className="flex items-center justify-between rounded-lg border p-3"
+              >
                 <div>
                   <p className="text-sm font-medium">Patient {item.patientId.slice(0, 8)}</p>
                   <p className="text-xs text-muted-foreground">
-                    {new Date(item.startsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {item.status}
+                    {new Date(item.startsAt).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}{' '}
+                    - {item.status}
                   </p>
                 </div>
               </div>
