@@ -10,6 +10,8 @@ export interface Patient {
   phone?: string;
   email?: string;
   isActive: boolean;
+  recentVisits?: unknown[];
+  upcomingAppointment?: unknown;
 }
 
 export function usePatients(params?: { q?: string; page?: number; limit?: number }) {
