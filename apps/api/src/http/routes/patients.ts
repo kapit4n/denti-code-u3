@@ -84,7 +84,21 @@ export async function registerPatientsRoutes(
         });
       }
 
-      return patient;
+      // Fetch recent visits and upcoming appointment
+      const { appointments, visits } = await import('@denti-code-u3/database/schema');
+      const recentVisits = await db
+        .select()
+        .from(visits)
+        .where(sql`${visits.patientId} = ${params.id}`)
+        .orderBy(sql`${visits.startedAt} DESC`)
+        .limit(5);
+      const [upcomingAppointment] = await db
+        .select()
+        .from(appointments)
+        .where(sql`${appointments.patientId} = ${params.id} AND ${appointments.startsAt} >= NOW()`)
+        .orderBy(sql`${appointments.startsAt} ASC`)
+        .limit(1);
+      return { ...patient, recentVisits, upcomingAppointment };
     } catch (error) {
       request.log.error({ err: error }, 'Failed to fetch patient');
       return reply.status(500).send({
