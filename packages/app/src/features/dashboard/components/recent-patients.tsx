@@ -1,50 +1,56 @@
-import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@denti-code-u3/ui';
-import { useApiClient } from '../../../query/api-client-provider.js';
+/**
+ * The clinic's newest patient records.
+ *
+ * Each row links straight to the profile, because the profile is the central
+ * clinical context (Milestone 4) — the dashboard is a way in, not a second place
+ * to read a patient's details.
+ */
 
-export interface RecentPatient {
-  id: string;
-  firstName: string;
-  lastName: string;
-  createdAt: string;
-}
+import { Link } from '@tanstack/react-router';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@denti-code-u3/ui';
+
+import { useRecentPatients } from '../hooks/use-dashboard-stats.js';
 
 export function RecentPatients() {
-  const client = useApiClient();
-  const { data, isLoading } = useQuery<{ items: RecentPatient[] }>({
-    queryKey: ['dashboard', 'recent-patients'],
-    queryFn: async () => {
-      const response = await client.get('/api/v1/dashboard/recent-patients');
-      const json = await (response as Response).json();
-      return json as { items: RecentPatient[] };
-    },
-  });
+  const { data, isPending, error } = useRecentPatients();
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Recent Patients</CardTitle>
+        <CardDescription>Newest records in this clinic</CardDescription>
       </CardHeader>
+
       <CardContent>
-        {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        ) : data?.items?.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No recent patients.</p>
-        ) : (
-          <div className="space-y-2">
-            {data?.items.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between rounded-lg border p-3"
-              >
-                <div>
-                  <p className="text-sm font-medium">
-                    {item.firstName} {item.lastName}
-                  </p>
-                </div>
-              </div>
+        {isPending ? (
+          <ul aria-hidden className="space-y-2">
+            {[0, 1, 2].map((row) => (
+              <li key={row} className="h-12 animate-pulse rounded-lg bg-muted" />
             ))}
-          </div>
+          </ul>
+        ) : error ? (
+          <p className="text-sm text-destructive">Recent patients could not be loaded.</p>
+        ) : data && data.items.length > 0 ? (
+          <ul className="space-y-2">
+            {data.items.map((patient) => (
+              <li key={patient.id} className="rounded-lg border">
+                <Link
+                  to="/patients/$patientId"
+                  params={{ patientId: patient.id }}
+                  className="block p-3 hover:bg-muted"
+                >
+                  <p className="truncate text-sm font-medium">
+                    {patient.firstName} {patient.lastName}
+                  </p>
+                  {patient.recordNumber ? (
+                    <p className="text-xs text-muted-foreground">{patient.recordNumber}</p>
+                  ) : null}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">No patients registered yet.</p>
         )}
       </CardContent>
     </Card>

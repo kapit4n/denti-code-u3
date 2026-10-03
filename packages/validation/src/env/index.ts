@@ -40,6 +40,17 @@ const postgresUrlSchema = z
     message: 'DATABASE_URL must be a PostgreSQL connection string',
   });
 
+/**
+ * A clinic id, which is a PostgreSQL UUID.
+ *
+ * Required — not defaulted — on purpose. Every clinical table carries
+ * `clinic_id` and ADR 0014 forbids inferring the scope from global state, so a
+ * process that cannot name its clinic has no valid way to answer a clinical
+ * query. Failing at startup is the honest outcome; defaulting to a random or
+ * zero id would silently return another clinic's rows.
+ */
+const clinicIdSchema = z.uuid('CLINIC_ID must be a UUID');
+
 export const apiEnvironmentSchema = z.object({
   NODE_ENV: environmentSchema.default('development'),
   API_HOST: z.string().min(1).default('0.0.0.0'),
@@ -48,6 +59,7 @@ export const apiEnvironmentSchema = z.object({
   CORS_ORIGINS: commaSeparatedList.default([]),
   DATABASE_URL: postgresUrlSchema,
   CLINIC_TIMEZONE: timeZoneSchema.default('UTC'),
+  CLINIC_ID: clinicIdSchema,
 });
 
 export const databaseEnvironmentSchema = z.object({

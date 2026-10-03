@@ -18,6 +18,16 @@ export interface ApiConfig {
   readonly corsOrigins: readonly string[];
   readonly databaseUrl: string;
   readonly clinicTimeZone: string;
+  /**
+   * The clinic this process serves.
+   *
+   * Authentication is not built yet, so there is no session to resolve a clinic
+   * from. This is the single-clinic assumption ADR 0014 explicitly permits, and
+   * it lives only at the HTTP edge: repositories and use cases still receive
+   * `clinicId` as an explicit argument, so adding auth later means replacing
+   * this one lookup, not re-scoping every query.
+   */
+  readonly clinicId: string;
 }
 
 export type EnvSource = Record<string, string | undefined>;
@@ -52,6 +62,7 @@ export function loadApiConfig(env: EnvSource = process.env): ApiConfig {
     corsOrigins: value.CORS_ORIGINS,
     databaseUrl: value.DATABASE_URL,
     clinicTimeZone: value.CLINIC_TIMEZONE,
+    clinicId: value.CLINIC_ID,
   });
 }
 

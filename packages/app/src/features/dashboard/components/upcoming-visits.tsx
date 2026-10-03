@@ -1,58 +1,59 @@
-import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@denti-code-u3/ui';
-import { useApiClient } from '../../../query/api-client-provider.js';
+/**
+ * The next few bookings, across today and the following days.
+ *
+ * Ordered and truncated by the API. Cancelled appointments are already excluded
+ * server-side, so this list never has to decide what counts as "upcoming".
+ */
 
-export interface UpcomingVisit {
-  id: string;
-  patientId: string;
-  startsAt: string;
-  status: string;
-}
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@denti-code-u3/ui';
+
+import { useUpcomingVisits } from '../hooks/use-dashboard-stats.js';
 
 export function UpcomingVisits() {
-  const client = useApiClient();
-  const { data, isLoading } = useQuery<{ items: UpcomingVisit[] }>({
-    queryKey: ['dashboard', 'upcoming-visits'],
-    queryFn: async () => {
-      const response = await client.get('/api/v1/dashboard/upcoming-visits');
-      const json = await (response as Response).json();
-      return json as { items: UpcomingVisit[] };
-    },
-  });
+  const { data, isPending, error } = useUpcomingVisits();
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Upcoming Visits</CardTitle>
+        <CardDescription>Next scheduled appointments</CardDescription>
       </CardHeader>
+
       <CardContent>
-        {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        ) : data?.items?.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No upcoming visits.</p>
-        ) : (
-          <div className="space-y-2">
-            {data?.items.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between rounded-lg border p-3"
-              >
-                <div>
-                  <p className="text-sm font-medium">Patient {item.patientId.slice(0, 8)}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(item.startsAt).toLocaleString([], {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </p>
-                </div>
-              </div>
+        {isPending ? (
+          <ul aria-hidden className="space-y-2">
+            {[0, 1, 2].map((row) => (
+              <li key={row} className="h-12 animate-pulse rounded-lg bg-muted" />
             ))}
-          </div>
+          </ul>
+        ) : error ? (
+          <p className="text-sm text-destructive">Upcoming visits could not be loaded.</p>
+        ) : data && data.items.length > 0 ? (
+          <ul className="space-y-2">
+            {data.items.map((visit) => (
+              <li key={visit.id} className="rounded-lg border p-3">
+                <p className="truncate text-sm font-medium">
+                  {visit.firstName} {visit.lastName}
+                </p>
+                <p className="text-xs text-muted-foreground">{formatDateTime(visit.startsAt)}</p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">No upcoming visits.</p>
         )}
       </CardContent>
     </Card>
   );
+}
+
+function formatDateTime(isoDate: string): string {
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }

@@ -15,6 +15,7 @@ import {
   type DatabaseConnection,
 } from './infrastructure/persistence/postgres/connection.js';
 import { registerCors } from './http/plugins/cors.js';
+import { registerClinicScope } from './http/plugins/clinic-scope.js';
 import { registerHealthRoutes } from './http/routes/health.js';
 import { registerDashboardRoutes } from './http/routes/dashboard.js';
 import { registerPatientsRoutes } from './http/routes/patients.js';
@@ -69,8 +70,15 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
 
   await registerCors(app, config);
   await registerHealthRoutes(app, { config, connection });
-  await registerDashboardRoutes(app, { connection });
-  await registerPatientsRoutes(app, { connection });
+
+  // Registered before every clinical route: `request.clinicId` is what makes
+  // ADR 0014's scoping rule enforceable rather than aspirational.
+  await registerClinicScope(app, { config });
+  await registerDashboardRoutes(app, {
+    db: connection.db,
+    fallbackTimeZone: config.clinicTimeZone,
+  });
+  await registerPatientsRoutes(app, { db: connection.db });
 
   app.get('/', async () => ({
     service: 'denti-code-u3-api',

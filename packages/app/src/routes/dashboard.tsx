@@ -1,94 +1,172 @@
+/**
+ * The dashboard: "what is happening today?".
+ *
+ * Assembled entirely from API queries. There is no local arithmetic on any
+ * metric — the counts arrive grouped (today / clinic) and money arrives in minor
+ * units, formatted once through the domain's `formatMinorUnits`. A dashboard
+ * that recomputes a figure is a second source of truth for it, and the two
+ * inevitably disagree.
+ */
+
 import { createFileRoute } from '@tanstack/react-router';
-import { Calendar, CheckCircle, Clock, XCircle, Users, DollarSign } from 'lucide-react';
+import { formatMinorUnits } from '@denti-code-u3/domain';
 import {
-  StatCard,
-  QuickActions,
-  TodayAppointments,
-  RecentPatients,
-  UpcomingVisits,
-  CalendarPreview,
-} from '../features/dashboard/index.js';
+  CalendarDays,
+  CheckCircle2,
+  CircleDashed,
+  CircleSlash,
+  Clock,
+  DollarSign,
+  Stethoscope,
+  Users,
+} from 'lucide-react';
+
+import { CalendarPreview } from '../features/dashboard/components/calendar-preview.js';
+import { QuickActions } from '../features/dashboard/components/quick-actions.js';
+import { RecentPatients } from '../features/dashboard/components/recent-patients.js';
+import { StatCard } from '../features/dashboard/components/stat-card.js';
+import { TodayAppointments } from '../features/dashboard/components/today-appointments.js';
+import { UpcomingVisits } from '../features/dashboard/components/upcoming-visits.js';
 import { useDashboardStats } from '../features/dashboard/hooks/use-dashboard-stats.js';
 
 export const Route = createFileRoute('/dashboard')({
   component: Dashboard,
 });
 
-function Dashboard(): React.ReactNode {
-  const greeting = getGreeting();
-  const { data: stats, isLoading } = useDashboardStats();
+function Dashboard() {
+  const { data, isPending, error } = useDashboardStats();
+
+  const today = data?.today;
+  const clinic = data?.clinic;
+  const loading = isPending;
+  const failed = error ?? null;
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">{greeting}</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{greeting()}</h1>
           <p className="text-muted-foreground">What is happening today?</p>
         </div>
         <QuickActions />
-      </div>
+      </header>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <section
+        aria-label="Today's appointments"
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+      >
         <StatCard
           title="Appointments"
-          value={isLoading ? '...' : (stats?.appointments ?? 0)}
-          description="Today"
-          icon={Calendar}
+          value={today?.appointments ?? 0}
+          description="Booked today"
+          icon={CalendarDays}
+          isLoading={loading}
+          error={failed}
         />
         <StatCard
           title="Completed"
-          value={isLoading ? '...' : (stats?.completed ?? 0)}
-          description="Today"
-          icon={CheckCircle}
+          value={today?.completed ?? 0}
+          description="Finished today"
+          icon={CheckCircle2}
+          isLoading={loading}
+          error={failed}
         />
         <StatCard
           title="Pending"
-          value={isLoading ? '...' : (stats?.pending ?? 0)}
-          description="Today"
+          value={today?.pending ?? 0}
+          description="Awaiting the patient"
           icon={Clock}
+          isLoading={loading}
+          error={failed}
+        />
+        <StatCard
+          title="In treatment"
+          value={today?.inTreatment ?? 0}
+          description="Currently in the chair"
+          icon={Stethoscope}
+          isLoading={loading}
+          error={failed}
         />
         <StatCard
           title="Cancelled"
-          value={isLoading ? '...' : (stats?.cancelled ?? 0)}
+          value={today?.cancelled ?? 0}
           description="Today"
-          icon={XCircle}
+          icon={CircleSlash}
+          isLoading={loading}
+          error={failed}
         />
-      </div>
+        <StatCard
+          title="No-show"
+          value={today?.noShow ?? 0}
+          description="Today"
+          icon={CircleDashed}
+          isLoading={loading}
+          error={failed}
+        />
+      </section>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-4">
+      <section aria-label="Clinic statistics" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title="Active patients"
+          value={clinic?.activePatients ?? 0}
+          description="Registered in this clinic"
+          icon={Users}
+          isLoading={loading}
+          error={failed}
+        />
+        <StatCard
+          title="Collected this month"
+          value={
+            clinic
+              ? `${formatMinorUnits(clinic.collectedThisMonthMinor)}${
+                  clinic.currencyCode ? ` ${clinic.currencyCode}` : ''
+                }`
+              : '0.00'
+          }
+          description="Payments received"
+          icon={DollarSign}
+          isLoading={loading}
+          error={failed}
+        />
+        <StatCard
+          title="Pending treatments"
+          value={clinic?.pendingTreatmentItems ?? 0}
+          description="Items not yet completed"
+          isLoading={loading}
+          error={failed}
+        />
+        <StatCard
+          title="Occupancy"
+          // `null` means the API could not determine today's capacity, which is
+          // not the same as an empty clinic.
+          value={
+            clinic?.occupancyRate === null || clinic?.occupancyRate === undefined
+              ? '—'
+              : `${clinic.occupancyRate}%`
+          }
+          description="Booked share of today's capacity"
+          isLoading={loading}
+          error={failed}
+          isUnknown={clinic?.occupancyRate === null}
+        />
+      </section>
+
+      <section aria-label="Schedule" className="grid gap-4 lg:grid-cols-3">
+        <div className="space-y-4 lg:col-span-2">
           <TodayAppointments />
           <CalendarPreview />
         </div>
         <div className="space-y-4">
-          <StatCard
-            title="Total Patients"
-            value={isLoading ? '...' : (stats?.totalPatients ?? 0)}
-            icon={Users}
-          />
-          <StatCard
-            title="Revenue"
-            value={isLoading ? '...' : `$${(stats?.revenue ?? 0).toFixed(2)}`}
-            description="This month"
-            icon={DollarSign}
-          />
-          <StatCard
-            title="Pending Treatments"
-            value={isLoading ? '...' : (stats?.pendingTreatments ?? 0)}
-          />
-          <StatCard
-            title="Occupancy Rate"
-            value={isLoading ? '...' : `${(stats?.occupancyRate ?? 0).toFixed(0)}%`}
-          />
           <RecentPatients />
           <UpcomingVisits />
         </div>
-      </div>
+      </section>
     </div>
   );
 }
 
-function getGreeting(): string {
+/** Time-of-day greeting. Cosmetic only; drives no behaviour. */
+function greeting(): string {
   const hour = new Date().getHours();
   if (hour < 12) return 'Good morning';
   if (hour < 18) return 'Good afternoon';

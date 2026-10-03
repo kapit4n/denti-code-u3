@@ -23,7 +23,8 @@ interface NavItem {
 const navItems: NavItem[] = [
   {
     title: 'Dashboard',
-    href: '/',
+    // The dashboard lives at its own route; `/` stays the foundation-status page.
+    href: '/dashboard',
     icon: Home,
   },
   {
