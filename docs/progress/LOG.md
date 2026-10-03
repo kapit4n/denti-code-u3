@@ -322,10 +322,12 @@ than an error, which is why review missed them:
 The regression test for defect 1 was confirmed to fail when the fix is reverted,
 and it drives the real route through Fastify `inject`: an earlier version
 re-implemented the query in SQL and would have kept passing while the route
-leaked data.
+leaked data. `pnpm run build` and `pnpm run test:e2e` were deferred during the
+work at the user's request and run at the end of the session; both are green.
 
 **Still open**
 
 - Patient registration (create/edit) does not exist; "New Patient" is disabled.
 - Dashboard quick actions navigate nowhere — they need the M5 forms.
-- `pnpm run build` and committed e2e specs are owed before M3/M4 sign-off.
+- Committed e2e specs for the dashboard and patient routes are still owed. The
+  e2e suite covers the shell only, which is why all six defects got through.

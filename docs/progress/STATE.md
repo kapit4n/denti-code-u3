@@ -179,9 +179,12 @@ column is **closed** by ADR 0012. Still open:
 
 **Milestone 3 — DASHBOARD.** Functionally complete and API-driven. Remaining:
 
-1. [ ] `pnpm run build` and `pnpm run test:e2e`, which were deferred this session.
+1. [x] `pnpm run build` and `pnpm run test:e2e`, run at the end of the session
+       after implementation (both green).
 2. [ ] Promote the throwaway browser script into committed e2e specs so the
-       dashboard metrics are regression-protected, not just manually verified.
+       dashboard metrics and patient profile are regression-protected, not just
+       manually verified. The e2e suite currently covers the shell only — which
+       is exactly why all six session-8 defects got through.
 
 **Milestone 4 — PATIENTS.** The read side is complete: searchable paginated list,
 global search, profile with allergies / next appointment / visits / outstanding
