@@ -19,7 +19,7 @@ import { registerClinicScope } from './http/plugins/clinic-scope.js';
 import { registerHealthRoutes } from './http/routes/health.js';
 import { registerDashboardRoutes } from './http/routes/dashboard.js';
 import { registerPatientsRoutes } from './http/routes/patients.js';
-import { DrizzlePatientWriteRepository } from './infrastructure/persistence/repositories/patient-write-repository.js';
+import { DrizzlePatientRepository } from './infrastructure/persistence/repositories/patient-repository.js';
 import { systemClock } from './infrastructure/clock/system-clock.js';
 import { uuidGenerator } from './infrastructure/id/uuid-generator.js';
 import { sendProblem } from './http/problem.js';
@@ -81,9 +81,11 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     db: connection.db,
     fallbackTimeZone: config.clinicTimeZone,
   });
+  // One repository for the whole patient feature: the handlers get a port, so a
+  // route cannot forget the clinic filter, and adding a read does not require
+  // handing out the connection again.
   await registerPatientsRoutes(app, {
-    db: connection.db,
-    patientWrites: new DrizzlePatientWriteRepository(connection.db),
+    patients: new DrizzlePatientRepository(connection.db),
     ids: uuidGenerator,
     clock: systemClock,
   });

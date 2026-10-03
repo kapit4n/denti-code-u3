@@ -552,3 +552,94 @@ Three things worth remembering from this session:
   which still query Drizzle in their route handlers.
 - Dashboard `<h1>` is a time-of-day greeting rather than the page name.
 - No authentication, so `request.clinicId` still comes from `CLINIC_ID`.
+
+---
+
+## Session 12 — the patient read side, behind the repository
+
+**Started from:** `3fbc54d`, patient editing complete on both sides. The three
+patient reads were still Drizzle queries written inside the route handlers.
+
+**What changed**
+
+- `PatientSearchCriteria` (speculative, unused) replaced by `PatientSearchQuery`,
+  and `PatientRepository` extended with `search`, `findProfile` and
+  `findOdontogram`. `patient-write-repository.ts` became `patient-repository.ts`,
+  `DrizzlePatientWriteRepository` became `DrizzlePatientRepository`.
+- `apps/api/src/http/routes/patients.ts`: 482 → 283 lines, and it no longer
+  imports `drizzle-orm`, the schema tables, or the connection handle. Its
+  dependencies are `{ patients, ids, clock }` — no `db`.
+- **The bug this found.** The odontogram's existence check, written in the handler,
+  omitted `anonymized_at is null`. A withdrawn patient's odontogram was served at
+  `GET /api/v1/patients/:id/odontogram` while `GET /api/v1/patients/:id` correctly
+  answered 404. Tooth-level clinical history for a record the product has withdrawn.
+  Fixed by making the check a repository method that every read goes through.
+- The profile response was `{ ...patient }`, a spread of the raw row: it published
+  `anonymizedAt` and would have published any column added to `patients` later. It
+  now returns the named `PatientProfile`.
+- `sendProblem` gained an optional operation label for the server log only; the
+  client still receives the generic message and a request id.
+- Name search folds accents on both sides (ADR 0016). See below.
+- Frontend: nine hand-copied response interfaces deleted from
+  `use-patients.ts`, replaced by imports from `@denti-code-u3/domain`. This caught a
+  live drift — `usePatientOdontogram` expected `{ items }` where the endpoint has
+  always returned `{ entries }`, undetected because no screen calls that hook.
+- `packages/validation`: deleted `patientSchema`, `patientSummarySchema`,
+  `patientProfileSchema`, `patientBalanceSchema`, `paginatedPatientSchema`,
+  `paginatedResponseSchema` and four DTO types. All unused, and describing
+  `{ data, meta }` + a `fullName` + an `ageInYears` that no endpoint has ever sent.
+  Deleted rather than corrected: a second declaration of a response shape is a
+  second thing to keep in sync. Zod is now for requests only.
+
+**The collation finding**
+
+The cluster is `POSTGRES_INITDB_ARGS: '--locale=C'`, chosen so a developer's
+container and a production server sort identically. `C` sorts by byte value and
+`lower()` folds only ASCII, so:
+
+- `ORDER BY last_name` put `Ñuñez` after `Patient` — a N-name was unfindable by
+  scrolling;
+- a search for `nunez` or `Ñuñez` returned **nothing**.
+
+Both are unacceptable for a clinic that finds patients by typing; the second reads
+to a receptionist as "this patient is not in our system". Rejected: making the
+cluster locale-aware (fixed at initdb, and moves results into server config) and
+`unaccent()` (needs `CREATE EXTENSION`, is `STABLE` not `IMMUTABLE`, so not
+indexable). Chosen: `lower(translate(col, <accented>, <plain>))` in SQL and
+`NFD` + diacritic stripping in JS, on both sides. ADR 0016.
+
+**Verified**
+
+- `pnpm run typecheck` 12/12, `pnpm run lint` 12/12 + `BOUNDARY GUARD OK`,
+  `pnpm run format:check` clean, `pnpm run build` 5/5.
+- Unit/component 258 passing (36 validation, 115 domain, 15 api-client, 35 api,
+  57 app). Integration 35 → **55** (20 new). E2E 46/46.
+
+**Mutation checks — every one caught**
+
+Each mutation was applied, the suite run, and the file restored byte-identical
+(diff confirmed against a pre-mutation copy).
+
+| #   | Mutation                                                      | Result                                                      |
+| --- | ------------------------------------------------------------- | ----------------------------------------------------------- |
+| 1   | `findOdontogram` existence check drops `isNull(anonymizedAt)` | 1 failed — "does not serve the chart of a withdrawn record" |
+| 2   | `findProfile` drops the `clinicId` filter                     | 2 failed                                                    |
+| 3   | `search` drops the `clinicId` filter                          | 2 failed                                                    |
+| 4   | `search` drops `isNull(anonymizedAt)`                         | 1 failed                                                    |
+| 5   | `escapeLikePattern` returns the term unchanged                | 2 failed                                                    |
+| 6   | `foldable` folds only via `lower()`, no `translate()`         | 2 failed                                                    |
+| 7   | count query counts the clinic instead of the filtered set     | 1 failed                                                    |
+| 8   | `onlyActive` ignored                                          | 1 failed                                                    |
+
+Mutation 1 is the one that matters: it is the defect that was actually shipped in
+`3fbc54d`, and before this session nothing would have failed.
+
+**Still open**
+
+- `apps/api/src/http/routes/dashboard.ts` still receives `db` directly — the last
+  route handing a connection to a handler. Next milestone's job.
+- Patient phone is returned by the list endpoint while its column comment says it
+  is encrypted and never returned by list endpoints. The two disagree; needs a
+  product decision before any external access exists.
+- Dashboard `<h1>` is a time-of-day greeting rather than the page name.
+- No authentication, so `request.clinicId` still comes from `CLINIC_ID`.

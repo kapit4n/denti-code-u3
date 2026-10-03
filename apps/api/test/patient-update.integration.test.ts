@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 
 import * as schema from '@denti-code-u3/database/schema';
 import { registerPatientsRoutes } from '../src/http/routes/patients.js';
-import { DrizzlePatientWriteRepository } from '../src/infrastructure/persistence/repositories/patient-write-repository.js';
+import { DrizzlePatientRepository } from '../src/infrastructure/persistence/repositories/patient-repository.js';
 import { systemClock } from '../src/infrastructure/clock/system-clock.js';
 import { uuidGenerator } from '../src/infrastructure/id/uuid-generator.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
@@ -119,8 +119,7 @@ describeIntegration('patients: editing (PostgreSQL)', () => {
       request.clinicId = scopedClinicId;
     });
     await registerPatientsRoutes(app, {
-      db,
-      patientWrites: new DrizzlePatientWriteRepository(db),
+      patients: new DrizzlePatientRepository(db),
       ids: uuidGenerator,
       clock: systemClock,
     });

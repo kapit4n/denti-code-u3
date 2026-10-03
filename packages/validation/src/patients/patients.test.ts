@@ -2,13 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   createPatientFormSchema,
   createPatientSchema,
-  paginatedPatientSchema,
   searchPatientsQuerySchema,
   updatePatientSchema,
 } from './index.js';
-
-const CLINIC_ID = '11111111-1111-4111-8111-111111111111';
-const PATIENT_ID = '22222222-2222-4222-8222-222222222222';
 
 describe('createPatientSchema', () => {
   it('accepts a minimal patient', () => {
@@ -140,32 +136,6 @@ describe('searchPatientsQuerySchema', () => {
   it('parses the onlyActive flag', () => {
     expect(searchPatientsQuerySchema.parse({ onlyActive: 'true' }).onlyActive).toBe(true);
     expect(searchPatientsQuerySchema.parse({ onlyActive: 'false' }).onlyActive).toBe(false);
-  });
-});
-
-describe('paginatedPatientSchema', () => {
-  it('accepts a well-formed page', () => {
-    const result = paginatedPatientSchema.safeParse({
-      data: [
-        {
-          id: PATIENT_ID,
-          clinicId: CLINIC_ID,
-          firstName: 'Ana',
-          lastName: 'Gómez',
-          isActive: true,
-          fullName: 'Ana Gómez',
-        },
-      ],
-      meta: { page: 1, pageSize: 25, total: 1 },
-    });
-
-    expect(result.success).toBe(true);
-  });
-
-  it('rejects a page missing its meta block', () => {
-    const result = paginatedPatientSchema.safeParse({ data: [] });
-
-    expect(result.success).toBe(false);
   });
 });
 

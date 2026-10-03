@@ -13,7 +13,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isUniqueViolation } from '../src/infrastructure/persistence/repositories/patient-write-repository.js';
+import { isUniqueViolation } from '../src/infrastructure/persistence/repositories/patient-repository.js';
 
 /** A bare driver error, as `postgres-js` throws it. */
 function driverError(code: string): object {

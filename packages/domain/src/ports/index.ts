@@ -22,7 +22,13 @@ import type {
 } from '@denti-code-u3/types';
 import type { Appointment, AppointmentStatus } from '../appointment/index.js';
 import type { Visit, VisitStatus } from '../visit/index.js';
-import type { EditablePatientDetails, Patient } from '../patient/index.js';
+import type {
+  EditablePatientDetails,
+  Patient,
+  PatientListEntry,
+  PatientOdontogram,
+  PatientProfile,
+} from '../patient/index.js';
 import type { Clinic, ClinicOperatingHours, ClinicRole } from '../organization/index.js';
 import type { Prescription } from '../prescription/index.js';
 
@@ -56,28 +62,35 @@ export interface PageRequest {
   readonly limit: number;
 }
 
-export interface PatientSearchCriteria {
-  readonly clinicId: ClinicId;
-  /** Matches name, phone or identification — the identifiers a receptionist knows. */
-  readonly text?: string;
+/**
+ * What the list endpoint is being asked for.
+ *
+ * `term` is matched against the names and the chart number — what a receptionist
+ * has in front of them, whether they think of the patient by name or by the number
+ * on the paperwork. `onlyActive` exists because a deactivated record stays
+ * searchable: hiding it entirely would make it impossible to find and reactivate,
+ * which is the opposite of what deactivating is for.
+ */
+export interface PatientSearchQuery {
+  readonly term?: string;
   readonly onlyActive?: boolean;
-  readonly page?: PageRequest;
+  readonly page: PageRequest;
 }
 
 /**
  * Patient writes: registration and editing.
  *
- * Narrower than `PatientRepository` on purpose. The read endpoints predate the
- * repository layer and still query Drizzle directly in their route handlers;
- * implementing `search` and `findById` here today would add two methods that
- * nothing calls, which is dead code pretending to be structure. Reads move here
- * when they are next touched.
- *
- * Both methods are single calls rather than a general `save`, because both have
- * an atomicity requirement that a caller driving separate calls cannot express.
+ * Narrower than `PatientRepository`, and split out because both methods have an
+ * atomicity requirement that a caller driving separate calls cannot express.
  * Reading the highest issued record number and inserting a patient with it are one
  * critical section; checking that a patient belongs to the clinic and writing to
  * it are one statement.
+ *
+ * This was once named `PatientRegistrationRepository`, with a comment explaining
+ * that the read methods were deliberately absent because nothing called them.
+ * Nothing called them because nothing implemented them, which is the same problem
+ * wearing a justification: the read routes went on querying Drizzle themselves.
+ * The reads now live here too.
  */
 export interface PatientWriteRepository {
   /**
@@ -105,9 +118,45 @@ export interface PatientWriteRepository {
   ): Promise<boolean>;
 }
 
+/**
+ * Reading patients, scoped to one clinic.
+ *
+ * Every method takes a `ClinicId`, and no method can be called without one. That
+ * is the whole safety story of multi-tenancy in this application: there is no
+ * overload without a clinic and no way to reach a patient you were not given a
+ * clinic for (ADR 0014).
+ *
+ * The read methods return *read models* rather than the `Patient` entity. A
+ * profile is the patient plus their appointments, visits, outstanding treatment
+ * and balance, which is an aggregate no single row holds — and returning an
+ * entity for it would mean pretending those columns belong to the patient.
+ */
 export interface PatientRepository extends PatientWriteRepository {
-  findById(clinicId: ClinicId, patientId: PatientId): Promise<Patient | undefined>;
-  search(criteria: PatientSearchCriteria): Promise<Page<Patient>>;
+  /**
+   * One page of the clinic's patients, plus the unpaged total.
+   *
+   * The total is returned rather than counted separately by the caller because the
+   * UI needs it for the page control, and computing it against a page of rows
+   * instead of the filtered set is how a list ends up claiming nine pages of one.
+   */
+  search(clinicId: ClinicId, query: PatientSearchQuery): Promise<Page<PatientListEntry>>;
+
+  /**
+   * The clinical profile, or `undefined` when this clinic holds no such patient.
+   *
+   * Anonymised records are not patients any more and are excluded here exactly as
+   * they are on write, so the two directions cannot disagree about whether a
+   * withdrawn record exists.
+   */
+  findProfile(clinicId: ClinicId, patientId: PatientId): Promise<PatientProfile | undefined>;
+
+  /**
+   * The odontogram chart, or `undefined` when this clinic holds no such patient.
+   *
+   * `undefined` and an empty chart are different answers: the first is a 404, the
+   * second is a patient whose teeth have never been charted.
+   */
+  findOdontogram(clinicId: ClinicId, patientId: PatientId): Promise<PatientOdontogram | undefined>;
 }
 
 export interface AppointmentRangeQuery {

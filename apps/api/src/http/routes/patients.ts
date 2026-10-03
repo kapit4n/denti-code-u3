@@ -5,46 +5,35 @@
  * `apps/api/src/http/plugins/clinic-scope.ts`). Two scoping details are worth
  * calling out because they are the ones that leak:
  *
- *  - the list filters `clinic_id`, so one clinic never sees another's patients;
- *  - the detail lookup filters `clinic_id` *and* `is_active`, and answers 404 —
- *    not 403 — for another clinic's patient, because revealing that an id
- *    exists elsewhere is itself a disclosure.
+ *  - every read goes through `PatientRepository`, whose methods all require a
+ *    `ClinicId`, so one clinic can never see another's patients;
+ *  - an id belonging to another clinic answers 404, not 403, because revealing
+ *    that an id exists elsewhere is itself a disclosure.
  *
- * Pagination is offset-based and bounded, and the search matches a single
- * normalised term across the name and record number rather than raw SQL
- * fragments, so a crafted `?q=` cannot widen the query.
+ * Pagination is offset-based and bounded. The search term is a normalised string
+ * matched against the name and record number inside the repository, never a SQL
+ * fragment, so a crafted `?q=` cannot widen the query.
+ *
+ * This file imports no database driver. It used to, and the filtering it had to
+ * repeat by hand is what let the odontogram endpoint answer for a withdrawn
+ * patient.
  */
 
 import type { FastifyInstance } from 'fastify';
-import { and, asc, count, desc, eq, gte, inArray, ne, or, sql } from 'drizzle-orm';
 
-import {
-  appointments,
-  charges,
-  clinics,
-  odontogramEntries,
-  patients,
-  payments,
-  treatmentPlanItems,
-  treatmentPlans,
-  visits,
-} from '@denti-code-u3/database/schema';
-import type { DentiDatabase } from '../../infrastructure/persistence/postgres/connection.js';
-import type { Clock, IdGenerator, PatientWriteRepository } from '@denti-code-u3/domain';
+import type { Clock, IdGenerator, PatientRepository } from '@denti-code-u3/domain';
 import { registerPatient, updatePatient } from '@denti-code-u3/domain';
 import { createPatientSchema, updatePatientSchema } from '@denti-code-u3/validation';
-import type { ClinicId, PatientId } from '@denti-code-u3/types';
+import { asPatientId, type ClinicId, type PatientId } from '@denti-code-u3/types';
 import { sendProblem } from '../problem.js';
 
 export interface PatientsDependencies {
-  readonly db: DentiDatabase;
   /**
-   * Only the write paths need it. The read endpoints below query Drizzle
-   * directly, which predates the repository layer; registration and editing go
-   * through the domain use case because allocating a record number atomically is
-   * not something a route handler should be doing by hand.
+   * Handles registration, editing and every read. Allocation of a record number
+   * is atomic inside it, and every read it performs is clinic-scoped, so neither
+   * is something a route handler has to be trusted with.
    */
-  readonly patientWrites: PatientWriteRepository;
+  readonly patients: PatientRepository;
   readonly ids: IdGenerator;
   readonly clock: Clock;
 }
@@ -66,28 +55,9 @@ function resolvePage(raw: unknown): number {
   return Math.max(1, Math.trunc(requested));
 }
 
-/**
- * Escape the LIKE metacharacters so a patient called `100%` is findable and a
- * search for `%` cannot match every row. Paired with the `ESCAPE '\'` in the
- * SQL below.
- */
-function escapeLikePattern(term: string): string {
-  return term.replace(/[\\%_]/g, (character) => `\\${character}`);
-}
-
-/**
- * A single search term folded to lower case, so matching is case-insensitive
- * without depending on the database collation.
- */
-function normaliseSearch(raw: unknown): string | null {
-  if (typeof raw !== 'string') return null;
-  const trimmed = raw.trim().toLowerCase();
-  return trimmed.length === 0 ? null : trimmed;
-}
-
 export async function registerPatientsRoutes(
   app: FastifyInstance,
-  { db, patientWrites, ids, clock }: PatientsDependencies,
+  { patients, ids, clock }: PatientsDependencies,
 ): Promise<void> {
   /**
    * Register a patient.
@@ -118,7 +88,7 @@ export async function registerPatientsRoutes(
 
     try {
       const { patient, recordNumber } = await registerPatient(clinicId, parsed.data, {
-        patients: patientWrites,
+        patients,
         ids,
         clock,
       });
@@ -178,7 +148,7 @@ export async function registerPatientsRoutes(
 
     try {
       const found = await updatePatient(clinicId, patientId as PatientId, parsed.data, {
-        patients: patientWrites,
+        patients,
         clock,
       });
 
@@ -202,55 +172,38 @@ export async function registerPatientsRoutes(
     }
   });
 
+  /**
+   * The patient list.
+   *
+   * A thin handler: parse the query, ask the repository, shape the envelope. The
+   * clinic filter is not applied here — it is not applied *anywhere* here, which is
+   * the point. `request.clinicId` is handed to the one method that can scope a
+   * query, so there is no code path in which a handler could forget it.
+   */
   app.get('/api/v1/patients', async (request, reply) => {
-    const clinicId = request.clinicId;
-    const query = request.query as { q?: string; page?: string; limit?: string };
+    const clinicId = request.clinicId as ClinicId;
+    const query = request.query as {
+      q?: string;
+      page?: string;
+      limit?: string;
+      onlyActive?: string;
+    };
 
-    const term = normaliseSearch(query.q);
     const page = resolvePage(query.page);
     const limit = resolvePageSize(query.limit);
 
-    /**
-     * `lower(...) LIKE lower($1) ESCAPE '\'` rather than `ILIKE`, so the
-     * escaping above is actually honoured and the behaviour is identical on
-     * every database collation.
-     */
-    const searchFilter = term
-      ? or(
-          sql`lower(${patients.firstName}) LIKE ${`%${escapeLikePattern(term)}%`} ESCAPE '\\'`,
-          sql`lower(${patients.lastName}) LIKE ${`%${escapeLikePattern(term)}%`} ESCAPE '\\'`,
-          sql`lower(coalesce(${patients.recordNumber}, '')) LIKE ${`%${escapeLikePattern(term)}%`} ESCAPE '\\'`,
-        )
-      : undefined;
-
-    const where = and(eq(patients.clinicId, clinicId), searchFilter);
-
     try {
-      const [rows, [totals]] = await Promise.all([
-        db
-          .select({
-            id: patients.id,
-            recordNumber: patients.recordNumber,
-            firstName: patients.firstName,
-            lastName: patients.lastName,
-            preferredName: patients.preferredName,
-            phone: patients.phone,
-            email: patients.email,
-            birthDate: patients.birthDate,
-            isActive: patients.isActive,
-            createdAt: patients.createdAt,
-          })
-          .from(patients)
-          .where(where)
-          .orderBy(asc(patients.lastName), asc(patients.firstName))
-          .limit(limit)
-          .offset((page - 1) * limit),
-        db.select({ total: count() }).from(patients).where(where),
-      ]);
+      const { items, total } = await patients.search(clinicId, {
+        term: query.q,
+        // Only honoured when actually sent as `true`. Defaulting a missing flag to
+        // false would hide every deactivated patient on a first page load, which
+        // is the opposite of the point of keeping them searchable.
+        onlyActive: query.onlyActive === 'true',
+        page: { offset: (page - 1) * limit, limit },
+      });
 
-      const total = totals?.total ?? 0;
       return {
-        items: rows,
+        items,
         pagination: {
           page,
           limit,
@@ -259,14 +212,7 @@ export async function registerPatientsRoutes(
         },
       };
     } catch (error) {
-      request.log.error({ err: error }, 'Failed to list patients');
-      return reply.status(500).send({
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Failed to fetch patients',
-          requestId: request.id,
-        },
-      });
+      return sendProblem(reply, request, error, 'Failed to list patients');
     }
   });
 
@@ -277,27 +223,24 @@ export async function registerPatientsRoutes(
    * open — allergies, the next appointment, recent visits and the outstanding
    * balance — because a profile that has to be assembled from five requests is a
    * profile that renders half-empty in practice.
+   *
+   * The aggregate is assembled in the repository rather than here, and the reason
+   * is a bug this route used to have: the response was a spread of the raw row, so
+   * `anonymized_at` was published on every profile load and any column added to
+   * `patients` later would have appeared in the API by accident. Naming the fields
+   * means a new column is invisible until someone adds it deliberately.
    */
   app.get('/api/v1/patients/:patientId', async (request, reply) => {
-    const clinicId = request.clinicId;
+    const clinicId = request.clinicId as ClinicId;
     const { patientId } = request.params as { patientId: string };
 
     try {
-      const [patient] = await db
-        .select()
-        .from(patients)
-        .where(
-          and(
-            eq(patients.clinicId, clinicId),
-            eq(patients.id, patientId),
-            // Anonymised records keep their row for traceability but must not be
-            // readable as a patient.
-            sql`${patients.anonymizedAt} is null`,
-          ),
-        )
-        .limit(1);
+      const profile = await patients.findProfile(clinicId, asPatientId(patientId));
 
-      if (!patient) {
+      if (!profile) {
+        // "No such patient" and "not in this clinic" are the same answer, so a
+        // caller cannot use this endpoint to discover that an id exists
+        // elsewhere (ADR 0014).
         return reply.status(404).send({
           error: {
             code: 'NOT_FOUND',
@@ -307,143 +250,27 @@ export async function registerPatientsRoutes(
         });
       }
 
-      const now = new Date();
-
-      // Only the single-row queries are destructured through `[row]`. A
-      // collection query bound the same way yields its *first row*, so
-      // `recentVisits` would have been one visit object rather than a list.
-      const [[upcomingAppointment], recentVisits, outstandingTreatmentItems, [balance]] =
-        await Promise.all([
-          db
-            .select({
-              id: appointments.id,
-              startsAt: appointments.startsAt,
-              durationMinutes: appointments.durationMinutes,
-              status: appointments.status,
-              dentistId: appointments.dentistId,
-            })
-            .from(appointments)
-            .where(
-              and(
-                eq(appointments.clinicId, clinicId),
-                eq(appointments.patientId, patientId),
-                gte(appointments.startsAt, now),
-                ne(appointments.status, 'CANCELLED'),
-              ),
-            )
-            .orderBy(asc(appointments.startsAt))
-            .limit(1),
-          db
-            .select({
-              id: visits.id,
-              status: visits.status,
-              startedAt: visits.startedAt,
-              endedAt: visits.endedAt,
-              reason: visits.reason,
-              summary: visits.summary,
-              createdAt: visits.createdAt,
-            })
-            .from(visits)
-            .where(and(eq(visits.clinicId, clinicId), eq(visits.patientId, patientId)))
-            .orderBy(desc(sql`coalesce(${visits.startedAt}, ${visits.createdAt})`))
-            .limit(10),
-          db
-            .select({
-              id: treatmentPlanItems.id,
-              planId: treatmentPlans.id,
-              planStatus: treatmentPlans.status,
-              title: treatmentPlans.title,
-              tooth: treatmentPlanItems.tooth,
-              quantity: treatmentPlanItems.quantity,
-              estimatedPriceMinor: treatmentPlanItems.estimatedPriceMinor,
-            })
-            .from(treatmentPlanItems)
-            .innerJoin(treatmentPlans, eq(treatmentPlans.id, treatmentPlanItems.treatmentPlanId))
-            .where(
-              and(
-                eq(treatmentPlans.clinicId, clinicId),
-                // The plan carries the patient, so this filter is what stops the
-                // profile from showing the whole clinic's outstanding work.
-                eq(treatmentPlans.patientId, patientId),
-                eq(treatmentPlanItems.isCompleted, false),
-                inArray(treatmentPlans.status, ['PROPOSED', 'ACCEPTED', 'IN_PROGRESS']),
-              ),
-            )
-            .orderBy(asc(treatmentPlans.createdAt))
-            .limit(25),
-          db
-            .select({
-              /**
-               * Billed minus paid, in minor units (see
-               * `packages/domain/src/billing/money.ts`). Discounts are already
-               * stored as absolute minor amounts on each charge, so the net is
-               * plain arithmetic; tax is left out because whether a clinic adds
-               * it at charge time or invoice time is an open product question
-               * (`docs/open-questions.md`) and guessing here would invent a
-               * total. Never a float: the whole expression is integer.
-               */
-              outstandingMinor: sql<number>`(
-                coalesce((
-                  select sum(${charges.unitPriceMinor} * ${charges.quantity} - ${charges.discountMinor})
-                  from ${charges}
-                  where ${charges.clinicId} = ${clinicId}
-                    and ${charges.patientId} = ${patientId}
-                ), 0)
-                - coalesce((
-                  select sum(${payments.amountMinor}) from ${payments}
-                  where ${payments.clinicId} = ${clinicId}
-                    and ${payments.patientId} = ${patientId}
-                ), 0)
-              )::int`,
-              chargeCount: sql<number>`(
-                select count(*) from ${charges}
-                where ${charges.clinicId} = ${clinicId}
-                  and ${charges.patientId} = ${patientId}
-              )::int`,
-              currencyCode: clinics.currencyCode,
-            })
-            .from(clinics)
-            .where(eq(clinics.id, clinicId))
-            .limit(1),
-        ]);
-
-      return {
-        ...patient,
-        upcomingAppointment: upcomingAppointment ?? null,
-        recentVisits: recentVisits ?? [],
-        outstandingTreatments: outstandingTreatmentItems ?? [],
-        financialBalance: {
-          /** Minor units of `currencyCode`. Never a decimal or a float. */
-          outstandingMinor: balance?.outstandingMinor ?? 0,
-          chargeCount: balance?.chargeCount ?? 0,
-          currencyCode: balance?.currencyCode ?? null,
-        },
-      };
+      return profile;
     } catch (error) {
-      request.log.error({ err: error }, 'Failed to read the patient profile');
-      return reply.status(500).send({
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Failed to fetch patient',
-          requestId: request.id,
-        },
-      });
+      return sendProblem(reply, request, error, 'Failed to read the patient profile');
     }
   });
 
-  /** The odontogram chart for one patient — the tooth-level clinical record. */
+  /**
+   * The odontogram chart for one patient: the tooth-level clinical record.
+   *
+   * `undefined` from the repository means the clinic holds no such patient, which
+   * is the same 404 the profile gives; `{ entries: [] }` is a real patient whose
+   * teeth have never been charted, and renders as an empty chart.
+   */
   app.get('/api/v1/patients/:patientId/odontogram', async (request, reply) => {
-    const clinicId = request.clinicId;
+    const clinicId = request.clinicId as ClinicId;
     const { patientId } = request.params as { patientId: string };
 
     try {
-      const [patient] = await db
-        .select({ id: patients.id })
-        .from(patients)
-        .where(and(eq(patients.clinicId, clinicId), eq(patients.id, patientId)))
-        .limit(1);
+      const odontogram = await patients.findOdontogram(clinicId, asPatientId(patientId));
 
-      if (!patient) {
+      if (!odontogram) {
         return reply.status(404).send({
           error: {
             code: 'NOT_FOUND',
@@ -453,30 +280,9 @@ export async function registerPatientsRoutes(
         });
       }
 
-      const entries = await db
-        .select({
-          id: odontogramEntries.id,
-          dentition: odontogramEntries.dentition,
-          tooth: odontogramEntries.tooth,
-          surfaces: odontogramEntries.surfaces,
-          condition: odontogramEntries.condition,
-          notes: odontogramEntries.notes,
-          recordedAt: odontogramEntries.recordedAt,
-        })
-        .from(odontogramEntries)
-        .where(eq(odontogramEntries.patientId, patientId))
-        .orderBy(asc(odontogramEntries.dentition), asc(odontogramEntries.tooth));
-
-      return { items: entries };
+      return odontogram;
     } catch (error) {
-      request.log.error({ err: error }, 'Failed to read the odontogram');
-      return reply.status(500).send({
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Failed to fetch the odontogram',
-          requestId: request.id,
-        },
-      });
+      return sendProblem(reply, request, error, 'Failed to read the odontogram');
     }
   });
 }

@@ -154,6 +154,38 @@ function`). ESLint 10 buys nothing here.
   Documented in `.env.example`, because getting it wrong 404s every request while
   the shell still renders.
 
+### Decisions from session 12 (patient read side)
+
+- **The patient read side goes through `PatientRepository`, like the write side.**
+  `search`, `findProfile` and `findOdontogram` were Drizzle queries written inside
+  the route handlers, and each one had to remember the clinic filter and the
+  withdrawn-record filter for itself. The odontogram's existence check had in fact
+  been written without `anonymized_at is null`, so a withdrawn patient's chart was
+  reachable at a URL whose profile had already stopped answering. A filter that only
+  exists because someone remembered it is a filter that will be forgotten. The port
+  cannot express a query without a `ClinicId`, so the class of mistake is now a
+  compile error rather than a review item.
+- **Read responses name their fields instead of spreading a database row.** The
+  profile used to be `{ ...patient, ... }`, which published `anonymizedAt` on every
+  load and would have published any column added to `patients` later. `PatientProfile`
+  lists what it returns, so a new column is invisible until someone adds it on
+  purpose.
+- **`undefined` and `{ entries: [] }` mean different things.** A missing patient and
+  a real patient with an uncharted odontogram are not the same answer — one is a
+  404, the other is an empty chart. A bare array could not express the difference,
+  which is why `PatientOdontogram` is an object.
+- **Name search folds accents explicitly, on both sides (ADR 0016).** The database
+  is `C`-collated on purpose, so `lower()` does not fold `Ñ` and sorting puts `Ñuñez`
+  after `Patient`. For a clinic that finds patients by typing, searching for `nunez`
+  and finding nothing reads as "this patient is not in our system".
+- **Response shapes live in the domain, not in Zod.** The frontend had hand-copied
+  nine interfaces from the API; `usePatientOdontogram` had drifted to expect `items`
+  where the API returns `entries` and nothing caught it, because no screen calls
+  that hook yet. The `packages/validation` response schemas were worse: unused, and
+  describing `{ data, meta }` and a `fullName` no endpoint has ever sent. Deleted
+  rather than corrected — a second declaration of a response shape is a second
+  thing to keep in sync. Zod is for requests, which is what it is now used for.
+
 ## Open questions
 
 See `docs/open-questions.md`. The Phase 1 question about the hidden `ends_at`
@@ -165,13 +197,15 @@ column is **closed** by ADR 0012. Still open:
 - **`design-mockup/dashboard-design.png` has not been analysed.** The provisional
   brand palette in `packages/app/src/styles/globals.css` needs to be confirmed
   against the supplied reference before any feature work begins.
-- **Clinic-scoped queries are enforced per request, not per repository.** ADR 0014
-  requires the clinic id on every clinical query. Today it is resolved once per
-  request in `apps/api/src/http/plugins/clinic-scope.ts` from `CLINIC_ID`, because
-  authentication does not exist. A repository still cannot _structurally_ forget
-  the scope, and the integration tests prove the profile route does not leak
-  across patients or clinics — but scope comes from ambient configuration until
-  auth lands. **This is a single-clinic assumption, not multi-tenancy.**
+- **A repository still cannot _structurally_ forget the scope, and the
+  integration tests prove the profile route does not leak across patients or
+  clinics — but scope comes from ambient configuration until auth lands. **This is
+  a single-clinic assumption, not multi-tenancy.**
+- **Patient phone is returned by the list endpoint while its column comment says
+  it is encrypted and never returned by list endpoints** (`database/schema/patient.ts`).
+  The column is plain `text`; the comment describes an intent the code does not
+  implement. Nothing reads phone for authorisation, so nothing leaks today, but the
+  two disagree and one of them has to change before any external access exists.
 - **The desktop shell has no native capability implementations yet.** It reports
   `hasNativeShell: true` from its declared target, but `saveFile` and OS-level
   `openExternal` still reject with `PlatformUnsupportedError`. Nothing consumes
@@ -191,9 +225,10 @@ by committed e2e specs. Remaining:
 3. [ ] Extend the e2e layer when Milestone 5 lands: appointment lifecycle, visit
        workspace, agenda views.
 
-**Milestone 4 — PATIENTS.** The read side is complete: searchable paginated list,
-global search, profile with allergies / next appointment / visits / outstanding
-treatments / balance, and the odontogram endpoint. Remaining:
+**Milestone 4 — PATIENTS.** Functionally complete on both sides: searchable
+paginated list, global search, profile with allergies / next appointment / visits /
+outstanding treatments / balance, the odontogram endpoint, registration and
+editing. Both sides now go through `PatientRepository`. Remaining:
 
 1. [x] **Patient registration** (create). `registerPatient` use case,
        `PatientWriteRepository` port, Drizzle implementation with an
@@ -208,9 +243,15 @@ treatments / balance, and the odontogram endpoint. Remaining:
        `isActive`, `createdAt` and `anonymizedAt` cannot be touched — absent from
        the body type, absent from the Drizzle `SET` list, and asserted in the
        integration tests. Anonymised records and other clinics' patients answer 404.
-3. [ ] **Quick actions** on the dashboard: "New Patient" is live; "New Visit"
+3. [x] **Read side behind the repository.** `search`, `findProfile` and
+       `findOdontogram` moved out of the route handlers into `DrizzlePatientRepository`,
+       which `apps/api/src/http/routes/patients.ts` now calls with nothing but a
+       clinic id. That file no longer imports a database driver, and a withdrawn
+       patient's chart — which used to be reachable, because the existence check
+       written in the handler omitted `anonymized_at` — now answers 404.
+4. [ ] **Quick actions** on the dashboard: "New Patient" is live; "New Visit"
        stays disabled until the agenda forms arrive with Milestone 5.
-4. [ ] Appointments list/creation, visit capture and the clinical timeline, which
+5. [ ] Appointments list/creation, visit capture and the clinical timeline, which
        the roadmap lists under M4 but which are the natural output of M5.
 
 **Milestone 5 onward** — agenda, visits, odontogram, treatments, payments,
@@ -366,5 +407,36 @@ because of the `_` flat-route prefix. `Link` accepts absolute paths, so every
 click-driven navigation is unaffected; the one imperative call (returning to the
 profile after a save) builds an `href` instead, with a comment saying so. Not worth
 changing the route naming to avoid.
+
+**Verification** (see `docs/progress/LOG.md` for the full table).
+
+Session 12: the patient read side, moved behind the repository. The reads were the
+last part of the feature still living in the route handlers, and moving them was
+not a style change: the odontogram's existence check had been written without
+`anonymized_at is null`, so a withdrawn patient's chart was reachable at a URL whose
+profile had already stopped answering. Nothing tested for it, because the test for
+"another patient's visits are not shown" is not the test for "a withdrawn patient's
+chart is not shown", and only one of them had been written. `PatientRepository`
+cannot express a read without a `ClinicId`, so that class of mistake is now a
+compile error. `apps/api/src/http/routes/patients.ts` went from 482 to 283 lines
+and no longer imports a database driver.
+
+Two smaller things the move exposed. The profile used to be built by spreading a
+database row, which published `anonymizedAt` on every load and would have
+published any column added to `patients` afterwards; it now names its fields. And
+the frontend had hand-copied nine response interfaces from the API, one of which had
+already drifted — `usePatientOdontogram` expected `items` where the endpoint
+returns `entries`, and nothing noticed because no screen calls that hook yet. The
+copies are gone, and so are the unused Zod response schemas, which described an
+envelope of `{ data, meta }` and a `fullName` that no endpoint has ever sent.
+
+The unexpected part was the database's collation. The cluster is initialised with
+`--locale=C` so that a developer's container and a production server behave
+identically, and `C` sorts by byte value while `lower()` folds only ASCII. So
+`Ñuñez` sorted after `Patient`, and a search for `nunez` returned nothing — for a
+clinic that finds patients by typing, that reads as "this patient is not in our
+system". ADR 0016 records folding both sides of the comparison explicitly with
+immutable `translate()`, chosen over `unaccent()` because it needs no extension and
+can still be indexed.
 
 **Verification** (see `docs/progress/LOG.md` for the full table).

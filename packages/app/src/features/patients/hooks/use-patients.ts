@@ -1,98 +1,31 @@
 /**
  * Patient query hooks.
  *
- * A thin layer over the API client: it knows the endpoints and the response
- * shapes, and nothing else. Search and paging state stay in the URL (see the
- * route), so a filtered list is linkable and the back button behaves.
+ * A thin layer over the API client: it knows the endpoints and nothing else.
+ * Search and paging state stay in the URL (see the route), so a filtered list is
+ * linkable and the back button behaves.
+ *
+ * The response shapes are imported from the domain rather than re-declared here.
+ * They used to be hand-copied, which is how `usePatientOdontogram` came to expect
+ * `items` while the API has always returned `entries` — nothing caught it because
+ * no screen calls that hook yet. One declaration, written where the shape is
+ * defined, cannot drift.
  */
 
 import { useQuery } from '@tanstack/react-query';
 
+import type { PatientListEntry, PatientOdontogram, PatientProfile } from '@denti-code-u3/domain';
+
 import { useApiClient } from '../../../query/api-client-provider.js';
 
-/** A row in the patient list. Deliberately not the whole record. */
-export interface PatientSummary {
-  readonly id: string;
-  readonly recordNumber: string | null;
-  readonly firstName: string;
-  readonly lastName: string;
-  readonly preferredName: string | null;
-  readonly phone: string | null;
-  readonly email: string | null;
-  readonly birthDate: string | null;
-  readonly isActive: boolean;
-  readonly createdAt: string;
-}
-
-export interface PatientPagination {
-  readonly page: number;
-  readonly limit: number;
-  readonly total: number;
-  readonly totalPages: number;
-}
-
 export interface PatientListResponse {
-  readonly items: readonly PatientSummary[];
-  readonly pagination: PatientPagination;
-}
-
-export interface PatientAppointment {
-  readonly id: string;
-  readonly startsAt: string;
-  readonly durationMinutes: number;
-  readonly status: string;
-  readonly dentistId: string | null;
-}
-
-export interface PatientVisit {
-  readonly id: string;
-  readonly status: string;
-  readonly startedAt: string | null;
-  readonly endedAt: string | null;
-  readonly reason: string | null;
-  readonly summary: string | null;
-  readonly createdAt: string;
-}
-
-export interface PatientTreatmentItem {
-  readonly id: string;
-  readonly planId: string;
-  readonly planStatus: string;
-  readonly title: string | null;
-  readonly tooth: string | null;
-  readonly quantity: number;
-  /** Minor units of the clinic currency. Format with `formatMinorUnits`. */
-  readonly estimatedPriceMinor: number;
-}
-
-export interface PatientBalance {
-  readonly outstandingMinor: number;
-  readonly chargeCount: number;
-  readonly currencyCode: string | null;
-}
-
-/** The full profile: the record plus its clinical context. */
-export interface PatientProfile extends PatientSummary {
-  readonly clinicId: string;
-  readonly identificationNumber: string | null;
-  readonly address: string | null;
-  readonly allergies: string | null;
-  readonly additionalData: Record<string, unknown>;
-  readonly updatedAt: string;
-  readonly upcomingAppointment: PatientAppointment | null;
-  readonly recentVisits: readonly PatientVisit[];
-  readonly outstandingTreatments: readonly PatientTreatmentItem[];
-  readonly financialBalance: PatientBalance;
-}
-
-export interface OdontogramEntry {
-  readonly id: string;
-  readonly dentition: string;
-  readonly tooth: string;
-  readonly surfaces: readonly string[];
-  readonly condition: string;
-  readonly notes: string | null;
-  readonly recordedAt: string;
+  readonly items: readonly PatientListEntry[];
+  readonly pagination: {
+    readonly page: number;
+    readonly limit: number;
+    readonly total: number;
+    readonly totalPages: number;
+  };
 }
 
 export function usePatientList(options: {
@@ -135,10 +68,7 @@ export function usePatientOdontogram(patientId: string) {
 
   return useQuery({
     queryKey: ['patients', 'odontogram', patientId],
-    queryFn: () =>
-      client.get<{ readonly items: readonly OdontogramEntry[] }>(
-        `/patients/${patientId}/odontogram`,
-      ),
+    queryFn: () => client.get<PatientOdontogram>(`/patients/${patientId}/odontogram`),
     enabled: patientId.length > 0,
   });
 }

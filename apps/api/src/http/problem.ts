@@ -84,17 +84,26 @@ export function toApiErrorCode(domainCode: DomainErrorCode): ApiErrorCode {
   return 'DOMAIN_RULE_VIOLATION';
 }
 
+/**
+ * @param context Names the operation for the server log. Never sent to the
+ * client: a 500 says "quote the request id", and which query blew up is the
+ * server's problem to answer, not the caller's to be told about.
+ */
 export function sendProblem(
   reply: FastifyReply,
   request: FastifyRequest,
   error: unknown,
+  context?: string,
 ): FastifyReply {
   const requestId = request.id;
   const { status, body } = toApiProblem(error, requestId);
 
   if (status >= 500) {
     // The detail stays on the server; the client only gets the request id.
-    request.log.error({ err: error, requestId }, 'Unhandled error while serving a request');
+    request.log.error(
+      { err: error, requestId },
+      context ?? 'Unhandled error while serving a request',
+    );
   } else {
     request.log.warn({ requestId, code: body.code }, 'Request rejected');
   }

@@ -48,18 +48,6 @@ export const phoneSchema = z
 
 export const emailSchema = z.email();
 
-/** Envelope for every paginated list response. */
-export function paginatedResponseSchema<TItem extends z.ZodType>(itemSchema: TItem) {
-  return z.object({
-    data: z.array(itemSchema),
-    meta: z.object({
-      page: z.int().min(1),
-      pageSize: z.int().min(1),
-      total: z.int().min(0),
-    }),
-  });
-}
-
 /**
  * The single error envelope every failing API response uses.
  * `requestId` is what makes a user-reported error traceable in the logs.

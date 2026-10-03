@@ -32,11 +32,11 @@ import {
   type UpdatePatientFormOutput,
   type UpdatePatientFormValues,
 } from '@denti-code-u3/validation';
+import type { PatientProfile } from '@denti-code-u3/domain';
 
 import { useUpdatePatient } from '../hooks/use-update-patient.js';
 import { describePatientFailure } from '../describe-patient-failure.js';
 import { PatientFields } from './patient-fields.js';
-import type { PatientProfile } from '../hooks/use-patients.js';
 
 export interface PatientEditFormProps {
   readonly patient: PatientProfile;

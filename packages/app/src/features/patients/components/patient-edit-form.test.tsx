@@ -12,6 +12,8 @@
  */
 
 import { ApiClient, ApiClientError } from '@denti-code-u3/api-client';
+import type { PatientProfile } from '@denti-code-u3/domain';
+import { asClinicId, asPatientId } from '@denti-code-u3/types';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -21,13 +23,14 @@ import type { ReactNode } from 'react';
 import { ApiClientProvider } from '../../../query/api-client-provider.js';
 import { PatientEditForm } from './patient-edit-form.js';
 import { describePatientFailure } from '../describe-patient-failure.js';
-import type { PatientProfile } from '../hooks/use-patients.js';
 
 const BASE_URL = 'http://api.test/api/v1';
 
 const patient: PatientProfile = {
-  id: 'pat-1',
-  clinicId: 'cli-1',
+  // Branded on purpose: an id is not interchangeable with an appointment's,
+  // and `asPatientId` is the only way to say so.
+  id: asPatientId('pat-1'),
+  clinicId: asClinicId('cli-1'),
   recordNumber: 'P-000042',
   firstName: 'Ana',
   lastName: 'García',

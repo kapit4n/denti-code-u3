@@ -1,39 +1,21 @@
 /**
  * Patient boundary schemas.
  *
- * These are the single definition used by the create/edit form, the API request
- * and the API response — so a field cannot exist on the client but be rejected by
- * the server, or vice versa.
+ * **Requests only.** These are the single definition used by the create/edit form
+ * and by the API when it parses an incoming body — so a field cannot exist on the
+ * client but be rejected by the server, or vice versa.
+ *
+ * Responses are typed by `@denti-code-u3/domain` instead
+ * (`PatientListEntry`, `PatientProfile`, `PatientOdontogram`). This file used to
+ * declare response schemas too, and they drifted: they described a list envelope
+ * of `{ data, meta }` where the API returns `{ items, pagination }`, and a
+ * `fullName` and `ageInYears` that no endpoint has ever sent. A schema nothing
+ * parses is a comment with a runtime cost, and a schema that parses the wrong shape
+ * is worse than none.
  */
 
 import { z } from 'zod';
-import {
-  emailSchema,
-  isoDateSchema,
-  moneyMinorUnitsSchema,
-  paginatedResponseSchema,
-  phoneSchema,
-  uuidSchema,
-} from '../common/index.js';
-
-export const patientSchema = z.object({
-  id: uuidSchema,
-  clinicId: uuidSchema,
-  firstName: z.string().trim().min(1).max(80),
-  lastName: z.string().trim().min(1).max(80),
-  preferredName: z.string().trim().min(1).max(80).nullish(),
-  identificationNumber: z.string().trim().min(1).max(32).nullish(),
-  phone: phoneSchema.nullish(),
-  email: emailSchema.nullish(),
-  birthDate: isoDateSchema.nullish(),
-  isActive: z.boolean(),
-});
-
-/** The full name is derived, never posted by the client. */
-export const patientSummarySchema = patientSchema.extend({
-  fullName: z.string(),
-  ageInYears: z.int().min(0).max(130).nullish(),
-});
+import { emailSchema, isoDateSchema, phoneSchema } from '../common/index.js';
 
 /**
  * Messages are spelled out rather than left to Zod's defaults.
@@ -150,21 +132,6 @@ export const searchPatientsQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
 
-export const patientBalanceSchema = z.object({
-  currency: z.string().length(3),
-  outstandingMinor: moneyMinorUnitsSchema,
-  unallocatedPaymentsMinor: moneyMinorUnitsSchema,
-  balanceMinor: moneyMinorUnitsSchema,
-});
-
-export const patientProfileSchema = patientSummarySchema.extend({
-  balance: patientBalanceSchema.nullish(),
-});
-
-export const paginatedPatientSchema = paginatedResponseSchema(patientSummarySchema);
-
-export type PatientDto = z.infer<typeof patientSchema>;
-export type PatientSummaryDto = z.infer<typeof patientSummarySchema>;
 export type CreatePatientInput = z.infer<typeof createPatientSchema>;
 export type CreatePatientFormValues = z.input<typeof createPatientFormSchema>;
 /** What the form hands to the mutation: blanks already resolved to absent. */
@@ -173,5 +140,3 @@ export type UpdatePatientInput = z.infer<typeof updatePatientSchema>;
 export type UpdatePatientFormValues = z.input<typeof updatePatientFormSchema>;
 export type UpdatePatientFormOutput = z.output<typeof updatePatientFormSchema>;
 export type SearchPatientsQuery = z.infer<typeof searchPatientsQuerySchema>;
-export type PatientBalanceDto = z.infer<typeof patientBalanceSchema>;
-export type PatientProfileDto = z.infer<typeof patientProfileSchema>;
