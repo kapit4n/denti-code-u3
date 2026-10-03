@@ -63,14 +63,53 @@ describe('createPatientSchema', () => {
 });
 
 describe('updatePatientSchema', () => {
-  it('accepts a partial update', () => {
-    const result = updatePatientSchema.safeParse({ phone: '+54 9 11 5555 1234' });
+  it('accepts an edit that changed only a phone number', () => {
+    const result = updatePatientSchema.safeParse({
+      firstName: 'Ana',
+      lastName: 'Gómez',
+      phone: '+54 9 11 5555 1234',
+    });
 
     expect(result.success).toBe(true);
   });
 
-  it('accepts an empty update', () => {
-    expect(updatePatientSchema.safeParse({}).success).toBe(true);
+  it('requires the names, because an edit replaces the editable set', () => {
+    expect(updatePatientSchema.safeParse({}).success).toBe(false);
+    expect(updatePatientSchema.safeParse({ firstName: 'Ana' }).success).toBe(false);
+  });
+
+  it('silently drops isActive rather than applying it', () => {
+    // Deactivating is a separate, deliberate action, so the flag must not ride in
+    // on an edit. A Zod object strips unknown keys instead of rejecting them,
+    // which is the right behaviour for a boundary: an extra field from a newer
+    // client should not fail an otherwise valid request. What matters is that it
+    // is dropped, which is asserted here and again at the storage layer — a
+    // stripped field that reached the database would deactivate a patient because
+    // someone opened the form to fix a surname.
+    const result = updatePatientSchema.parse({
+      firstName: 'Ana',
+      lastName: 'Gómez',
+      isActive: false,
+    });
+
+    expect(result).not.toHaveProperty('isActive');
+  });
+
+  it('silently drops a record number, which the server owns', () => {
+    // ADR 0015: the chart number is assigned per clinic and may not be chosen.
+    const result = updatePatientSchema.parse({
+      firstName: 'Ana',
+      lastName: 'Gómez',
+      recordNumber: 'P-999999',
+    });
+
+    expect(result).not.toHaveProperty('recordNumber');
+  });
+
+  it('covers the same fields as the create body', () => {
+    expect(Object.keys(updatePatientSchema.shape).sort()).toEqual(
+      Object.keys(createPatientSchema.shape).sort(),
+    );
   });
 });
 

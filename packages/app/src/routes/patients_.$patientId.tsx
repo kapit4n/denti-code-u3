@@ -70,6 +70,18 @@ function PatientProfile() {
           {patient.recordNumber ? `${patient.recordNumber} · ` : ''}
           {patient.isActive ? 'Active patient' : 'Inactive patient'}
         </p>
+        <div className="pt-2">
+          {/*
+            A link, not a button that swaps in a form. Editing is a separate page
+            with its own URL, so a refresh keeps the form open and the back button
+            from the profile returns here rather than reloading the list.
+          */}
+          <Button asChild variant="outline" size="sm">
+            <Link to="/patients/$patientId/edit" params={{ patientId }} data-testid="edit-patient">
+              Edit details
+            </Link>
+          </Button>
+        </div>
       </header>
 
       <div className="grid gap-4 lg:grid-cols-3">

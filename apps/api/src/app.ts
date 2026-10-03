@@ -19,7 +19,7 @@ import { registerClinicScope } from './http/plugins/clinic-scope.js';
 import { registerHealthRoutes } from './http/routes/health.js';
 import { registerDashboardRoutes } from './http/routes/dashboard.js';
 import { registerPatientsRoutes } from './http/routes/patients.js';
-import { DrizzlePatientRegistrationRepository } from './infrastructure/persistence/repositories/patient-registration-repository.js';
+import { DrizzlePatientWriteRepository } from './infrastructure/persistence/repositories/patient-write-repository.js';
 import { systemClock } from './infrastructure/clock/system-clock.js';
 import { uuidGenerator } from './infrastructure/id/uuid-generator.js';
 import { sendProblem } from './http/problem.js';
@@ -83,7 +83,7 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   });
   await registerPatientsRoutes(app, {
     db: connection.db,
-    registrations: new DrizzlePatientRegistrationRepository(connection.db),
+    patientWrites: new DrizzlePatientWriteRepository(connection.db),
     ids: uuidGenerator,
     clock: systemClock,
   });

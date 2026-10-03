@@ -30,21 +30,21 @@ import {
   visits,
 } from '@denti-code-u3/database/schema';
 import type { DentiDatabase } from '../../infrastructure/persistence/postgres/connection.js';
-import type { Clock, IdGenerator, PatientRegistrationRepository } from '@denti-code-u3/domain';
-import { registerPatient } from '@denti-code-u3/domain';
-import { createPatientSchema } from '@denti-code-u3/validation';
-import type { ClinicId } from '@denti-code-u3/types';
+import type { Clock, IdGenerator, PatientWriteRepository } from '@denti-code-u3/domain';
+import { registerPatient, updatePatient } from '@denti-code-u3/domain';
+import { createPatientSchema, updatePatientSchema } from '@denti-code-u3/validation';
+import type { ClinicId, PatientId } from '@denti-code-u3/types';
 import { sendProblem } from '../problem.js';
 
 export interface PatientsDependencies {
   readonly db: DentiDatabase;
   /**
-   * Only the write path needs it. The read endpoints below query Drizzle
-   * directly, which predates the repository layer; the registration route goes
-   * through the domain use case because assigning a record number atomically is
+   * Only the write paths need it. The read endpoints below query Drizzle
+   * directly, which predates the repository layer; registration and editing go
+   * through the domain use case because allocating a record number atomically is
    * not something a route handler should be doing by hand.
    */
-  readonly registrations: PatientRegistrationRepository;
+  readonly patientWrites: PatientWriteRepository;
   readonly ids: IdGenerator;
   readonly clock: Clock;
 }
@@ -87,7 +87,7 @@ function normaliseSearch(raw: unknown): string | null {
 
 export async function registerPatientsRoutes(
   app: FastifyInstance,
-  { db, registrations, ids, clock }: PatientsDependencies,
+  { db, patientWrites, ids, clock }: PatientsDependencies,
 ): Promise<void> {
   /**
    * Register a patient.
@@ -118,7 +118,7 @@ export async function registerPatientsRoutes(
 
     try {
       const { patient, recordNumber } = await registerPatient(clinicId, parsed.data, {
-        patients: registrations,
+        patients: patientWrites,
         ids,
         clock,
       });
@@ -141,6 +141,63 @@ export async function registerPatientsRoutes(
       // once trimmed) arrive from the use case as a `DomainError`, which
       // `sendProblem` maps to the right status. Letting it escape would make every
       // rejected form a 500 and tell the user nothing about what to fix.
+      return sendProblem(reply, request, error);
+    }
+  });
+
+  /**
+   * Edit a patient.
+   *
+   * `PUT`, not `PATCH`: the body carries every editable field, so an absent
+   * optional field means "this patient does not have one" rather than "leave the
+   * existing value". That is what lets a receptionist clear an email recorded in
+   * error, which a merge cannot express without inventing a null-for-unset
+   * convention.
+   *
+   * Answers 204 with no body. The updated record is not returned because building
+   * it honestly would mean reading the patient again immediately after writing it,
+   * and the client refetches the profile it is about to display anyway. A response
+   * body assembled from the request instead of the row would be a value that was
+   * never stored.
+   */
+  app.put('/api/v1/patients/:patientId', async (request, reply) => {
+    const clinicId = request.clinicId as ClinicId;
+    const { patientId } = request.params as { patientId: string };
+    const parsed = updatePatientSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.status(422).send({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'The patient details could not be accepted',
+          details: { issues: parsed.error.issues },
+          requestId: request.id,
+        },
+      });
+    }
+
+    try {
+      const found = await updatePatient(clinicId, patientId as PatientId, parsed.data, {
+        patients: patientWrites,
+        clock,
+      });
+
+      if (!found) {
+        // The same answer for "no such patient" and "not in this clinic". Anything
+        // else tells a caller that an id exists somewhere it cannot reach.
+        return reply.status(404).send({
+          error: {
+            code: 'NOT_FOUND',
+            message: 'No patient with that id exists in this clinic',
+            requestId: request.id,
+          },
+        });
+      }
+
+      return reply.status(204).send();
+    } catch (error) {
+      // A birth date that has not happened is a domain rule, not a schema rule, so
+      // it can only be caught here.
       return sendProblem(reply, request, error);
     }
   });

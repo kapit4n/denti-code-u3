@@ -2,7 +2,7 @@
  * The write side of patient persistence, on PostgreSQL.
  *
  * This is the first implementation behind a domain port, and it exists because
- * registration needs two things that are awkward inline in a route handler:
+ * patient writes need two things that are awkward inline in a route handler:
  *
  *  - **clinic scoping on write.** ADR 0014 requires `clinic_id` to come from the
  *    scope the caller was given, never from ambient state. Here it is the
@@ -16,10 +16,15 @@
  * would add two methods nothing calls. Reads move across when next touched.
  */
 
-import { sql } from 'drizzle-orm';
-
-import { nextPatientRecordNumber, type PatientRegistrationRepository } from '@denti-code-u3/domain';
-import { DomainError } from '@denti-code-u3/domain';
+import {
+  DomainError,
+  nextPatientRecordNumber,
+  type EditablePatientDetails,
+  type Patient,
+  type PatientWriteRepository,
+} from '@denti-code-u3/domain';
+import type { ClinicId, PatientId } from '@denti-code-u3/types';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { patients } from '@denti-code-u3/database/schema';
 
 import type { DentiDatabase } from '../postgres/connection.js';
@@ -40,7 +45,7 @@ type RecordNumberRow = Record<string, unknown> & {
   readonly record_number?: string | null;
 };
 
-export class DrizzlePatientRegistrationRepository implements PatientRegistrationRepository {
+export class DrizzlePatientWriteRepository implements PatientWriteRepository {
   constructor(private readonly db: DentiDatabase) {}
 
   /**
@@ -58,7 +63,7 @@ export class DrizzlePatientRegistrationRepository implements PatientRegistration
    * The lock key is derived from the clinic id, not a fixed constant, so two
    * clinics in the same database never block each other.
    */
-  async register(patient: Parameters<PatientRegistrationRepository['register']>[0]) {
+  async register(patient: Patient) {
     const clinicId = patient.clinicId;
 
     try {
@@ -105,6 +110,54 @@ export class DrizzlePatientRegistrationRepository implements PatientRegistration
       }
       throw error;
     }
+  }
+
+  /**
+   * Overwrite the editable fields, scoped to one clinic, in a single statement.
+   *
+   * Three properties this method exists to guarantee:
+   *
+   *  - **The clinic scope is in the `WHERE` clause.** Not a lookup the caller did
+   *    first and handed over. A patient id that belongs to another clinic must be
+   *    indistinguishable from one that does not exist (ADR 0014).
+   *  - **Anonymised records are out of reach.** They keep their row for
+   *    traceability, so without this an edit could revive a record the product has
+   *    deliberately withdrawn.
+   *  - **Only the editable columns are written.** `record_number` is the chart the
+   *    front desk quotes, `created_at` is a fact about the past, and `is_active` is
+   *    a deliberate separate action. None of them is in the `SET` list, so no
+   *    amount of carelessness upstream can move them.
+   *
+   * Returns whether a row was matched, which is how "not in this clinic" reaches
+   * the caller as a 404 rather than a silent success.
+   */
+  async update(
+    clinicId: ClinicId,
+    patientId: PatientId,
+    details: EditablePatientDetails,
+  ): Promise<boolean> {
+    const rows = await this.db
+      .update(patients)
+      .set({
+        firstName: details.firstName,
+        lastName: details.lastName,
+        preferredName: details.preferredName ?? null,
+        identificationNumber: details.identificationNumber ?? null,
+        phone: details.phone ?? null,
+        email: details.email ?? null,
+        birthDate: details.birthDate ?? null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(patients.id, patientId),
+          eq(patients.clinicId, clinicId),
+          isNull(patients.anonymizedAt),
+        ),
+      )
+      .returning({ id: patients.id });
+
+    return rows.length > 0;
   }
 }
 

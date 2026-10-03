@@ -94,6 +94,19 @@ describe('ApiClient requests', () => {
     expect(new Headers(init?.headers).get('content-type')).toBe('application/json');
   });
 
+  it('sends PUT for a replacement, not PATCH for a merge', async () => {
+    // The verb is the contract: the patient endpoint reads a missing field as
+    // "clear it". A client quietly sending PATCH would leave a corrected-away
+    // email in the database, which no test above would catch.
+    const fetchImpl = fetchMock(async () => new Response(null, { status: 204 }));
+    const client = clientWith(fetchImpl);
+
+    await client.put('/patients/1', { firstName: 'Ana', lastName: 'García' });
+
+    expect(fetchImpl.mock.calls[0]?.[1]?.method).toBe('PUT');
+    expect(fetchImpl.mock.calls[0]?.[1]?.body).toBe('{"firstName":"Ana","lastName":"García"}');
+  });
+
   it('returns undefined for 204 instead of trying to parse a body', async () => {
     const fetchImpl = fetchMock(async () => new Response(null, { status: 204 }));
     const client = clientWith(fetchImpl);

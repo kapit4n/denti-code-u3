@@ -98,6 +98,23 @@ export class ApiClient {
     return this.request('POST', path, { ...options, body });
   }
 
+  /**
+   * Replace a resource with the body supplied.
+   *
+   * Distinct from `patch` on purpose. The two mean different things to the server:
+   * a PUT says "this is the whole record now", so a field missing from the body is
+   * a field the record no longer has. A client that reaches for the wrong one of
+   * these produces silently different stored data rather than a type error, so the
+   * two names are kept apart.
+   */
+  async put<TResponse, TBody>(
+    path: string,
+    body: TBody,
+    options: RequestOptions<TBody> = {},
+  ): Promise<TResponse> {
+    return this.request('PUT', path, { ...options, body });
+  }
+
   async patch<TResponse, TBody>(
     path: string,
     body: TBody,
@@ -116,7 +133,7 @@ export class ApiClient {
    * mismatch instead of surfacing as `undefined is not an object` in a component.
    */
   private async request<TResponse>(
-    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
     options: RequestOptions<unknown>,
   ): Promise<TResponse> {

@@ -116,9 +116,28 @@ export const createPatientFormSchema = z.object({
   birthDate: blankIsAbsent(createPatientSchema.shape.birthDate),
 });
 
-export const updatePatientSchema = createPatientSchema.partial().extend({
-  isActive: z.boolean().optional(),
-});
+/**
+ * The body of a patient edit.
+ *
+ * The same fields as `createPatientSchema` — an edit covers the same ground — but
+ * read with different meaning: an absent optional field means "this patient does
+ * not have one", not "leave the stored value". That is why the endpoint is a PUT
+ * and why it can clear an email without inventing a null-for-unset convention.
+ *
+ * `isActive` is deliberately absent. Deactivating a patient changes what the
+ * product may do with the record; it is a deliberate action with its own
+ * confirmation, not a checkbox on a form someone opened to fix a misspelling.
+ */
+export const updatePatientSchema = createPatientSchema;
+
+/**
+ * The form's view of an edit.
+ *
+ * Blank optional inputs resolve to absent, exactly as on the create form, so an
+ * edit can clear a field with the same gesture that registers a patient without
+ * one.
+ */
+export const updatePatientFormSchema = createPatientFormSchema;
 
 export const searchPatientsQuerySchema = z.object({
   /** Matches name, phone or identification. */
@@ -151,6 +170,8 @@ export type CreatePatientFormValues = z.input<typeof createPatientFormSchema>;
 /** What the form hands to the mutation: blanks already resolved to absent. */
 export type CreatePatientFormOutput = z.output<typeof createPatientFormSchema>;
 export type UpdatePatientInput = z.infer<typeof updatePatientSchema>;
+export type UpdatePatientFormValues = z.input<typeof updatePatientFormSchema>;
+export type UpdatePatientFormOutput = z.output<typeof updatePatientFormSchema>;
 export type SearchPatientsQuery = z.infer<typeof searchPatientsQuerySchema>;
 export type PatientBalanceDto = z.infer<typeof patientBalanceSchema>;
 export type PatientProfileDto = z.infer<typeof patientProfileSchema>;

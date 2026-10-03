@@ -1,9 +1,14 @@
 import type { ClinicId, IsoDate, PatientId } from '@denti-code-u3/types';
 import type { Clock } from '../shared/clock.js';
-import { DomainError } from '../shared/errors.js';
 import type { IdGenerator } from '../shared/id-generator.js';
-import type { PatientRegistrationRepository } from '../ports/index.js';
-import { assertValidBirthDate, type Patient } from './patient.js';
+import type { PatientWriteRepository } from '../ports/index.js';
+import type { Patient } from './patient.js';
+import {
+  editablePatientDetailsFrom,
+  type PatientDetailsInput,
+} from './editable-patient-details.js';
+
+export { assertPlausibleBirthDate } from './editable-patient-details.js';
 
 /**
  * Patient registration.
@@ -19,19 +24,10 @@ import { assertValidBirthDate, type Patient } from './patient.js';
  */
 
 /** What a receptionist supplies. Everything not listed here is derived. */
-export interface RegisterPatientInput {
-  readonly firstName: string;
-  readonly lastName: string;
-  readonly preferredName?: string;
-  readonly identificationNumber?: string;
-  readonly phone?: string;
-  readonly email?: string;
-  /** ISO calendar date, `YYYY-MM-DD`. */
-  readonly birthDate?: IsoDate;
-}
+export type RegisterPatientInput = PatientDetailsInput;
 
 export interface RegisterPatientDependencies {
-  readonly patients: PatientRegistrationRepository;
+  readonly patients: PatientWriteRepository;
   readonly ids: IdGenerator;
   readonly clock: Clock;
 }
@@ -73,65 +69,22 @@ export function nextPatientRecordNumber(issued: readonly string[]): string {
   return `${RECORD_NUMBER_PREFIX}${String(highest + 1).padStart(RECORD_NUMBER_DIGITS, '0')}`;
 }
 
-/**
- * Rejects a birth date that is not a real day, or that has not happened yet.
- *
- * The future check is separate from `assertValidBirthDate` because that one
- * answers "is this a date?" and this one answers "is it a date a patient could
- * have been born on?". A date of `2999-01-01` passes the first and fails the
- * second, and registering it would make every age calculation in the product
- * wrong for the life of the record.
- */
-export function assertPlausibleBirthDate(birthDate: IsoDate, today: IsoDate): void {
-  assertValidBirthDate(birthDate);
-  if (birthDate > today) {
-    throw new DomainError('INVALID_INPUT', 'birthDate cannot be in the future', {
-      birthDate,
-      today,
-    });
-  }
-}
-
-/** Trims and rejects a name that is empty once trimmed. */
-function requireName(value: string, field: 'firstName' | 'lastName'): string {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    throw new DomainError('INVALID_INPUT', `${field} is required`, { field });
-  }
-  return trimmed;
-}
-
-/** Optional text: trimmed, and dropped entirely when it was only whitespace. */
-function optionalText(value: string | undefined): string | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? undefined : trimmed;
-}
-
 export async function registerPatient(
   clinicId: ClinicId,
   input: RegisterPatientInput,
   { patients, ids, clock }: RegisterPatientDependencies,
 ): Promise<RegisteredPatient> {
-  const birthDate = optionalText(input.birthDate);
-  if (birthDate !== undefined) {
-    assertPlausibleBirthDate(birthDate, clock.now().slice(0, 10));
-  }
-
-  const patientId = ids.nextId() as PatientId;
+  // The rules are checked before anything is generated, so a rejected form cannot
+  // consume an id or a record number.
+  const details = editablePatientDetailsFrom(input, clock.now().slice(0, 10) as IsoDate);
 
   const patient: Patient = {
-    id: patientId,
+    id: ids.nextId() as PatientId,
     clinicId,
-    firstName: requireName(input.firstName, 'firstName'),
-    lastName: requireName(input.lastName, 'lastName'),
-    preferredName: optionalText(input.preferredName),
-    identificationNumber: optionalText(input.identificationNumber),
-    phone: optionalText(input.phone),
-    email: optionalText(input.email),
-    birthDate,
+    ...details,
+    // A newly registered patient is always active. There is no "register
+    // someone as inactive" workflow, and starting one would create a chart that
+    // cannot be found by search until someone remembers to activate it.
     isActive: true,
   };
 

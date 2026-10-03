@@ -51,13 +51,27 @@ issued plus one, zero-padded to six digits, growing past a million rather than
 wrapping). The domain does not own the _reservation_ — that is a concurrency
 concern and belongs to infrastructure, behind a port.
 
-The port is one method:
+The port is one method for registration, and grew to two when editing arrived:
 
 ```ts
-interface PatientRegistrationRepository {
+interface PatientWriteRepository {
   register(patient: Patient): Promise<{ readonly recordNumber: string }>;
+  update(
+    clinicId: ClinicId,
+    patientId: PatientId,
+    details: EditablePatientDetails,
+  ): Promise<boolean>;
 }
 ```
+
+It was called `PatientRegistrationRepository` while registration was the only
+write. `update` belongs to the same port because it is the same decision — which
+columns a write may touch, and which it may not. Splitting them would have put
+that rule in two files. The `update` method has no `recordNumber` parameter, and
+`EditablePatientDetails` excludes the number, the active flag and the timestamps
+from its type, so no edit can move a chart number even by passing one at runtime:
+the value has nowhere to bind to, and the Drizzle `SET` list does not name the
+column.
 
 The first version of this port was `save(patient, { recordNumber })` plus
 `nextRecordNumber(clinicId)`. It was rejected for a reason worth recording: a port

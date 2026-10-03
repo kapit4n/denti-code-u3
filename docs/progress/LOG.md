@@ -492,9 +492,62 @@ Mutation-checked: removing the advisory lock, unwrapping the wrong error object,
 rejecting blank optional fields again, and changing the fixture key back to the
 pathname alone.
 
+## Session 11 — patient editing
+
+Completed the write side of Milestone 4. `updatePatient` use case, `PUT
+/api/v1/patients/:id`, and the form at `/patients/$patientId/edit`, reached from an
+"Edit details" action on the profile.
+
+| Check                       | Result                                                              |
+| --------------------------- | ------------------------------------------------------------------- |
+| `pnpm run typecheck`        | 12/12                                                               |
+| `pnpm run lint`             | 12/12 and `BOUNDARY GUARD OK`                                       |
+| `pnpm run format`           | clean                                                               |
+| `pnpm run test`             | 260 unit (domain 115, app 57, validation 38, api 35, api-client 15) |
+| `pnpm run test:integration` | 35/35                                                               |
+| `pnpm run build`            | 5/5                                                                 |
+| `pnpm run test:e2e`         | 46/46 (37 + 9 editing)                                              |
+
+New tests: 9 for `updatePatient`, 5 for the edit schema semantics, 13 integration
+against PostgreSQL, 14 component, 9 e2e, 1 for `ApiClient.put`.
+
+Mutation-checked, each reverted after confirming the failure:
+
+| Mutation                                          | Caught by           |
+| ------------------------------------------------- | ------------------- |
+| Drop `clinicId`/`anonymizedAt` from the `WHERE`   | 2 integration tests |
+| Make the edit renumber the chart (`P-999999`)     | 3 integration tests |
+| Send the edit as `PATCH` instead of `PUT`         | 3 component tests   |
+| Skip `editablePatientDetailsFrom` in the use case | 6 domain tests      |
+
+The first attempt at the third one — writing a client-supplied `recordNumber` into
+the `SET` list — passed, because the value is stripped before it ever reaches the
+repository and so arrives `undefined`. It proved the schema's stripping, not the
+guarantee. Renumbering unconditionally is the mutation that actually tests the
+claim.
+
+The endpoint is a **PUT carrying the complete editable set**, not a PATCH of the
+changed fields. A merge cannot express the case that matters most here — an email
+recorded in error — because it can only leave the old value in place. An absent
+optional field means "no longer recorded", which is also why `updatePatientSchema`
+is the create schema rather than the partial it started as.
+
+Three things worth remembering from this session:
+
+- **Zod strips unknown keys; it does not reject them.** So "an edit must not change
+  `isActive` or `recordNumber`" cannot be enforced in the schema. The guarantee
+  lives in the write: `EditablePatientDetails` omits them so there is nowhere to
+  bind, and the Drizzle `SET` list does not name those columns. Both asserted
+  against PostgreSQL.
+- **Clinic scope and `anonymized_at` are in the `WHERE` clause**, not in a lookup
+  the caller performed first. Another clinic's patient and an anonymised record
+  both answer 404, so an id cannot be probed for existence.
+- **`??` does not catch an empty string.** `describePatientFailure` used
+  `message ?? fallback`, so a server fault with a blank message rendered an empty
+  red alert. Now `||`, with a test.
+
 **Still open**
 
-- Patient editing: no use case, endpoint or form. `updatePatientSchema` is ready.
 - `PatientRepository.search` / `findById` are still unimplemented on the read side,
   which still query Drizzle in their route handlers.
 - Dashboard `<h1>` is a time-of-day greeting rather than the page name.

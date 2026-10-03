@@ -16,7 +16,7 @@ import {
   registerPatient,
   type Patient,
 } from './index.js';
-import type { PatientRegistrationRepository } from '../ports/index.js';
+import type { PatientWriteRepository } from '../ports/index.js';
 import { DomainError } from '../shared/errors.js';
 import type { Clock } from '../shared/clock.js';
 import type { IdGenerator } from '../shared/id-generator.js';
@@ -33,7 +33,7 @@ function sequentialIds(): IdGenerator {
   return { nextId: () => `patient-${++counter}` };
 }
 
-interface FakeRepository extends PatientRegistrationRepository {
+interface FakeRepository extends PatientWriteRepository {
   readonly saved: { patient: Patient; recordNumber?: string }[];
   issued: string[];
 }
@@ -48,6 +48,10 @@ function fakeRepository(issued: string[] = ['P-000001', 'P-000002']): FakeReposi
       this.issued.push(recordNumber);
       saved.push({ patient, recordNumber });
       return { recordNumber };
+    },
+    // Registration is what this file is about; `updatePatient` has its own.
+    async update() {
+      throw new Error('not used by these tests');
     },
   };
 }

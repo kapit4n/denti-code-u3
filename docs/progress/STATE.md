@@ -9,11 +9,10 @@
 **PHASE 3 — CLINICAL FEATURES** (Milestones 3 and 4 of `docs/roadmap.md`)
 
 **Status: Milestone 3 complete, and Milestone 4 complete on both sides — the
-patient read side and registration.** All verified in a real browser. What is _not_
-done is stated under "Remaining work" below: patient _editing_ (registration ships
-create only), and the appointment/visit forms, which are disabled placeholders
-because the roadmap lists them as M4 deliverables but their use cases are the
-natural output of Milestone 5.
+patient read side, registration and editing.** All verified in a real browser.
+What is _not_ done is stated under "Remaining work" below: the appointment/visit
+forms, which are disabled placeholders because the roadmap lists them as M4
+deliverables but their use cases are the natural output of Milestone 5.
 
 ## Task origin
 
@@ -197,14 +196,18 @@ global search, profile with allergies / next appointment / visits / outstanding
 treatments / balance, and the odontogram endpoint. Remaining:
 
 1. [x] **Patient registration** (create). `registerPatient` use case,
-       `PatientRegistrationRepository` port, Drizzle implementation with an
+       `PatientWriteRepository` port, Drizzle implementation with an
        atomic per-clinic record number, `POST /api/v1/patients`, the
        `createPatientFormSchema` + React Hook Form form at `/patients/new`, and
        both "New Patient" actions enabled. Record numbers are server-assigned and
        sequential per clinic: `P-000001`, `P-000002`, … Never sent by a client.
-2. [ ] **Patient editing.** `updatePatientSchema` exists and the port is ready for
-       it, but no use case, endpoint or form. Registration creates only; the
-       profile has no edit affordance yet.
+2. [x] **Patient editing.** `updatePatient` use case, `PUT /api/v1/patients/:id`,
+       and the form at `/patients/$patientId/edit`, reached from an "Edit details"
+       action on the profile. The write is a **PUT, not a PATCH**: the body carries
+       every editable field, so clearing a field clears it. `recordNumber`,
+       `isActive`, `createdAt` and `anonymizedAt` cannot be touched — absent from
+       the body type, absent from the Drizzle `SET` list, and asserted in the
+       integration tests. Anonymised records and other clinics' patients answer 404.
 3. [ ] **Quick actions** on the dashboard: "New Patient" is live; "New Visit"
        stays disabled until the agenda forms arrive with Milestone 5.
 4. [ ] Appointments list/creation, visit capture and the clinical timeline, which
@@ -327,3 +330,41 @@ Also fixed in the e2e harness: fixtures were keyed by pathname alone, so
 answered with the list fixture. Fixtures are now keyed by `'/path'` or
 `'POST /path'`, and requests are recorded with their bodies so a spec can assert
 what was actually sent.
+
+Session 11: patient editing, completing the write side of Milestone 4. Began by
+extracting the editable field set out of registration, because the two forms must
+not drift: `editablePatientDetailsFrom` now owns trimming, the required-name rule,
+blank-optional normalisation and the birth-date check, and both use cases call it.
+`registerPatient` and `updatePatient` are then the same operation over different
+starting state.
+
+The one real design decision was the verb. The obvious endpoint is
+`PATCH /patients/:id` with the fields the user changed — and it cannot express the
+case that matters most here: an email recorded in error, which a merge can only
+leave in place. So it is a `PUT` carrying the complete editable set, where an
+absent optional field means "no longer recorded". That made `updatePatientSchema`
+the create schema rather than the partial it was, and `ApiClient` grew a `put()`
+so the verb is stated at the call site instead of hidden in a `post()`.
+
+Two decisions that cost correctness rather than elegance, both found by testing:
+
+- Zod objects _strip_ unknown keys rather than rejecting them. So an edit cannot be
+  forbidden from sending `isActive` or `recordNumber` at the schema — it is
+  silently ignored. The real guarantee has to live in the write itself:
+  `EditablePatientDetails` omits those fields from the type so there is nowhere for
+  them to bind, and the Drizzle `SET` list does not name those columns, so a
+  stripped value has nothing to reach. Both are asserted against PostgreSQL,
+  because a schema test can only prove the parse, not the write.
+- `describePatientFailure` used `apiError.message ?? fallback`. An empty string is
+  nullish-adjacent but not nullish, so a server fault that arrived with a blank
+  message rendered an empty red alert — which reads as "no error" while the save
+  quietly failed. Now `||`, with a test for the empty message.
+
+Also worth recording: TanStack Router's imperative `navigate()` types `to` as a
+path _descendant_ of the current route, and the patient profile is a tree-sibling
+because of the `_` flat-route prefix. `Link` accepts absolute paths, so every
+click-driven navigation is unaffected; the one imperative call (returning to the
+profile after a save) builds an `href` instead, with a comment saying so. Not worth
+changing the route naming to avoid.
+
+**Verification** (see `docs/progress/LOG.md` for the full table).

@@ -127,13 +127,25 @@ async function ensureRouted(page: Page): Promise<ApiState> {
     const fixture =
       state.fixtures.get(`${method} ${url.pathname}`) ?? state.fixtures.get(url.pathname);
     if (fixture) {
+      const status = fixture.status ?? 200;
+
+      // 204 and 205 carry no body by definition, and `Fixture.body` is required
+      // so a fixture cannot be half-specified. Sending one anyway produces a
+      // response the browser is entitled to treat as malformed, and the spec then
+      // fails somewhere other than the behaviour it is testing.
+      const isBodyless = status === 204 || status === 205;
+
       await route.fulfill({
-        status: fixture.status ?? 200,
-        contentType: 'application/json',
-        // Serialised per request: `fulfill` keeps a reference to the body, so a
-        // spec that mutates its fixture afterwards would change what the page
-        // receives on the next call.
-        body: JSON.stringify(fixture.body ?? {}),
+        status,
+        ...(isBodyless
+          ? {}
+          : {
+              contentType: 'application/json',
+              // Serialised per request: `fulfill` keeps a reference to the body, so
+              // a spec that mutates its fixture afterwards would change what the
+              // page receives on the next call.
+              body: JSON.stringify(fixture.body ?? {}),
+            }),
       });
       return;
     }

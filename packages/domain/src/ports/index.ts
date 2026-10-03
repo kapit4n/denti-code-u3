@@ -22,7 +22,7 @@ import type {
 } from '@denti-code-u3/types';
 import type { Appointment, AppointmentStatus } from '../appointment/index.js';
 import type { Visit, VisitStatus } from '../visit/index.js';
-import type { Patient } from '../patient/index.js';
+import type { EditablePatientDetails, Patient } from '../patient/index.js';
 import type { Clinic, ClinicOperatingHours, ClinicRole } from '../organization/index.js';
 import type { Prescription } from '../prescription/index.js';
 
@@ -65,7 +65,7 @@ export interface PatientSearchCriteria {
 }
 
 /**
- * The write side of patient persistence, which is all registration needs.
+ * Patient writes: registration and editing.
  *
  * Narrower than `PatientRepository` on purpose. The read endpoints predate the
  * repository layer and still query Drizzle directly in their route handlers;
@@ -73,14 +73,13 @@ export interface PatientSearchCriteria {
  * nothing calls, which is dead code pretending to be structure. Reads move here
  * when they are next touched.
  *
- * One method rather than `save` plus `nextRecordNumber`, because the two must be
- * atomic together: reading the highest issued number and inserting a patient with
- * it are a single critical section, and a port that lets a caller drive them
- * separately cannot promise that. The caller therefore cannot choose a record
- * number even if it wanted to — which is right, since renumbering a patient's
- * chart is not something this product does.
+ * Both methods are single calls rather than a general `save`, because both have
+ * an atomicity requirement that a caller driving separate calls cannot express.
+ * Reading the highest issued record number and inserting a patient with it are one
+ * critical section; checking that a patient belongs to the clinic and writing to
+ * it are one statement.
  */
-export interface PatientRegistrationRepository {
+export interface PatientWriteRepository {
   /**
    * Stores a new patient and assigns its clinic-scoped record number.
    *
@@ -90,9 +89,23 @@ export interface PatientRegistrationRepository {
    * them in front of a patient who is already at the desk.
    */
   register(patient: Patient): Promise<{ readonly recordNumber: string }>;
+
+  /**
+   * Overwrite the editable fields of a patient in one clinic.
+   *
+   * `clinicId` is part of the write, not a precondition checked by the caller, so
+   * that an edit cannot reach across clinics (ADR 0014). Returns false when the
+   * clinic holds no such patient — including when it belongs to another clinic,
+   * which must be indistinguishable from not existing.
+   */
+  update(
+    clinicId: ClinicId,
+    patientId: PatientId,
+    details: EditablePatientDetails,
+  ): Promise<boolean>;
 }
 
-export interface PatientRepository extends PatientRegistrationRepository {
+export interface PatientRepository extends PatientWriteRepository {
   findById(clinicId: ClinicId, patientId: PatientId): Promise<Patient | undefined>;
   search(criteria: PatientSearchCriteria): Promise<Page<Patient>>;
 }
