@@ -1,14 +1,18 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 4 (router, query client and API client wired into the shared app)
+> Last updated: session 8 (Milestone 3 dashboard + Milestone 4 patients, with the
+> query defects that only running the app could find)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
 
-**PHASE 2 — APPLICATION SHELL** (Milestone 2 of `docs/roadmap.md`)
+**PHASE 3 — CLINICAL FEATURES** (Milestones 3 and 4 of `docs/roadmap.md`)
 
-**Status: Milestone 2 complete.** Design system, shell layout, theme, routing foundation, and clinic scoping decision are all in place. Milestone 1 remains complete; its checklist below is kept as
-the record of what the foundation guarantees.
+**Status: Milestone 3 and Milestone 4 substantially implemented and verified in a
+real browser.** Milestones 1 and 2 remain complete. What is _not_ done is stated
+under "Remaining work" below — most importantly, patient registration and the
+appointment/visit forms are still disabled placeholders, because the roadmap lists
+them as M4 deliverables but the underlying write-side use cases do not exist yet.
 
 ## Task origin
 
@@ -45,25 +49,54 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 4)
+## Verification log (last run, session 8)
 
-| Command                     | Result                                                    |
-| --------------------------- | --------------------------------------------------------- |
-| `pnpm run typecheck`        | 12/12 tasks pass                                          |
-| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`                     |
-| `pnpm run format:check`     | All files match Prettier                                  |
-| `pnpm run test`             | 12/12 tasks, 165 tests pass (5 integration tests skipped) |
-| `pnpm run test:integration` | 5/5 pass against real PostgreSQL 17                       |
-| `pnpm run build`            | 5/5 tasks pass                                            |
-| `pnpm run test:e2e`         | 5/5 pass in headless Chromium                             |
-| API boot                    | `/health` ok, `/ready` reports `database: ok`             |
-| Web dev server (`:5173`)    | Serves, route tree mounts, console clean                  |
-| Desktop Vite (`:5174`)      | Serves, badge reports `Desktop`, console clean            |
+| Command                     | Result                                                       |
+| --------------------------- | ------------------------------------------------------------ |
+| `pnpm run typecheck`        | 12/12 tasks pass                                             |
+| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`                        |
+| `pnpm run format:check`     | All files match Prettier                                     |
+| `pnpm run test`             | 12/12 tasks pass                                             |
+| `pnpm run test:integration` | 10/10 pass against real PostgreSQL 17                        |
+| `pnpm run build`            | not run this session — deferred deliberately (see below)     |
+| `pnpm run test:e2e`         | not run this session; pages verified by hand instead         |
+| API boot                    | `/health` ok; all 5 dashboard + 3 patient routes return 200  |
+| Seed                        | `pnpm run db:seed` idempotent, clinic id matches `.env`      |
+| Web dev server (`:5173`)    | Dashboard, list, profile and global search render, no errors |
 
-Per-package unit tests: domain 81, validation 28, api-client 14, api 12, app 30.
+Per-package unit tests: domain 90, validation 28, api-client 14, api 23, app 30.
 
-Three defects were found by the browser suite that no unit test could have caught;
-all three are described in ADR 0013.
+**On skipping the build:** the user asked for implementation first and for the
+expensive full build review to be deferred, because it was slow. Everything else
+above _was_ run. `pnpm run build` and `pnpm run test:e2e` are still owed before
+the milestone is signed off, and the browser verification was done with a
+throwaway Playwright script rather than a committed spec — it should become a
+real e2e spec in the same milestone.
+
+**Defects found by running the app that no unit test could have caught.** Each
+one produced plausible-looking output rather than an error, which is why review
+missed all of them:
+
+1. Treatments were scoped by clinic but not by patient — one patient saw the
+   whole clinic's outstanding plans. A data-privacy bug.
+2. `const [[row], [rows]] = await Promise.all([...])` binds collections to their
+   _first row_, not the array, and an empty result destructures to `undefined`
+   rather than `[]`. `recentVisits` and `outstandingTreatments` arrived as single
+   objects and then vanished entirely when empty.
+3. The dashboard drew "today" at UTC midnight, so a clinic at UTC-6 saw the wrong
+   day's book for six hours every evening.
+4. `VITE_API_URL` omitted `/api/v1`, so every API call 404ed while the app still
+   rendered its shell.
+5. `/patients/:id` rendered the patient list: `patients.tsx` had no `<Outlet />`.
+6. The header's search box was dead UI bound to local state, and the working
+   `GlobalPatientSearch` component was never mounted.
+
+Regression coverage now exists for (1) and (2) in
+`apps/api/test/patient-profile-scope.integration.test.ts`, which drives the real
+route through `inject` — a test that re-implemented the query would have kept
+passing while the route leaked data. (3) is covered by 9 unit tests in
+`apps/api/src/application/clinic-time-window.test.ts`, including both
+daylight-saving directions.
 
 ## Decisions made this session (not yet in ADRs)
 
@@ -89,6 +122,36 @@ function`). ESLint 10 buys nothing here.
   fails on a forbidden import, a database driver outside the API, or a route file
   inside a deployment shell.
 
+### Decisions from session 8 (M3 + M4)
+
+- **Clinic day boundaries are resolved in the API, from the clinic's own
+  timezone.** Reporting windows are application-layer calendar arithmetic
+  (`apps/api/src/application/clinic-time-window.ts`), not SQL and not client-side
+  formatting. The clinic row is authoritative; `CLINIC_TIMEZONE` is only a
+  fallback for when it cannot be read. Two clinics served by one process must not
+  share a clock.
+- **The patient profile is one request, not five.** The endpoint returns the
+  record plus allergies, next appointment, recent visits, outstanding treatments
+  and balance together. A profile assembled from five calls renders half-empty in
+  practice, and it makes the clinic-scoping guarantee auditable in one place.
+- **Patient list state is component state, not router search params.** The
+  installed `@tanstack/router-plugin` (1.167.x) generates a route tree without the
+  `Register` augmentation `@tanstack/router-core` 1.171 reads, and the generated
+  file carries `@ts-nocheck` — so search-param typing degrades to `any`
+  _silently_. Rather than paper over it with casts, list state is local and
+  explicitly typed. Revisit when the plugin is upgraded. See `docs/open-questions.md`.
+- **`patients.tsx` and `patients_.$patientId.tsx` are flat siblings, not nested.**
+  The underscore opts out of nesting, so the profile does not have to render
+  inside the list via an `<Outlet />`.
+- **`pnpm run db:seed` creates the clinic at a fixed UUID** that matches
+  `CLINIC_ID` in `.env.example`. A generated id would have to be copied into
+  `.env` by hand, and a stale `.env` silently scopes the whole API to a clinic
+  that does not exist.
+- **`VITE_API_URL` must include `/api/v1`.** `ApiClient` concatenates paths onto
+  the base URL verbatim, so the version prefix is part of the configured value.
+  Documented in `.env.example`, because getting it wrong 404s every request while
+  the shell still renders.
+
 ## Open questions
 
 See `docs/open-questions.md`. The Phase 1 question about the hidden `ends_at`
@@ -100,31 +163,39 @@ column is **closed** by ADR 0012. Still open:
 - **`design-mockup/dashboard-design.png` has not been analysed.** The provisional
   brand palette in `packages/app/src/styles/globals.css` needs to be confirmed
   against the supplied reference before any feature work begins.
-- **Clinic-scoped queries are not yet enforced.** Every clinical row carries
-  `clinic_id`, but nothing stops a repository from forgetting it. Belongs with the
-  repository shape, which is a feature milestone rather than shell work.
+- **Clinic-scoped queries are enforced per request, not per repository.** ADR 0014
+  requires the clinic id on every clinical query. Today it is resolved once per
+  request in `apps/api/src/http/plugins/clinic-scope.ts` from `CLINIC_ID`, because
+  authentication does not exist. A repository still cannot _structurally_ forget
+  the scope, and the integration tests prove the profile route does not leak
+  across patients or clinics — but scope comes from ambient configuration until
+  auth lands. **This is a single-clinic assumption, not multi-tenancy.**
 - **The desktop shell has no native capability implementations yet.** It reports
   `hasNativeShell: true` from its declared target, but `saveFile` and OS-level
   `openExternal` still reject with `PlatformUnsupportedError`. Nothing consumes
   them yet; the seam is `mountApp({ capabilities })` when a feature needs one.
 
-## Remaining work in this milestone
+## Remaining work
 
-**Milestone 2 — APPLICATION SHELL.** Step 1 (routing, query client, API client) is
-done. What remains:
+**Milestone 3 — DASHBOARD.** Functionally complete and API-driven. Remaining:
 
-1. Analyse `design-mockup/dashboard-design.png` and confirm or correct the
-   provisional palette in `packages/app/src/styles/globals.css`. This blocks
-   feature work: everything downstream inherits these tokens.
-2. [x] Add shadcn/ui primitives to `packages/ui` (button, input, dialog, table, select,
-       toast).
-3. [x] Build the shell layout: sidebar, header, global search, user menu, responsive
-       breakpoints.
-4. [x] Theme: light/dark with a persisted preference.
-5. [x] A not-found route and an error boundary, now that there are routes to miss.
-6. [x] Decide clinic scoping in the repository shape (open question above) — documented in ADR 0014.
+1. [ ] `pnpm run build` and `pnpm run test:e2e`, which were deferred this session.
+2. [ ] Promote the throwaway browser script into committed e2e specs so the
+       dashboard metrics are regression-protected, not just manually verified.
 
-Dashboard and every clinical feature come after the shell.
+**Milestone 4 — PATIENTS.** The read side is complete: searchable paginated list,
+global search, profile with allergies / next appointment / visits / outstanding
+treatments / balance, and the odontogram endpoint. Remaining:
+
+1. [ ] **Patient registration** (create/edit). The "New Patient" buttons are
+       disabled placeholders; no write use case exists yet.
+2. [ ] **Quick actions** on the dashboard ("New Visit", "New Patient") navigate
+       nowhere, because the appointment and visit forms arrive with Milestone 5.
+3. [ ] Appointments list/creation, visit capture and the clinical timeline, which
+       the roadmap lists under M4 but which are the natural output of M5.
+
+**Milestone 5 onward** — agenda, visits, odontogram, treatments, payments,
+inventory, reports, auth: not started.
 
 ## Last session log
 
@@ -165,4 +236,38 @@ Session 5: Milestone 2 design foundation. Analysed `design-mockup/dashboard-desi
 
 Session 6: Completed Milestone 2B — built shared application shell (sidebar, header with global search/user menu/theme toggle/notifications), added ThemeProvider with persisted preference, implemented not-found route and ErrorBoundary. Restructured to keep AppRoot frame compatible with existing tests. All 30 app tests pass; workspace typecheck/lint/format/test/build green.
 
-(End of file - total ~180 lines)
+Session 7: Milestone 3, the dashboard. Built the read model first — appointments
+today with patient names, status grouping, revenue from `payments.amount_minor`
+(the `appointments` table has no `total` column, so the first attempt at
+"revenue today" was reading a column that does not exist), active patients,
+pending treatment items, occupancy derived from real operating hours and active
+dentists rather than a hard-coded capacity, and a calendar aggregation. Then the
+shared-app widgets on top of it. `packages/app/src/routes/index.tsx` was restored
+as the FoundationStatus page because existing tests assert that route.
+
+Session 8: Milestone 4 plus a correctness pass on Milestone 3. Built the patient
+read side: searchable paginated list, global search, and a single-request profile
+carrying allergies, next appointment, recent visits, outstanding treatments and
+balance; plus the odontogram endpoint. `pnpm run db:seed` now creates a clinic at
+a fixed UUID with operating hours, dentists, patients, appointments, a visit, an
+accepted treatment plan, charges and partial payments, so the dashboard and the
+profile have real data instead of an empty database.
+
+The session then turned into a defect hunt, because the code typechecked and
+passed its own tests while returning confidently wrong answers. Six defects,
+listed under "Verification log" above, each producing plausible output rather
+than an error: treatments scoped by clinic but not by patient (a data-privacy
+bug), collection queries destructured to their first row and then to `undefined`
+when empty, "today" drawn at UTC midnight, `VITE_API_URL` missing `/api/v1` so
+every request 404ed, `/patients/:id` rendering the list because the parent route
+had no `<Outlet />`, and a header search box bound to local state while the
+working search component sat unmounted. Each was found by running the app and
+reading the rendered output, not by reading code. Fixed, and covered: 9 unit
+tests for the clinic-time window maths (both DST directions), 5 integration tests
+driving the real patient route through Fastify `inject` against PostgreSQL, and
+config tests for the now-required `CLINIC_ID`. Verified by hand in a real browser:
+dashboard, list, both profiles and the global search all render with a clean
+console. `pnpm run build` and `pnpm run test:e2e` were deferred at the user's
+request and remain owed.
+
+(End of file - total ~260 lines)

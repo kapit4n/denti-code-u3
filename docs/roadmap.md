@@ -72,6 +72,12 @@ language, driven by reusable widgets and real query data.
 **Exit criteria:** every metric is a query against the API, computed by the API
 from the domain; no hard-coded mockup values; widgets are reusable primitives.
 
+**Status: implemented, not yet signed off.** Every metric is API-computed and
+rendered in the browser with a clean console. Outstanding: `pnpm run build` and
+`pnpm run test:e2e` were deferred, and browser verification should become
+committed specs. "New Visit" / "New Patient" are disabled placeholders because
+the forms arrive with Milestone 5. See `docs/progress/STATE.md`.
+
 ---
 
 ## Milestone 4 — PATIENTS
@@ -85,6 +91,13 @@ from the domain; no hard-coded mockup values; widgets are reusable primitives.
 
 **Exit criteria:** patient search works from anywhere in the app; the profile is
 the central clinical context.
+
+**Status: the read side is complete; the write side does not exist.** Searchable
+paginated list, global search in the header, and a single-request profile
+(allergies, next appointment, recent visits, outstanding treatments, balance) are
+all done and verified in a browser. Patient registration, and the appointment /
+visit forms the quick actions point at, are not implemented — they need write
+use cases that do not exist yet. See `docs/progress/STATE.md`.
 
 ---
 

@@ -261,3 +261,71 @@ Recorded in `docs/decisions/0013-shells-declare-a-target-the-app-owns-the-rest.m
   every feature inherits the tokens it defines.
 - The desktop shell declares `hasNativeShell: true` but has no native
   implementations; `saveFile` rejects. Nothing consumes it yet.
+
+---
+
+## Sessions 7–8 — Dashboard (M3) and patients (M4)
+
+**What changed**
+
+- Dashboard read model and endpoints: today's appointments with patient names,
+  status grouping, revenue from `payments.amount_minor`, active patients, pending
+  treatment items, occupancy derived from real operating hours × active dentists,
+  and a calendar aggregation. `appointments` has no `total` column, so revenue
+  cannot come from the agenda.
+- Dashboard widgets in the shared app: stat cards, today's appointments, calendar
+  preview, recent patients, upcoming visits, quick actions.
+- Patient read side: searchable paginated list, global search, and a
+  single-request profile (allergies, next appointment, recent visits, outstanding
+  treatments, balance), plus the odontogram endpoint.
+- `pnpm run db:seed` now creates a clinic at a fixed UUID matching `CLINIC_ID`,
+  with operating hours, dentists, patients, appointments, a visit, an accepted
+  treatment plan, charges and a partial payment.
+- `CLINIC_ID` is required and validated as a UUID; the API refuses to boot
+  without it rather than serving an arbitrary clinic.
+- New: `apps/api/src/application/clinic-time-window.ts` (clinic-local day, month
+  and weekday boundaries) and `formatMinorUnits` in the domain.
+
+**Defects found by running the app** — all six produced plausible output rather
+than an error, which is why review missed them:
+
+1. Outstanding treatments were filtered by clinic but **not by patient**, so a
+   profile showed the whole clinic's plans. Data-privacy bug.
+2. `const [[row], [rows]] = await Promise.all([...])` binds a collection to its
+   _first row_, and an empty result destructures to `undefined` rather than `[]`.
+   `recentVisits`/`outstandingTreatments` arrived as single objects, then
+   vanished entirely when empty, crashing the client on `.length`.
+3. The dashboard drew "today" at UTC midnight — wrong day for six hours a day for
+   any clinic not on UTC.
+4. `VITE_API_URL` omitted `/api/v1`; `ApiClient` concatenates paths verbatim, so
+   every API call 404ed while the shell still rendered.
+5. `/patients/:id` rendered the patient list, because `patients.tsx` had no
+   `<Outlet />`. The profile is now a flat sibling route.
+6. The header search box was dead UI on local state; the working
+   `GlobalPatientSearch` was never mounted.
+
+**Verification**
+
+| Check                       | Result                                                           |
+| --------------------------- | ---------------------------------------------------------------- |
+| `pnpm run typecheck`        | 12/12                                                            |
+| `pnpm run lint`             | 12/12, `BOUNDARY GUARD OK`                                       |
+| `pnpm run format:check`     | clean                                                            |
+| `pnpm run test`             | 12/12 (domain 90, validation 28, api-client 14, api 23, app 30)  |
+| `pnpm run test:integration` | 10/10 against PostgreSQL 17                                      |
+| `pnpm run db:seed`          | idempotent; clinic id matches `.env.example`                     |
+| API boot                    | all 5 dashboard + 3 patient routes return 200                    |
+| Browser (`:5173`)           | dashboard, list, both profiles, global search; no console errors |
+| `pnpm run build`            | **not run** — deferred at the user's request                     |
+| `pnpm run test:e2e`         | **not run** — pages verified by hand instead                     |
+
+The regression test for defect 1 was confirmed to fail when the fix is reverted,
+and it drives the real route through Fastify `inject`: an earlier version
+re-implemented the query in SQL and would have kept passing while the route
+leaked data.
+
+**Still open**
+
+- Patient registration (create/edit) does not exist; "New Patient" is disabled.
+- Dashboard quick actions navigate nowhere — they need the M5 forms.
+- `pnpm run build` and committed e2e specs are owed before M3/M4 sign-off.
