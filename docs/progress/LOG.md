@@ -643,3 +643,117 @@ Mutation 1 is the one that matters: it is the defect that was actually shipped i
   product decision before any external access exists.
 - Dashboard `<h1>` is a time-of-day greeting rather than the page name.
 - No authentication, so `request.clinicId` still comes from `CLINIC_ID`.
+
+## Session 13 — the agenda read side (Milestone 5, slice 1)
+
+Started by `bff8ff7` (patient read side behind the repository). Scope: the read side
+of the clinic's book, and nothing else. The calendar UI and the write side are
+deliberately not in it.
+
+### Delivered
+
+| Area           | Change                                                                       |
+| -------------- | ---------------------------------------------------------------------------- |
+| Domain         | `AgendaEntry`, `AgendaWindow`; `appointmentEndsAt`; `findAgenda` port        |
+| Validation     | `agendaRangeQuerySchema` in use; ambiguous `date` alias removed              |
+| Infrastructure | `DrizzleAppointmentRepository` (explicit `implements AppointmentRepository`) |
+| Transport      | `GET /api/v1/appointments`, 366-day ceiling, problem envelope                |
+| Dashboard      | today's book, upcoming visits now read through the repository                |
+| Application    | `minutesBookedWithin`, next to `resolveClinicTimeWindow`                     |
+| Docs           | ADR 0017, STATE, this log                                                    |
+
+`AppointmentRepository` went from five speculative methods to the one that is
+called. Scheduling, overlap and status-transition methods return with the write
+slice, where they have a caller.
+
+### Design decisions
+
+- **Overlap, not `starts_at`.** `[starts_at, appointment_ends_at(...))` against
+  `[from, to)`, the same half-open interval the exclusion constraints enforce
+  (ADR 0017). An appointment in progress at midnight is on today's agenda.
+- **Booked minutes are clipped** to the window. Summing `duration_minutes` would let
+  an overnight booking report a day as more than fully booked.
+- **Cancelled and no-show are returned.** Whether a status _reserves_ a slot is
+  `reservesSchedulingSlot`'s question, not the listing's.
+- **The dashboard's response shapes are unchanged.** The UI reads `firstName` /
+  `lastName`; the agenda returns split names, and the mapping is a deliberate,
+  tested boundary rather than a rewrite.
+- **`AgendaWindow` lost `patientId`.** No caller — the same speculative surface this
+  session removed elsewhere.
+- **Dropped `date` from the query schema.** It duplicated `from`/`to` with different
+  semantics and had no reader.
+- **Deleted `agendaAppointmentSchema` and `AgendaAppointmentDto`.** Unused, and they
+  contradicted the endpoint that now exists: a required `dentistName` when the column
+  is nullable, and a joined `patientName` the API does not send. `appointmentSchema`
+  stays — it is the entity's validation rules, and the write slice is its next reader.
+
+### Test counts
+
+Unit/component **258 → 265** (api 35 → 42; 7 new `minutesBookedWithin` cases).
+Integration **55 → 85** (30 new): `agenda.integration.test.ts` (17, repository and
+interval semantics against PostgreSQL), `agenda-route.integration.test.ts` (8, the
+request: window parsing, clinic scoping, the 366-day ceiling, one instance over
+HTTP), `dashboard-book.integration.test.ts` (5, the two dashboard behaviours that
+changed). E2E 46/46, unchanged — no UI consumes the new endpoint yet.
+
+### Mutation checks — 15 applied, 15 caught
+
+| #   | Mutation                                                  | Caught by                                       |
+| --- | --------------------------------------------------------- | ----------------------------------------------- |
+| 1   | repository drops `clinicId`                               | never shows another clinic's booking            |
+| 2   | repository drops `isNull(anonymizedAt)`                   | never shows a withdrawn patient                 |
+| 3   | overlap → `starts_at` comparison                          | includes an appointment running into the window |
+| 4   | half-open → closed window                                 | appointment starting at `to` is excluded        |
+| 5   | hides `CANCELLED`                                         | cancelled bookings stay visible                 |
+| 6   | left → inner join on dentists                             | booking kept when the dentist has left          |
+| 7   | forgets to compute `endsAt`                               | agrees with the database                        |
+| 8   | drops the dentist filter                                  | filters by dentist                              |
+| 9   | drops the chair filter                                    | filters by chair                                |
+| 10  | reads the wrong patient name field                        | names the patient and the dentist               |
+| 11  | `appointmentEndsAt` ignores duration                      | computes the end from start and duration        |
+| 12  | route accepts an unbounded window                         | rejects a window of more than a year            |
+| 13  | route ignores the parsed window                           | returns one entry, not the clinic's whole book  |
+| 14  | dashboard charges an overnight booking its whole duration | counts only the minutes inside today            |
+| 15  | dashboard offers cancelled work as upcoming               | does not offer a cancelled appointment          |
+
+The harness was wrong before the mutations were: it reported "caught" when the tests
+_passed_. Three mutations survived once it was fixed — #9 (every fixture booking was in
+the same chair, so the assertion was vacuous), #14 and #15 (nothing covered the
+dashboard's two changed behaviours). Each gap is closed above.
+
+### Defects the database found
+
+Two, both in the fixtures rather than the code: a teardown window narrower than the
+fixtures left an overnight row behind for the next run to collide with, and the other
+clinic's booking referenced this clinic's chair, which the exclusion constraints
+reject because a chair belongs to one clinic.
+
+### Still open
+
+- FullCalendar is not installed. `GET /api/v1/appointments` has no consumer until the
+  day and week views exist.
+- Appointment write side: `CreateAppointment`, `RescheduleAppointment`,
+  `TransitionAppointment`, conflict errors to the UI, and the forms that un-disable
+  "New Visit" and the profile's next-appointment action.
+- `apps/api/src/http/routes/dashboard.ts` still receives `db` for patient counts,
+  revenue, treatment-plan items and the calendar preview's per-day aggregate. Only the
+  appointment queries moved; those aggregates have no port yet.
+- `AgendaEntry` has no `roomId`/`roomName`, though the table and the old DTO both have
+  it. Decide before the calendar needs room columns.
+- Patient phone is still returned by the list endpoint while its column comment says
+  it is encrypted and never returned. Needs a product decision.
+- Dashboard `<h1>` is a time-of-day greeting rather than the page name.
+- No authentication, so `request.clinicId` still comes from `CLINIC_ID`.
+
+### Verification
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + boundary guard OK
+                           (1 pre-existing warning: editable-patient-details.ts)
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             265 unit/component (12/12 tasks)
+pnpm run test:integration 85 integration (8 files)
+pnpm run test:e2e         46/46 passed
+```

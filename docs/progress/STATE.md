@@ -6,13 +6,13 @@
 
 ## Phase
 
-**PHASE 3 — CLINICAL FEATURES** (Milestones 3 and 4 of `docs/roadmap.md`)
+**PHASE 4 — CLINICAL WORKFLOWS** (Milestone 5 of `docs/roadmap.md`)
 
-**Status: Milestone 3 complete, and Milestone 4 complete on both sides — the
-patient read side, registration and editing.** All verified in a real browser.
-What is _not_ done is stated under "Remaining work" below: the appointment/visit
-forms, which are disabled placeholders because the roadmap lists them as M4
-deliverables but their use cases are the natural output of Milestone 5.
+**Status: Milestone 4 complete; Milestone 5 started.** Session 13 delivered the
+agenda's read side — the `AgendaEntry` read model, `AppointmentRepository`, the
+Drizzle implementation, `GET /api/v1/appointments`, and the dashboard reading
+today's book through the same repository. The calendar UI and the appointment
+write side are not started.
 
 ## Task origin
 
@@ -254,8 +254,30 @@ editing. Both sides now go through `PatientRepository`. Remaining:
 5. [ ] Appointments list/creation, visit capture and the clinical timeline, which
        the roadmap lists under M4 but which are the natural output of M5.
 
-**Milestone 5 onward** — agenda, visits, odontogram, treatments, payments,
-inventory, reports, auth: not started.
+**Milestone 5 — AGENDA AND VISITS.** Slice 1 (the agenda's read side) is done:
+
+1. [x] **Agenda read model and port.** `AgendaEntry` and `AgendaWindow` in
+       `packages/domain/src/appointment/agenda-read-model.ts`;
+       `AppointmentRepository.findAgenda(clinicId, window)` and nothing else.
+       The port's five speculative methods are gone; the scheduling methods return
+       with the write side.
+2. [x] **`GET /api/v1/appointments`.** Half-open `[from, to)`, optional
+       `dentistIds` / `chairIds`, 366-day ceiling, standard problem envelope. The
+       window is interpreted as given: which days a user means is a calendar
+       timezone question, answered in the UI.
+3. [x] **Dashboard reads through the same repository.** One implementation of
+       "today" instead of two. See ADR 0017 for why booked minutes are clipped to
+       the window: counting an appointment that began yesterday evening against
+       today's capacity would report a day as over 100% booked.
+4. [ ] **Calendar UI.** FullCalendar is not installed yet (ADR 0011). The agenda
+       endpoint has no consumer until the day/week views exist.
+5. [ ] **Appointment write side**: `CreateAppointment`, `RescheduleAppointment`,
+       `TransitionAppointment`, conflict errors surfaced to the UI, and the forms
+       that un-disable "New Visit" and the profile's next-appointment action.
+6. [ ] Visits, the clinical timeline, treatments, payments, inventory, reports.
+
+**Milestone 5 onward** — visits, odontogram, treatments, payments, inventory,
+reports, auth: not started.
 
 ## Last session log
 
@@ -440,3 +462,34 @@ immutable `translate()`, chosen over `unaccent()` because it needs no extension 
 can still be indexed.
 
 **Verification** (see `docs/progress/LOG.md` for the full table).
+
+Session 13: the agenda's read side, the first slice of Milestone 5. The choice worth
+recording is _which_ slice: the agenda needs one query — which appointments belong in
+a window — and the dashboard had already written a worse version of that question for
+itself, filtering on `starts_at`. Building the endpoint on top of that query instead
+of beside it meant there is now one implementation of "today" rather than two, and it
+is the one with tests.
+
+Making the dashboard share it changed a number. An appointment running from 22:30 to
+00:30 now appears on both days' agendas, which is right — at 00:15 the dentist is still
+with the patient — but it also meant that summing `duration_minutes` would charge 120
+minutes of yesterday's surgery against today's 480 minutes of capacity and report 25%
+occupancy on a day with 90 minutes booked. Clipping to the window fixes it (ADR 0017).
+Both halves of that are pinned by tests, because the defect only shows on days with a
+booking that crosses midnight, which is exactly the kind of thing nobody reproduces
+by hand.
+
+Two fixture bugs were the database being right. A cleanup window narrower than the
+fixtures left a row behind, and the next run collided with it; and the other clinic's
+booking pointed at this clinic's chair, which the exclusion constraints refuse —
+correctly, since a chair belongs to one clinic.
+
+The mutation harness itself had an inverted condition and reported every mutation as
+caught. Three of them genuinely survived: the chair filter was asserted against a
+fixture where every booking was in the same chair, and nothing covered the dashboard's
+clipped minutes or its cancelled-upcoming filter. All three now have real coverage,
+and 15 mutations are caught.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
+warning) · format · build 5/5 · 265 unit/component · 85 integration (30 new) ·
+46/46 e2e.

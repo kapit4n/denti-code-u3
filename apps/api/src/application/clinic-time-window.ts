@@ -135,3 +135,63 @@ export function resolveClinicTimeWindow(now: Date, timeZone: string): ClinicTime
 
   return { start, end, startOfMonth, startOfNextMonth, dayOfWeek };
 }
+
+/** The part of an agenda entry needed to account for it against a window. */
+export interface BookedInterval {
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly status: string;
+}
+
+/**
+ * Minutes of booked work that fall inside the window, for capacity reporting.
+ *
+ * The agenda answers "which appointments touch today", and a booking that began
+ * yesterday evening and runs past midnight answers yes — correctly, because the
+ * chair is still occupied at nine in the morning. Its *whole* duration is not
+ * today's work though: charging eight hours of yesterday's surgery against today's
+ * capacity would push the occupancy rate over 100% on a day that is only half
+ * booked.
+ *
+ * So the minutes counted are the overlap with the window, not the appointment's
+ * duration. For an appointment entirely inside the day — nearly all of them — the
+ * two are identical, which is why this only matters at the day boundary.
+ *
+ * Cancelled and no-show appointments release their slot and are not booked
+ * minutes. Completed work is also excluded: it is reported on its own, and a
+ * finished appointment is not capacity the clinic still has to sell today.
+ */
+export function minutesBookedWithin(
+  entries: readonly BookedInterval[],
+  window: Pick<ClinicTimeWindow, 'start' | 'end'>,
+): number {
+  const windowStart = window.start.getTime();
+  const windowEnd = window.end.getTime();
+
+  return entries
+    .filter((entry) => (CAPACITY_OCCUPYING_STATUSES as readonly string[]).includes(entry.status))
+    .map((entry) => {
+      const from = Math.max(windowStart, new Date(entry.startsAt).getTime());
+      const to = Math.min(windowEnd, new Date(entry.endsAt).getTime());
+      return Math.max(0, Math.round((to - from) / 60_000));
+    })
+    .reduce((total, minutes) => total + minutes, 0);
+}
+
+/**
+ * Statuses whose time counts against today's capacity.
+ *
+ * One definition, imported by the route that reports it. Two copies of a status
+ * list is how a metric starts disagreeing with itself.
+ *
+ * This is not the same question as `reservesSchedulingSlot` in the domain, which
+ * mirrors the database's exclusion constraints: those let a completed appointment
+ * keep its historical slot so it cannot be re-booked over, while capacity asks
+ * what the clinic still has to sell today.
+ */
+export const CAPACITY_OCCUPYING_STATUSES = [
+  'SCHEDULED',
+  'CONFIRMED',
+  'ARRIVED',
+  'IN_TREATMENT',
+] as const;

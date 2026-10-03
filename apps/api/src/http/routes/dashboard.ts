@@ -19,10 +19,13 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import { and, asc, count, desc, eq, gte, inArray, lt, ne, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 
 import {
-  appointments,
+  // Aliased because `appointments` is the repository dependency in this file's
+  // scope. Only the calendar preview still needs the table: it groups a month of
+  // bookings in SQL, which is a reporting aggregate rather than an agenda read.
+  appointments as appointmentsTable,
   clinicOperatingHours,
   clinics,
   dentists,
@@ -32,23 +35,35 @@ import {
   treatmentPlans,
 } from '@denti-code-u3/database/schema';
 import {
+  CAPACITY_OCCUPYING_STATUSES,
+  minutesBookedWithin,
   resolveClinicTimeWindow,
   type ClinicTimeWindow,
 } from '../../application/clinic-time-window.js';
+import type { AppointmentRepository } from '@denti-code-u3/domain';
+import type { ClinicId, IsoDateTime } from '@denti-code-u3/types';
 import type { DentiDatabase } from '../../infrastructure/persistence/postgres/connection.js';
 
 /**
- * Appointment statuses that occupy a chair. Cancelled and no-show bookings
- * happened on the calendar but consumed no capacity, so they are excluded from
- * occupancy while still being reported as today's counts.
+ * Treatment plans whose items represent work the patient still owes.
+ *
+ * The appointment statuses that occupy a chair live next to the window arithmetic
+ * in the application layer, with the minute accounting that uses them.
  */
-const CAPACITY_OCCUPYING_STATUSES = ['SCHEDULED', 'CONFIRMED', 'ARRIVED', 'IN_TREATMENT'] as const;
 
-/** Treatment plans whose items represent work the patient still owes. */
 const OPEN_TREATMENT_PLAN_STATUSES = ['PROPOSED', 'ACCEPTED', 'IN_PROGRESS'] as const;
 
 export interface DashboardDependencies {
+  /**
+   * Still the raw connection, for the aggregates that have no port yet: patient
+   * and treatment-plan counts, revenue, and the capacity the occupancy rate is
+   * measured against. Appointments do not belong to that list any more — they are
+   * read through `appointments`, so "today's book" is one query shared with the
+   * agenda rather than a second implementation of it.
+   */
   readonly db: DentiDatabase;
+  /** The clinic's book, read through the same repository the agenda uses. */
+  readonly appointments: AppointmentRepository;
   /**
    * Fallback IANA zone, used only when the clinic row cannot be read. The clinic
    * record is authoritative: two clinics on one API must not share a timezone just
@@ -86,32 +101,24 @@ async function readClinicSettings(
   };
 }
 
-/** Today's appointments in clinic time, joined to the patient they belong to. */
-async function readTodayAppointments(
-  db: DentiDatabase,
-  clinicId: string,
+/**
+ * Today's appointments in clinic time, read through the agenda repository.
+ *
+ * The dashboard is the first consumer of the agenda query, and the reason it is
+ * not a second one: the window is resolved in the clinic's own timezone by
+ * `resolveClinicTimeWindow`, then handed to the same `findAgenda` the calendar
+ * calls. The dashboard's "today" and the agenda's "today" cannot drift, because
+ * they are one query with two windows.
+ */
+async function readAppointmentsInWindow(
+  appointments: AppointmentRepository,
+  clinicId: ClinicId,
   window: ClinicTimeWindow,
 ) {
-  return db
-    .select({
-      id: appointments.id,
-      startsAt: appointments.startsAt,
-      durationMinutes: appointments.durationMinutes,
-      status: appointments.status,
-      dentistId: appointments.dentistId,
-      firstName: patients.firstName,
-      lastName: patients.lastName,
-    })
-    .from(appointments)
-    .innerJoin(patients, eq(patients.id, appointments.patientId))
-    .where(
-      and(
-        eq(appointments.clinicId, clinicId),
-        gte(appointments.startsAt, window.start),
-        lt(appointments.startsAt, window.end),
-      ),
-    )
-    .orderBy(asc(appointments.startsAt));
+  return appointments.findAgenda(clinicId, {
+    from: window.start.toISOString() as IsoDateTime,
+    to: window.end.toISOString() as IsoDateTime,
+  });
 }
 
 /**
@@ -178,23 +185,20 @@ function minutesBetween(from: string, to: string): number {
 
 export async function registerDashboardRoutes(
   app: FastifyInstance,
-  { db, fallbackTimeZone }: DashboardDependencies,
+  { db, appointments, fallbackTimeZone }: DashboardDependencies,
 ): Promise<void> {
   app.get('/api/v1/dashboard/stats', async (request, reply) => {
-    const clinicId = request.clinicId;
+    const clinicId = request.clinicId as ClinicId;
 
     try {
       const settings = await readClinicSettings(db, clinicId, fallbackTimeZone);
       const window = resolveClinicTimeWindow(new Date(), settings.timeZone);
-      const todayAppointments = await readTodayAppointments(db, clinicId, window);
+      const todayAppointments = await readAppointmentsInWindow(appointments, clinicId, window);
 
       const byStatus = (statuses: readonly string[]) =>
         todayAppointments.filter((appointment) => statuses.includes(appointment.status));
 
-      const bookedMinutes = byStatus(CAPACITY_OCCUPYING_STATUSES).reduce(
-        (total, appointment) => total + appointment.durationMinutes,
-        0,
-      );
+      const bookedMinutes = minutesBookedWithin(todayAppointments, window);
 
       const [[patientTotals], [pendingTreatmentTotals], [revenueRow], occupancyRate] =
         await Promise.all([
@@ -258,12 +262,27 @@ export async function registerDashboardRoutes(
   });
 
   app.get('/api/v1/dashboard/today-appointments', async (request, reply) => {
-    const clinicId = request.clinicId;
+    const clinicId = request.clinicId as ClinicId;
 
     try {
       const settings = await readClinicSettings(db, clinicId, fallbackTimeZone);
       const window = resolveClinicTimeWindow(new Date(), settings.timeZone);
-      return { items: await readTodayAppointments(db, clinicId, window) };
+      const entries = await readAppointmentsInWindow(appointments, clinicId, window);
+
+      // The existing response shape is kept rather than replaced: this endpoint's
+      // shape is a UI contract with passing e2e specs, and reshaping it is not what
+      // moving the query behind a repository is for.
+      return {
+        items: entries.map((entry) => ({
+          id: entry.id,
+          startsAt: entry.startsAt,
+          durationMinutes: entry.durationMinutes,
+          status: entry.status,
+          dentistId: entry.dentistId,
+          firstName: entry.patientFirstName,
+          lastName: entry.patientLastName,
+        })),
+      };
     } catch (error) {
       request.log.error({ err: error }, 'Failed to read today appointments');
       return reply.status(500).send({
@@ -277,29 +296,31 @@ export async function registerDashboardRoutes(
   });
 
   app.get('/api/v1/dashboard/upcoming-visits', async (request, reply) => {
-    const clinicId = request.clinicId;
+    const clinicId = request.clinicId as ClinicId;
 
     try {
-      const items = await db
-        .select({
-          id: appointments.id,
-          startsAt: appointments.startsAt,
-          durationMinutes: appointments.durationMinutes,
-          status: appointments.status,
-          firstName: patients.firstName,
-          lastName: patients.lastName,
-        })
-        .from(appointments)
-        .innerJoin(patients, eq(patients.id, appointments.patientId))
-        .where(
-          and(
-            eq(appointments.clinicId, clinicId),
-            gte(appointments.startsAt, new Date()),
-            ne(appointments.status, 'CANCELLED'),
-          ),
-        )
-        .orderBy(asc(appointments.startsAt))
-        .limit(8);
+      // "Upcoming" starts now and reaches a year out, so a clinic with nothing
+      // booked tomorrow still shows its next real work rather than an empty list.
+      const from = new Date();
+      const entries = await appointments.findAgenda(clinicId, {
+        from: from.toISOString() as IsoDateTime,
+        to: new Date(from.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString() as IsoDateTime,
+      });
+
+      // Cancelled work is not upcoming work. The repository returns it because the
+      // calendar must show that a slot is deliberately empty; this list is a
+      // different question, so it answers it here.
+      const items = entries
+        .filter((entry) => entry.status !== 'CANCELLED')
+        .slice(0, 8)
+        .map((entry) => ({
+          id: entry.id,
+          startsAt: entry.startsAt,
+          durationMinutes: entry.durationMinutes,
+          status: entry.status,
+          firstName: entry.patientFirstName,
+          lastName: entry.patientLastName,
+        }));
 
       return { items };
     } catch (error) {
@@ -315,7 +336,7 @@ export async function registerDashboardRoutes(
   });
 
   app.get('/api/v1/dashboard/recent-patients', async (request, reply) => {
-    const clinicId = request.clinicId;
+    const clinicId = request.clinicId as ClinicId;
 
     try {
       const items = await db
@@ -351,7 +372,7 @@ export async function registerDashboardRoutes(
    * shipping every appointment of the month to the browser to count there.
    */
   app.get('/api/v1/dashboard/calendar-preview', async (request, reply) => {
-    const clinicId = request.clinicId;
+    const clinicId = request.clinicId as ClinicId;
     const query = request.query as { days?: string };
 
     try {
@@ -369,20 +390,20 @@ export async function registerDashboardRoutes(
 
       const items = await db
         .select({
-          day: sql<string>`to_char(${appointments.startsAt} at time zone 'UTC', 'YYYY-MM-DD')`,
+          day: sql<string>`to_char(${appointmentsTable.startsAt} at time zone 'UTC', 'YYYY-MM-DD')`,
           total: count(),
-          completed: sql<number>`count(*) filter (where ${appointments.status} = 'COMPLETED')::int`,
+          completed: sql<number>`count(*) filter (where ${appointmentsTable.status} = 'COMPLETED')::int`,
         })
-        .from(appointments)
+        .from(appointmentsTable)
         .where(
           and(
-            eq(appointments.clinicId, clinicId),
-            gte(appointments.startsAt, start),
-            lt(appointments.startsAt, end),
+            eq(appointmentsTable.clinicId, clinicId),
+            gte(appointmentsTable.startsAt, start),
+            lt(appointmentsTable.startsAt, end),
           ),
         )
-        .groupBy(sql`to_char(${appointments.startsAt} at time zone 'UTC', 'YYYY-MM-DD')`)
-        .orderBy(asc(sql`to_char(${appointments.startsAt} at time zone 'UTC', 'YYYY-MM-DD')`));
+        .groupBy(sql`to_char(${appointmentsTable.startsAt} at time zone 'UTC', 'YYYY-MM-DD')`)
+        .orderBy(asc(sql`to_char(${appointmentsTable.startsAt} at time zone 'UTC', 'YYYY-MM-DD')`));
 
       return { from: start.toISOString(), to: end.toISOString(), days, items };
     } catch (error) {

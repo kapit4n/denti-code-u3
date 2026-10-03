@@ -8,7 +8,7 @@
  */
 
 import { z } from 'zod';
-import { isoDateSchema, isoDateTimeSchema, uuidSchema } from '../common/index.js';
+import { isoDateTimeSchema, uuidSchema } from '../common/index.js';
 
 export const appointmentStatusSchema = z.enum([
   'SCHEDULED',
@@ -20,6 +20,15 @@ export const appointmentStatusSchema = z.enum([
   'NO_SHOW',
 ]);
 
+/**
+ * The appointment row as a response shape.
+ *
+ * Not used by any endpoint, and it says `dentistId` is required when the column
+ * is `on delete set null`. It was here before the agenda existed, as the shape an
+ * agenda endpoint was expected to return; `AgendaEntry` in the domain replaced that
+ * role, and this stays only as the entity's validation rules until the write side
+ * has a use for it. Delete it then.
+ */
 export const appointmentSchema = z.object({
   id: uuidSchema,
   clinicId: uuidSchema,
@@ -34,14 +43,6 @@ export const appointmentSchema = z.object({
   visitId: uuidSchema.nullish(),
   notes: z.string().max(2_000).nullish(),
   cancelledReason: z.string().max(500).nullish(),
-});
-
-/** What the agenda list returns: a join, not the raw appointment row. */
-export const agendaAppointmentSchema = appointmentSchema.extend({
-  patientName: z.string(),
-  dentistName: z.string(),
-  chairName: z.string().nullish(),
-  treatmentName: z.string().nullish(),
 });
 
 export const createAppointmentSchema = z.object({
@@ -86,7 +87,6 @@ export const agendaRangeQuerySchema = z
     to: isoDateTimeSchema,
     dentistIds: uuidListSchema,
     chairIds: uuidListSchema,
-    date: isoDateSchema.optional(),
   })
   .refine((value) => new Date(value.from).getTime() < new Date(value.to).getTime(), {
     message: 'The agenda window must end after it starts',
@@ -94,7 +94,6 @@ export const agendaRangeQuerySchema = z
   });
 
 export type AppointmentDto = z.infer<typeof appointmentSchema>;
-export type AgendaAppointmentDto = z.infer<typeof agendaAppointmentSchema>;
 export type CreateAppointmentInput = z.infer<typeof createAppointmentSchema>;
 export type RescheduleAppointmentInput = z.infer<typeof rescheduleAppointmentSchema>;
 export type TransitionAppointmentInput = z.infer<typeof transitionAppointmentSchema>;

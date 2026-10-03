@@ -18,8 +18,10 @@ import { registerCors } from './http/plugins/cors.js';
 import { registerClinicScope } from './http/plugins/clinic-scope.js';
 import { registerHealthRoutes } from './http/routes/health.js';
 import { registerDashboardRoutes } from './http/routes/dashboard.js';
+import { registerAppointmentsRoutes } from './http/routes/appointments.js';
 import { registerPatientsRoutes } from './http/routes/patients.js';
 import { DrizzlePatientRepository } from './infrastructure/persistence/repositories/patient-repository.js';
+import { DrizzleAppointmentRepository } from './infrastructure/persistence/repositories/appointment-repository.js';
 import { systemClock } from './infrastructure/clock/system-clock.js';
 import { uuidGenerator } from './infrastructure/id/uuid-generator.js';
 import { sendProblem } from './http/problem.js';
@@ -77,8 +79,14 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   // Registered before every clinical route: `request.clinicId` is what makes
   // ADR 0014's scoping rule enforceable rather than aspirational.
   await registerClinicScope(app, { config });
+
+  // One appointment repository for every reader: the agenda endpoint and the
+  // dashboard's view of today's book, so "today" has one implementation.
+  const appointments = new DrizzleAppointmentRepository(connection.db);
+
   await registerDashboardRoutes(app, {
     db: connection.db,
+    appointments,
     fallbackTimeZone: config.clinicTimeZone,
   });
   // One repository for the whole patient feature: the handlers get a port, so a
@@ -89,6 +97,10 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     ids: uuidGenerator,
     clock: systemClock,
   });
+
+  // The dashboard keeps `db` for the aggregates that have no port yet — counts,
+  // revenue, occupancy — and says so on `DashboardDependencies`.
+  await registerAppointmentsRoutes(app, { appointments });
 
   app.get('/', async () => ({
     service: 'denti-code-u3-api',

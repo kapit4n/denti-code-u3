@@ -33,11 +33,29 @@ export interface Appointment {
 }
 
 /**
+ * When an appointment ends.
+ *
+ * Exists separately from `computeAppointmentEnd` because a reader often has the
+ * two values that decide the answer and not a whole appointment — the agenda has
+ * a row with no dentist attached. Without this, that reader has to fabricate an
+ * entity to call the entity-shaped function, and a fabricated `dentistId` is a
+ * lie sitting in the middle of a calculation.
+ *
+ * The database computes the same thing in `appointment_ends_at()`, declared
+ * IMMUTABLE so the exclusion constraints can use it. Two implementations of one
+ * rule is unavoidable across a language boundary; they are asserted against each
+ * other in the integration tests.
+ */
+export function appointmentEndsAt(startsAt: IsoDateTime, durationMinutes: number): IsoDateTime {
+  return addMinutes(startsAt, durationMinutes);
+}
+
+/**
  * `endsAt` is always computed, never stored: a stored end time can disagree with
  * a changed start or duration, and the agenda would then show two truths.
  */
 export function computeAppointmentEnd(appointment: Appointment): IsoDateTime {
-  return addMinutes(appointment.startsAt, appointment.durationMinutes);
+  return appointmentEndsAt(appointment.startsAt, appointment.durationMinutes);
 }
 
 export function isValidAppointmentDuration(durationMinutes: number): boolean {

@@ -10,7 +10,6 @@
  */
 
 import type {
-  AppointmentId,
   ChairId,
   ClinicId,
   DentistId,
@@ -20,7 +19,7 @@ import type {
   TreatmentId,
   VisitId,
 } from '@denti-code-u3/types';
-import type { Appointment, AppointmentStatus } from '../appointment/index.js';
+import type { AgendaEntry, AgendaWindow } from '../appointment/index.js';
 import type { Visit, VisitStatus } from '../visit/index.js';
 import type {
   EditablePatientDetails,
@@ -159,27 +158,35 @@ export interface PatientRepository extends PatientWriteRepository {
   findOdontogram(clinicId: ClinicId, patientId: PatientId): Promise<PatientOdontogram | undefined>;
 }
 
-export interface AppointmentRangeQuery {
-  readonly clinicId: ClinicId;
-  /** Half-open interval `[startsAt, endsAt)`. */
-  readonly from: IsoDateTime;
-  readonly to: IsoDateTime;
-  readonly dentistIds?: readonly DentistId[];
-  readonly chairIds?: readonly ChairId[];
-  readonly patientId?: PatientId;
-}
-
+/**
+ * Reading the clinic's book.
+ *
+ * Every method takes a `ClinicId`, for the same reason `PatientRepository` does:
+ * there is no overload without one (ADR 0014).
+ *
+ * This interface used to declare five methods — `findById`, `findOverlapping`,
+ * `findForPatient`, `updateStatus` and `save` — none of which anything called,
+ * because nothing implemented them. The patients port had the same problem, and
+ * its speculative methods turned out to be an alibi: the read routes went on
+ * querying Drizzle themselves for years. Only the method the agenda endpoint
+ * actually calls is declared here, and the others arrive with the slice that
+ * needs them.
+ */
 export interface AppointmentRepository {
-  findById(clinicId: ClinicId, appointmentId: AppointmentId): Promise<Appointment | undefined>;
-  /** All appointments overlapping a window — the data the domain then checks. */
-  findOverlapping(query: AppointmentRangeQuery): Promise<readonly Appointment[]>;
-  findForPatient(clinicId: ClinicId, patientId: PatientId): Promise<readonly Appointment[]>;
-  updateStatus(
-    clinicId: ClinicId,
-    appointmentId: AppointmentId,
-    status: AppointmentStatus,
-  ): Promise<void>;
-  save(appointment: Appointment): Promise<void>;
+  /**
+   * Every appointment overlapping `window`, in start order.
+   *
+   * Half-open `[from, to)` on both the window and each appointment's own extent,
+   * so an appointment may *overlap* the window without starting inside it. A
+   * 23:30 booking that runs past midnight belongs on both days' agendas, and
+   * filtering on `starts_at` alone would hide it from the second.
+   *
+   * Cancelled and no-show appointments are included: they were on the calendar
+   * and a receptionist needs to see that a slot is deliberately empty rather than
+   * free. Whether a status *reserves* a slot is a scheduling question, answered
+   * by `reservesSchedulingSlot`, not a listing question.
+   */
+  findAgenda(clinicId: ClinicId, window: AgendaWindow): Promise<readonly AgendaEntry[]>;
 }
 
 export interface VisitRepository {

@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { resolveClinicTimeWindow } from './clinic-time-window.js';
+import { minutesBookedWithin, resolveClinicTimeWindow } from './clinic-time-window.js';
 
 /** Renders an instant in the zone the same way a client would. */
 function localTime(instant: Date, timeZone: string): string {
@@ -109,5 +109,92 @@ describe('resolveClinicTimeWindow', () => {
 
     expect(localTime(window.start, 'America/New_York')).toBe('2026-03-08, 00:00:00');
     expect(window.end.getTime() - window.start.getTime()).toBe(23 * 60 * 60 * 1000);
+  });
+});
+
+describe('minutesBookedWithin', () => {
+  const window = {
+    start: new Date('2026-03-12T00:00:00.000Z'),
+    end: new Date('2026-03-13T00:00:00.000Z'),
+  };
+  const entry = (startsAt: string, endsAt: string, status = 'SCHEDULED') => ({
+    startsAt,
+    endsAt,
+    status,
+  });
+
+  it('counts an appointment that lies entirely inside the day', () => {
+    const minutes = minutesBookedWithin(
+      [entry('2026-03-12T09:00:00.000Z', '2026-03-12T09:30:00.000Z')],
+      window,
+    );
+
+    expect(minutes).toBe(30);
+  });
+
+  it('counts only the part of an appointment that began the evening before', () => {
+    // The appointment belongs to today's agenda — the chair is occupied at 00:00 —
+    // but only 30 of its 120 minutes are today's work. Counting the whole 120
+    // would charge yesterday's surgery against today's capacity and could push the
+    // occupancy rate over 100% on a day that is only half booked.
+    const minutes = minutesBookedWithin(
+      [entry('2026-03-11T22:30:00.000Z', '2026-03-12T00:30:00.000Z')],
+      window,
+    );
+
+    expect(minutes).toBe(30);
+  });
+
+  it('counts only the part of an appointment that runs into the next day', () => {
+    const minutes = minutesBookedWithin(
+      [entry('2026-03-12T23:30:00.000Z', '2026-03-13T01:00:00.000Z')],
+      window,
+    );
+
+    expect(minutes).toBe(30);
+  });
+
+  it('counts nothing for an appointment outside the window', () => {
+    const minutes = minutesBookedWithin(
+      [
+        entry('2026-03-10T09:00:00.000Z', '2026-03-10T10:00:00.000Z'),
+        entry('2026-03-14T09:00:00.000Z', '2026-03-14T10:00:00.000Z'),
+      ],
+      window,
+    );
+
+    expect(minutes).toBe(0);
+  });
+
+  it('does not count cancelled or no-show appointments', () => {
+    const minutes = minutesBookedWithin(
+      [
+        entry('2026-03-12T09:00:00.000Z', '2026-03-12T10:00:00.000Z', 'CANCELLED'),
+        entry('2026-03-12T11:00:00.000Z', '2026-03-12T12:00:00.000Z', 'NO_SHOW'),
+        entry('2026-03-12T13:00:00.000Z', '2026-03-12T14:00:00.000Z', 'COMPLETED'),
+      ],
+      window,
+    );
+
+    // Cancelled and no-show release their slot; completed work is reported on its
+    // own and is not capacity the clinic still has to sell today.
+    expect(minutes).toBe(0);
+  });
+
+  it('sums several appointments, including one crossing the boundary', () => {
+    const minutes = minutesBookedWithin(
+      [
+        entry('2026-03-12T09:00:00.000Z', '2026-03-12T09:30:00.000Z'),
+        entry('2026-03-11T23:45:00.000Z', '2026-03-12T00:15:00.000Z', 'IN_TREATMENT'),
+        entry('2026-03-12T14:00:00.000Z', '2026-03-12T14:45:00.000Z', 'CONFIRMED'),
+      ],
+      window,
+    );
+
+    expect(minutes).toBe(30 + 15 + 45);
+  });
+
+  it('counts nothing when the day has no appointments', () => {
+    expect(minutesBookedWithin([], window)).toBe(0);
   });
 });
