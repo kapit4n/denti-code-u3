@@ -177,14 +177,17 @@ column is **closed** by ADR 0012. Still open:
 
 ## Remaining work
 
-**Milestone 3 — DASHBOARD.** Functionally complete and API-driven. Remaining:
+**Milestone 3 — DASHBOARD.** Functionally complete, API-driven, and now covered
+by committed e2e specs. Remaining:
 
 1. [x] `pnpm run build` and `pnpm run test:e2e`, run at the end of the session
        after implementation (both green).
-2. [ ] Promote the throwaway browser script into committed e2e specs so the
-       dashboard metrics and patient profile are regression-protected, not just
-       manually verified. The e2e suite currently covers the shell only — which
-       is exactly why all six session-8 defects got through.
+2. [x] Promote the throwaway browser script into committed e2e specs:
+       `web/dashboard.spec.ts` (9) and `web/patients.spec.ts` (10), against a
+       fixture-backed mock API. Each spec was verified by reintroducing the
+       defect it guards and confirming it fails — see the verification log.
+3. [ ] Extend the e2e layer when Milestone 5 lands: appointment lifecycle, visit
+       workspace, agenda views.
 
 **Milestone 4 — PATIENTS.** The read side is complete: searchable paginated list,
 global search, profile with allergies / next appointment / visits / outstanding

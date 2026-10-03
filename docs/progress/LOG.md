@@ -329,5 +329,82 @@ work at the user's request and run at the end of the session; both are green.
 
 - Patient registration (create/edit) does not exist; "New Patient" is disabled.
 - Dashboard quick actions navigate nowhere — they need the M5 forms.
-- Committed e2e specs for the dashboard and patient routes are still owed. The
-  e2e suite covers the shell only, which is why all six defects got through.
+
+---
+
+## Session 9 — Committed e2e specs for the dashboard and patients
+
+**Goal:** close the last open Milestone 3 item — the browser verification was a
+throwaway script, and the shell-only e2e suite is precisely why six defects
+reached production while every other check stayed green.
+
+**Added**
+
+- `e2e/web/dashboard.spec.ts` — 9 specs. Metrics match the payload verbatim;
+  `occupancyRate: null` renders as an em dash and is never shown as `0%`; a
+  failed metric shows no number at all; unknown endpoints, empty panels and
+  console errors are covered.
+- `e2e/web/patients.spec.ts` — 10 specs. List rows, inactive marker, debounced
+  search reaching the server with no `q=` on first load, list error and empty
+  states, the full profile, empty collections, credit labelling, 404, and header
+  search navigation.
+- `e2e/web/fixtures/api-responses.ts` — fixtures frozen from real responses, with
+  values deliberately unlike the seed data (3 appointments, 2 active patients,
+  65.00 USD) so an assertion cannot pass by coincidence.
+- `e2e/web/fixtures/mock-api.ts` — one handler for all of `/api`, dispatching on
+  exact pathname and answering 501 for anything unrecognised.
+
+**Two production changes, both small and both earned**
+
+- `StatCard`'s error branch had no `data-testid`, so the error state was
+  unreachable by any locator. Added `stat-card-error-<title>` alongside the
+  existing value and skeleton ids.
+- `CardTitle` rendered a `<div>`, so none of the eleven card titles in the app
+  were headings — a screen reader heard a dashboard of unlabelled regions whose
+  only heading was the "Good morning" greeting. Now an `<h3>`. Found because a
+  spec could not address a panel by name, which is the same problem a
+  screen-reader user has.
+
+**Three mistakes worth recording, because all three produced a green run**
+
+1. A per-endpoint glob (`**/api/v1/patients`) does not match the same path with a
+   query string, so the mock missed every real request — and the specs still
+   passed, because a dev API was running on port 3010 and answered them. A spec
+   that quietly talks to a live database is not a spec. Fixed by dispatching on
+   `url.pathname` in a single handler.
+2. `Fixture` had `body?: unknown`, so _any_ object satisfied it. Passing a bare
+   payload where a fixture belongs typechecked and then served `{}`, which
+   surfaced as an error-boundary crash 15 minutes away from the cause. `body` is
+   now required, and Playwright not typechecking is the reason that matters.
+3. `expect(page.getByText('Ana García'))` resolved to two elements — the
+   appointments panel and Recent Patients — so the panel assertion passed with
+   the panel empty. Panels are now scoped to their own card.
+
+**Verification**
+
+| Command                     | Result                   |
+| --------------------------- | ------------------------ |
+| `pnpm run typecheck`        | 12/12                    |
+| `pnpm run lint`             | 12/12, boundary guard OK |
+| `pnpm run format:check`     | clean                    |
+| `pnpm run test`             | 12/12                    |
+| `pnpm run test:integration` | 10/10                    |
+| `pnpm run build`            | 5/5                      |
+| `pnpm run test:e2e`         | 24/24 (5 shell + 19 new) |
+
+Every new spec was checked by reintroducing the defect it guards: dropping
+`/api/v1` from the base URL fails 7 of 9 dashboard specs; removing an empty
+collection's key fails the crash spec with the original
+`Cannot read properties of undefined (reading 'length')`; unmounting the header
+search fails both search specs; removing the "Credit" label fails the balance
+spec. A spec nobody has seen fail is a guess.
+
+**Still open**
+
+- Patient registration (create/edit) does not exist; "New Patient" is disabled.
+- Dashboard quick actions navigate nowhere — they need the M5 forms.
+- The dashboard's `<h1>` is a time-of-day greeting rather than the page name.
+  Not fixed: it is a product copy decision, and the specs no longer depend on it.
+- The dashboard has no page-level landmark or heading for its title, and the
+  appointment times are labelled "this device's timezone" while the API decides
+  "today" in the clinic's timezone. Worth a decision at Milestone 5.

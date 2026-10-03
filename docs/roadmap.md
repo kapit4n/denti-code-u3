@@ -72,11 +72,13 @@ language, driven by reusable widgets and real query data.
 **Exit criteria:** every metric is a query against the API, computed by the API
 from the domain; no hard-coded mockup values; widgets are reusable primitives.
 
-**Status: implemented, not yet signed off.** Every metric is API-computed and
-rendered in the browser with a clean console. Outstanding: `pnpm run build` and
-`pnpm run test:e2e` were deferred, and browser verification should become
-committed specs. "New Visit" / "New Patient" are disabled placeholders because
-the forms arrive with Milestone 5. See `docs/progress/STATE.md`.
+**Status: complete.** Every metric is API-computed, and 9 committed e2e specs
+assert them against a fixture-backed API — including that a genuinely unknown
+figure renders as unknown rather than as `0%`. `pnpm run build` and
+`pnpm run test:e2e` are green. "New Visit" / "New Patient" remain disabled
+placeholders because the forms arrive with Milestone 5; they are tracked under
+Milestone 4 rather than counted as dashboard work. See
+`docs/progress/STATE.md`.
 
 ---
 

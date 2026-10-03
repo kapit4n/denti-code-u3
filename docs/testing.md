@@ -83,15 +83,58 @@ the reason the domain is framework-independent.
 
 ## 7. E2E strategy
 
-Web E2E (Playwright) against the built app:
+Web E2E (Playwright) against the **built** app served by `vite preview`:
 
-1. **App startup** — the shell loads, the dashboard route renders.
-2. **Dashboard navigation** — navigating the sidebar reaches each route.
-3. **Patient search** — global search finds a patient by name/phone.
-4. **Appointment lifecycle** — create → confirm → arrive → in treatment →
-   completed (and cancel / no-show paths).
-5. **Visit workspace** — open a visit from an appointment, add a clinical note.
-6. **Agenda** — day/week/month views render; filters by dentist/chair apply.
+1. **Shell smoke** (`web/smoke.spec.ts`) — the shell loads and the shared frame
+   mounts. This is the layer that catches a route tree which compiles but does
+   not mount.
+2. **Dashboard** (`web/dashboard.spec.ts`) — every metric matches the payload
+   verbatim, and an _unknown_ figure (`occupancyRate: null`) is presented as
+   unknown rather than as `0%`.
+3. **Patients** (`web/patients.spec.ts`) — list, search, profile and header
+   search, including the empty, error and not-found paths.
+
+Appointment lifecycle, visit workspace and agenda specs arrive with Milestones
+5–6.
+
+### The API is mocked, by default
+
+`web/fixtures/mock-api.ts` intercepts every `/api/**` request and answers from a
+fixture map keyed by **exact pathname**. Three properties of that are
+load-bearing:
+
+- **One handler, not one per endpoint.** Playwright runs the most recently
+  registered matching route first, so per-endpoint handlers are silently
+  order-dependent. A single dispatcher has no ordering to get wrong.
+- **Lookup by pathname, never by glob.** A route registered for
+  `/api/v1/patients` does _not_ match a request carrying a query string, so a
+  glob-shaped mock silently misses every real request. It is worse than useless
+  then: the specs still pass, because some other server answers them.
+- **Unknown endpoints get a loud 501 naming the path.** A request to
+  `/api/patients` — the signature of `VITE_API_URL` missing its `/api/v1`
+  prefix — fails with `No API fixture for /api/patients`. Matching all of `/api`
+  rather than only `/api/v1` is what makes that catchable.
+
+Fixtures are frozen copies of real responses (`web/fixtures/api-responses.ts`),
+so specs stay deterministic and `pnpm run test:e2e` needs no database, like the
+unit suite. The API's own behaviour is covered against real PostgreSQL in
+`apps/api/test/*.integration.test.ts`; the e2e layer does not duplicate it.
+
+### Two traps worth remembering
+
+- **Playwright does not typecheck.** It transpiles specs with esbuild, so a
+  malformed fixture reaches the browser instead of failing the build. That is why
+  `Fixture.body` is a _required_ property: with `body?: unknown` any object
+  satisfies the type, passing a bare payload where a fixture belongs typechecks
+  cleanly and then serves `{}`.
+- **A spec must not be able to pass for the wrong reason.** Assertions are made
+  against values that are deliberately unlike the development seed data, and
+  panels are scoped to their own card — a page-wide `getByText('Ana García')`
+  matches the appointments panel _and_ Recent Patients, so it passes even when
+  the panel is empty.
+
+Every spec in this layer was checked by reintroducing the defect it guards and
+confirming it fails. A spec nobody has seen fail is a guess.
 
 Desktop E2E strategy (documented, not fully automated in Phase 1):
 

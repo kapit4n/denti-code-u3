@@ -53,7 +53,9 @@ export function StatCard({
 
       <div className="mt-2">
         {error ? (
-          <p className="text-sm text-destructive">Unavailable</p>
+          <p className="text-sm text-destructive" data-testid={`stat-card-error-${title}`}>
+            Unavailable
+          </p>
         ) : isLoading ? (
           <div
             aria-hidden
