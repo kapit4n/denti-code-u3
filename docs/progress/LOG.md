@@ -408,3 +408,94 @@ spec. A spec nobody has seen fail is a guess.
 - The dashboard has no page-level landmark or heading for its title, and the
   appointment times are labelled "this device's timezone" while the API decides
   "today" in the clinic's timezone. Worth a decision at Milestone 5.
+
+---
+
+## Session 10 — patient registration
+
+Started with the record number rather than the form, because that is the part
+with a correctness requirement rather than a layout.
+
+**Record numbers.** Per clinic, sequential, zero-padded to six digits:
+`P-000001`, `P-000002`, … A client never chooses one. The first shape of the port
+was `save(patient, { recordNumber })` plus `nextRecordNumber(clinicId)`, and it
+was wrong: a caller can drive those two calls separately, and no lock spans them.
+Reduced to one `register(patient)` method that owns the transaction, with a
+transaction-scoped advisory lock keyed on the clinic, so registrations for
+different clinics never block each other and PostgreSQL releases the lock even if
+the request dies.
+
+It is also narrower than `PatientRepository` on purpose. The read endpoints predate
+the repository layer and still query Drizzle in their handlers; implementing
+`search` and `findById` now would have added two methods nothing calls — dead code
+pretending to be structure. Reads move across when they are next touched.
+
+**Defects found by testing rather than by reading**
+
+1. The concurrency test passed against code with no lock in it. The connection
+   pool was `max: 1`, so the driver serialised the transactions and the race could
+   not happen. Widened the pool; now removing the lock fails 3 of 5 simultaneous
+   registrations. A test that cannot fail is worse than no test, because it is
+   taken as evidence.
+2. The collision fallback was dead code. `(error as { code }).code` is `undefined`
+   for every real database failure: Drizzle rethrows driver errors wrapped in its
+   own `DrizzleQueryError` with the original moved to `cause`. A duplicate would
+   have surfaced as a 500. Now unwraps the cause chain, with a unit test built
+   from the _wrapped_ shape — the obvious implementation passes a test written
+   against a bare `{ code }` and fails in production.
+3. An untouched optional input submits `''`, and `''` is not a valid
+   `preferredName`: it fails the same `min(1)` that stops a blank name being
+   stored. A patient who gave only a name could not have been registered at all.
+   Fixed with `createPatientFormSchema`, derived from `createPatientSchema.shape`
+   rather than restating the fields, so the form accepts exactly what the API
+   accepts; a test asserts the two schemas keep the same keys. `z.preprocess` was
+   the first attempt and made the schema's input type `unknown`, which React Hook
+   Form cannot infer field values from — hence `z.union`.
+4. Zod's default message for a blank name is "Too small: expected string to have
+   > =1 characters". That was going to be what a receptionist read. Messages are
+   > now written out in the schema.
+5. E2E fixtures were keyed by pathname alone, so `GET /patients` and `POST
+/patients` collided and a registration spec's POST was answered with the list
+   fixture. Fixtures are now keyed by `'/path'` or `'POST /path'`, and requests are
+   recorded with their bodies.
+6. Enabling the buttons changed their role. `Button asChild` + `Link` renders an
+   anchor, so `getByRole('button', …)` found nothing — a correct-looking
+   component test would have missed it.
+
+**Deliberate decisions**
+
+- The record number is not shown by redirecting to the chart. It is displayed
+  first, with a link to the chart, because the front desk reads the number out and
+  writes it on the paper file, and it has to survive long enough to be copied.
+- No toast on success. `useToast` in `packages/ui` is still a stub that discards
+  everything, and building a second success channel around a stub would be worse
+  than the inline confirmation.
+- A rejected registration keeps the typed values. Clearing the form would mean
+  retyping everything to fix one field.
+
+**Verification**
+
+| Command                     | Result                                                              |
+| --------------------------- | ------------------------------------------------------------------- |
+| `pnpm run typecheck`        | 12/12                                                               |
+| `pnpm run lint`             | 12/12, boundary guard OK                                            |
+| `pnpm run format`           | clean                                                               |
+| `pnpm run test`             | 233 unit (domain 106, app 43, validation 35, api 35, api-client 14) |
+| `pnpm run test:integration` | 22/22                                                               |
+| `pnpm run build`            | 5/5                                                                 |
+| `pnpm run test:e2e`         | 37/37 (24 + 13 registration)                                        |
+
+New tests: 16 for `registerPatient` and the number sequence, 6 for the form schema
+(including the drift guard), 10 for the `isUniqueViolation` cause chain, 11 for the
+form through the real providers, 12 integration against PostgreSQL, 13 e2e.
+Mutation-checked: removing the advisory lock, unwrapping the wrong error object,
+rejecting blank optional fields again, and changing the fixture key back to the
+pathname alone.
+
+**Still open**
+
+- Patient editing: no use case, endpoint or form. `updatePatientSchema` is ready.
+- `PatientRepository.search` / `findById` are still unimplemented on the read side,
+  which still query Drizzle in their route handlers.
+- Dashboard `<h1>` is a time-of-day greeting rather than the page name.
+- No authentication, so `request.clinicId` still comes from `CLINIC_ID`.

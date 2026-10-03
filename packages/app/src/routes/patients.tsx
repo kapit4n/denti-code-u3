@@ -12,7 +12,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Input } from '@denti-code-u3/ui';
-import { Search } from 'lucide-react';
+import { Search, UserPlus } from 'lucide-react';
 
 import { usePatientList } from '../features/patients/hooks/use-patients.js';
 
@@ -58,8 +58,11 @@ function PatientList() {
             {pagination ? `${pagination.total} registered` : 'Loading records'}
           </p>
         </div>
-        <Button disabled title="Available with patient registration">
-          New Patient
+        <Button asChild>
+          <Link to="/patients/new">
+            <UserPlus aria-hidden className="mr-2 h-4 w-4" />
+            New Patient
+          </Link>
         </Button>
       </header>
 

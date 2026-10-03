@@ -94,12 +94,16 @@ Milestone 4 rather than counted as dashboard work. See
 **Exit criteria:** patient search works from anywhere in the app; the profile is
 the central clinical context.
 
-**Status: the read side is complete; the write side does not exist.** Searchable
-paginated list, global search in the header, and a single-request profile
-(allergies, next appointment, recent visits, outstanding treatments, balance) are
-all done and verified in a browser. Patient registration, and the appointment /
-visit forms the quick actions point at, are not implemented — they need write
-use cases that do not exist yet. See `docs/progress/STATE.md`.
+**Status: the read side is complete, and registration (create) ships. Patient
+_editing_ is the remaining write-side gap.** The searchable paginated list, global
+search in the header, and a single-request profile (allergies, next appointment,
+recent visits, outstanding treatments, balance) are done and verified in a
+browser, as is registration: a `registerPatient` use case, `POST /api/v1/patients`,
+and a React Hook Form + Zod form at `/patients/new` reached from both "New
+Patient" actions. Record numbers are assigned by the server, sequential per
+clinic, atomically — a client cannot choose one. The appointment and visit forms
+the dashboard quick actions point at are still not implemented; they are the
+natural output of Milestone 5. See `docs/progress/STATE.md`.
 
 ---
 

@@ -1,18 +1,19 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 8 (Milestone 3 dashboard + Milestone 4 patients, with the
-> query defects that only running the app could find)
+> Last updated: session 10 (patient registration: domain use case, atomic record
+> numbers, POST endpoint, RHF + Zod form, both "New Patient" actions enabled)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
 
 **PHASE 3 — CLINICAL FEATURES** (Milestones 3 and 4 of `docs/roadmap.md`)
 
-**Status: Milestone 3 and Milestone 4 substantially implemented and verified in a
-real browser.** Milestones 1 and 2 remain complete. What is _not_ done is stated
-under "Remaining work" below — most importantly, patient registration and the
-appointment/visit forms are still disabled placeholders, because the roadmap lists
-them as M4 deliverables but the underlying write-side use cases do not exist yet.
+**Status: Milestone 3 complete, and Milestone 4 complete on both sides — the
+patient read side and registration.** All verified in a real browser. What is _not_
+done is stated under "Remaining work" below: patient _editing_ (registration ships
+create only), and the appointment/visit forms, which are disabled placeholders
+because the roadmap lists them as M4 deliverables but their use cases are the
+natural output of Milestone 5.
 
 ## Task origin
 
@@ -31,7 +32,9 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
       shells, 0009 platform abstraction, 0010 Tailwind v4 + shadcn design
       system, 0011 FullCalendar as a view adapter, 0012 appointment end time is
       computed and never stored, 0013 shells declare a target and the shared app
-      owns everything else
+      owns everything else, 0014 clinic scoping is explicit and never inferred
+      from ambient state, 0015 patient record numbers are allocated by the server,
+      per clinic and atomically
 - [x] pnpm + Turborepo workspace that installs cleanly
 - [x] TypeScript strict everywhere (base + per-package configs)
 - [x] ESLint (flat config, ESLint 9) + Prettier + boundary guard wired into
@@ -193,11 +196,18 @@ by committed e2e specs. Remaining:
 global search, profile with allergies / next appointment / visits / outstanding
 treatments / balance, and the odontogram endpoint. Remaining:
 
-1. [ ] **Patient registration** (create/edit). The "New Patient" buttons are
-       disabled placeholders; no write use case exists yet.
-2. [ ] **Quick actions** on the dashboard ("New Visit", "New Patient") navigate
-       nowhere, because the appointment and visit forms arrive with Milestone 5.
-3. [ ] Appointments list/creation, visit capture and the clinical timeline, which
+1. [x] **Patient registration** (create). `registerPatient` use case,
+       `PatientRegistrationRepository` port, Drizzle implementation with an
+       atomic per-clinic record number, `POST /api/v1/patients`, the
+       `createPatientFormSchema` + React Hook Form form at `/patients/new`, and
+       both "New Patient" actions enabled. Record numbers are server-assigned and
+       sequential per clinic: `P-000001`, `P-000002`, … Never sent by a client.
+2. [ ] **Patient editing.** `updatePatientSchema` exists and the port is ready for
+       it, but no use case, endpoint or form. Registration creates only; the
+       profile has no edit affordance yet.
+3. [ ] **Quick actions** on the dashboard: "New Patient" is live; "New Visit"
+       stays disabled until the agenda forms arrive with Milestone 5.
+4. [ ] Appointments list/creation, visit capture and the clinical timeline, which
        the roadmap lists under M4 but which are the natural output of M5.
 
 **Milestone 5 onward** — agenda, visits, odontogram, treatments, payments,
@@ -277,3 +287,43 @@ console. `pnpm run build` and `pnpm run test:e2e` were deferred at the user's
 request and remain owed.
 
 (End of file - total ~260 lines)
+
+Session 9: documentation and end-to-end coverage for Milestone 3 and the Milestone 4
+read side. Promoted the throwaway browser script into committed Playwright specs
+(9 dashboard, 10 patients) against a fixture-backed mock API, and fixed three
+defects in the harness itself. The valuable one: the mock was registered per
+endpoint, so a request carrying a query string matched nothing, the specs missed
+every real request, and they still passed — because a dev API was answering on port 3010. A spec that quietly talks to a live database is not a spec.
+
+Session 10: patient registration, the write side of Milestone 4. Started with the
+record number rather than the form, because that is the part with a correctness
+requirement: numbers are per clinic and sequential, so allocating one has to be
+atomic. The first port was `save(patient, {recordNumber})` plus
+`nextRecordNumber(clinicId)`, which cannot express the guarantee — a caller can
+drive two calls and a lock cannot span them. Reduced it to one
+`register(patient)` method that owns the transaction, with a transaction-scoped
+advisory lock keyed on the clinic, so two receptionists registering at once cannot
+collide and the unique index cannot reject one of them at the desk. Verified by
+removing the lock: 3 of 5 simultaneous registrations then fail. That test needed a
+connection pool wider than one, because with `max: 1` the driver serialises the
+transactions and the race cannot happen at all — the first version of the test
+passed against code with no lock in it, which is worse than no test.
+
+Two more defects found by testing rather than by reading. The collision fallback
+was dead code: reading `error.code` returns `undefined` for every real database
+failure, because Drizzle rethrows driver errors wrapped with the original on
+`cause`, so a conflict would have surfaced as a 500. And on the client, an
+untouched optional input submits `''`, which the API rejects with the same `min(1)`
+that stops a blank name being stored — so a patient who gave only a name could not
+have been registered at all. Fixed by deriving `createPatientFormSchema` from
+`createPatientSchema.shape` rather than restating the fields, so the form accepts
+exactly what the API accepts; a test asserts the two schemas keep the same keys.
+Zod's default message for a blank name ("Too small: expected string to have >=1
+characters") was what the receptionist would have read, so the messages are now
+written out.
+
+Also fixed in the e2e harness: fixtures were keyed by pathname alone, so
+`GET /patients` and `POST /patients` collided and a registration spec's POST was
+answered with the list fixture. Fixtures are now keyed by `'/path'` or
+`'POST /path'`, and requests are recorded with their bodies so a spec can assert
+what was actually sent.

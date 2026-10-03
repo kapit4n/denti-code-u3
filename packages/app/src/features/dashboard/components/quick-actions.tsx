@@ -1,17 +1,24 @@
 /**
  * The dashboard's primary actions.
  *
- * Both actions are disabled with an explanatory title rather than silently
- * doing nothing: creating a patient and booking a visit are Milestone 4/5 work,
- * and a button that looks live but navigates nowhere is worse than one that says
- * it is not ready yet. Enabling them is a one-line change per button when the
- * target routes exist.
+ * Each action declares where it goes; one that has no destination yet is rendered
+ * disabled with the reason, rather than silently doing nothing. A button that
+ * looks live but navigates nowhere is worse than one that admits it is not ready.
  */
 
+import { Link } from '@tanstack/react-router';
 import { Button } from '@denti-code-u3/ui';
-import { CalendarPlus, UserPlus } from 'lucide-react';
+import { CalendarPlus, UserPlus, type LucideIcon } from 'lucide-react';
 
-const PENDING_ACTIONS = [
+interface QuickAction {
+  readonly key: string;
+  readonly label: string;
+  readonly Icon: LucideIcon;
+  readonly to?: string;
+  readonly reason?: string;
+}
+
+const ACTIONS: readonly QuickAction[] = [
   {
     key: 'new-visit',
     label: 'New Visit',
@@ -22,19 +29,28 @@ const PENDING_ACTIONS = [
     key: 'new-patient',
     label: 'New Patient',
     Icon: UserPlus,
-    reason: 'Available with patient registration (Milestone 4)',
+    to: '/patients/new',
   },
-] as const;
+];
 
 export function QuickActions() {
   return (
     <div className="flex gap-2">
-      {PENDING_ACTIONS.map(({ key, label, Icon, reason }) => (
-        <Button key={key} disabled title={reason}>
-          <Icon aria-hidden className="mr-2 h-4 w-4" />
-          {label}
-        </Button>
-      ))}
+      {ACTIONS.map(({ key, label, Icon, to, reason }) =>
+        to ? (
+          <Button key={key} asChild>
+            <Link to={to}>
+              <Icon aria-hidden className="mr-2 h-4 w-4" />
+              {label}
+            </Link>
+          </Button>
+        ) : (
+          <Button key={key} disabled title={reason}>
+            <Icon aria-hidden className="mr-2 h-4 w-4" />
+            {label}
+          </Button>
+        ),
+      )}
     </div>
   );
 }

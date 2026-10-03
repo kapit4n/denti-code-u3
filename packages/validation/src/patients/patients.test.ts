@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createPatientFormSchema,
   createPatientSchema,
   paginatedPatientSchema,
   searchPatientsQuerySchema,
@@ -126,5 +127,90 @@ describe('paginatedPatientSchema', () => {
     const result = paginatedPatientSchema.safeParse({ data: [] });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe('createPatientFormSchema', () => {
+  it('accepts a patient with every optional field left blank', () => {
+    // The regression this exists for: an untouched text input submits '', and ''
+    // is not a valid `preferredName`, so a patient who gave no email and no
+    // phone could not be registered at all.
+    const result = createPatientFormSchema.safeParse({
+      firstName: 'Ana',
+      lastName: 'Gómez',
+      preferredName: '',
+      identificationNumber: '',
+      phone: '',
+      email: '',
+      birthDate: '',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.success && result.data).toEqual({ firstName: 'Ana', lastName: 'Gómez' });
+  });
+
+  it('treats a whitespace-only optional field as blank', () => {
+    const result = createPatientFormSchema.parse({
+      firstName: 'Ana',
+      lastName: 'Gómez',
+      preferredName: '   ',
+    });
+
+    expect(result.preferredName).toBeUndefined();
+  });
+
+  it('still validates optional fields that were filled in', () => {
+    // The pre-processing must not become a way to smuggle anything past the
+    // schema: a bad email is still rejected.
+    expect(
+      createPatientFormSchema.safeParse({
+        firstName: 'Ana',
+        lastName: 'Gómez',
+        email: 'not-an-email',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('still requires a name', () => {
+    expect(createPatientFormSchema.safeParse({ firstName: '', lastName: 'Gómez' }).success).toBe(
+      false,
+    );
+    expect(createPatientFormSchema.safeParse({ firstName: 'Ana', lastName: '  ' }).success).toBe(
+      false,
+    );
+  });
+
+  it('trims real values', () => {
+    const result = createPatientFormSchema.parse({
+      firstName: '  Ana ',
+      lastName: ' Gómez  ',
+      preferredName: '  Ana María ',
+    });
+
+    expect(result).toEqual({
+      firstName: 'Ana',
+      lastName: 'Gómez',
+      preferredName: 'Ana María',
+    });
+  });
+
+  it('rejects a birth date that is not a real date', () => {
+    expect(
+      createPatientFormSchema.safeParse({
+        firstName: 'Ana',
+        lastName: 'Gómez',
+        birthDate: '1990-02-30',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('has exactly the fields of createPatientSchema, so it cannot drift', () => {
+    // If someone adds a field to `createPatientSchema` and forgets to add it here,
+    // the form would not send it and the API would fill in a default the user
+    // never chose — or, for a required field, the form would look complete while
+    // every submission is rejected.
+    expect(Object.keys(createPatientFormSchema.shape).sort()).toEqual(
+      Object.keys(createPatientSchema.shape).sort(),
+    );
   });
 });
