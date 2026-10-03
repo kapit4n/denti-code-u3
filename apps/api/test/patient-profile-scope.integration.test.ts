@@ -27,6 +27,9 @@ import { fileURLToPath } from 'node:url';
 
 import * as schema from '@denti-code-u3/database/schema';
 import { registerPatientsRoutes } from '../src/http/routes/patients.js';
+import { DrizzlePatientRegistrationRepository } from '../src/infrastructure/persistence/repositories/patient-registration-repository.js';
+import { systemClock } from '../src/infrastructure/clock/system-clock.js';
+import { uuidGenerator } from '../src/infrastructure/id/uuid-generator.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -73,7 +76,14 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
     app.addHook('onRequest', async (request: FastifyRequest & { clinicId: string }) => {
       request.clinicId = scopedClinicId;
     });
-    await registerPatientsRoutes(app, { db });
+    // The real write-side dependencies, not stubs: the same handle the server
+    // uses, so the registration path is exercised against real PostgreSQL.
+    await registerPatientsRoutes(app, {
+      db,
+      registrations: new DrizzlePatientRegistrationRepository(db),
+      ids: uuidGenerator,
+      clock: systemClock,
+    });
 
     await sql`
       insert into clinics (id, name, time_zone, currency_code)

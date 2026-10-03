@@ -30,9 +30,23 @@ import {
   visits,
 } from '@denti-code-u3/database/schema';
 import type { DentiDatabase } from '../../infrastructure/persistence/postgres/connection.js';
+import type { Clock, IdGenerator, PatientRegistrationRepository } from '@denti-code-u3/domain';
+import { registerPatient } from '@denti-code-u3/domain';
+import { createPatientSchema } from '@denti-code-u3/validation';
+import type { ClinicId } from '@denti-code-u3/types';
+import { sendProblem } from '../problem.js';
 
 export interface PatientsDependencies {
   readonly db: DentiDatabase;
+  /**
+   * Only the write path needs it. The read endpoints below query Drizzle
+   * directly, which predates the repository layer; the registration route goes
+   * through the domain use case because assigning a record number atomically is
+   * not something a route handler should be doing by hand.
+   */
+  readonly registrations: PatientRegistrationRepository;
+  readonly ids: IdGenerator;
+  readonly clock: Clock;
 }
 
 /** Ceiling on a page size, so `?limit=` cannot ask for the whole table. */
@@ -73,8 +87,64 @@ function normaliseSearch(raw: unknown): string | null {
 
 export async function registerPatientsRoutes(
   app: FastifyInstance,
-  { db }: PatientsDependencies,
+  { db, registrations, ids, clock }: PatientsDependencies,
 ): Promise<void> {
+  /**
+   * Register a patient.
+   *
+   * The body is validated by `createPatientSchema` — the same schema the form
+   * uses, so the two cannot disagree about what a valid name is. Rules that are
+   * business rules rather than shape rules (a birth date that has not happened
+   * yet, a name that is empty once trimmed) live in the domain use case and
+   * arrive here as a `DomainError`, which `sendProblem` turns into a 422.
+   *
+   * `clinicId` comes from the request scope, never from the body: a client that
+   * could choose its own clinic would be a cross-tenant write (ADR 0014).
+   */
+  app.post('/api/v1/patients', async (request, reply) => {
+    const clinicId = request.clinicId as ClinicId;
+    const parsed = createPatientSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.status(422).send({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'The patient details could not be accepted',
+          details: { issues: parsed.error.issues },
+          requestId: request.id,
+        },
+      });
+    }
+
+    try {
+      const { patient, recordNumber } = await registerPatient(clinicId, parsed.data, {
+        patients: registrations,
+        ids,
+        clock,
+      });
+
+      return reply.status(201).send({
+        id: patient.id,
+        clinicId: patient.clinicId,
+        recordNumber,
+        firstName: patient.firstName,
+        lastName: patient.lastName,
+        preferredName: patient.preferredName ?? null,
+        identificationNumber: patient.identificationNumber ?? null,
+        phone: patient.phone ?? null,
+        email: patient.email ?? null,
+        birthDate: patient.birthDate ?? null,
+        isActive: patient.isActive,
+      });
+    } catch (error) {
+      // Business rules (a birth date that has not happened, a name that is empty
+      // once trimmed) arrive from the use case as a `DomainError`, which
+      // `sendProblem` maps to the right status. Letting it escape would make every
+      // rejected form a 500 and tell the user nothing about what to fix.
+      return sendProblem(reply, request, error);
+    }
+  });
+
   app.get('/api/v1/patients', async (request, reply) => {
     const clinicId = request.clinicId;
     const query = request.query as { q?: string; page?: string; limit?: string };

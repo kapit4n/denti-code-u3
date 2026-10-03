@@ -64,10 +64,37 @@ export interface PatientSearchCriteria {
   readonly page?: PageRequest;
 }
 
-export interface PatientRepository {
+/**
+ * The write side of patient persistence, which is all registration needs.
+ *
+ * Narrower than `PatientRepository` on purpose. The read endpoints predate the
+ * repository layer and still query Drizzle directly in their route handlers;
+ * implementing `search` and `findById` here today would add two methods that
+ * nothing calls, which is dead code pretending to be structure. Reads move here
+ * when they are next touched.
+ *
+ * One method rather than `save` plus `nextRecordNumber`, because the two must be
+ * atomic together: reading the highest issued number and inserting a patient with
+ * it are a single critical section, and a port that lets a caller drive them
+ * separately cannot promise that. The caller therefore cannot choose a record
+ * number even if it wanted to — which is right, since renumbering a patient's
+ * chart is not something this product does.
+ */
+export interface PatientRegistrationRepository {
+  /**
+   * Stores a new patient and assigns its clinic-scoped record number.
+   *
+   * Returns the record number actually written. Implementations must be safe to
+   * call concurrently: two receptionists registering at the same moment must not
+   * produce the same number, because the unique index would then reject one of
+   * them in front of a patient who is already at the desk.
+   */
+  register(patient: Patient): Promise<{ readonly recordNumber: string }>;
+}
+
+export interface PatientRepository extends PatientRegistrationRepository {
   findById(clinicId: ClinicId, patientId: PatientId): Promise<Patient | undefined>;
   search(criteria: PatientSearchCriteria): Promise<Page<Patient>>;
-  save(patient: Patient): Promise<void>;
 }
 
 export interface AppointmentRangeQuery {

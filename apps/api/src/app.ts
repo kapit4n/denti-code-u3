@@ -19,6 +19,9 @@ import { registerClinicScope } from './http/plugins/clinic-scope.js';
 import { registerHealthRoutes } from './http/routes/health.js';
 import { registerDashboardRoutes } from './http/routes/dashboard.js';
 import { registerPatientsRoutes } from './http/routes/patients.js';
+import { DrizzlePatientRegistrationRepository } from './infrastructure/persistence/repositories/patient-registration-repository.js';
+import { systemClock } from './infrastructure/clock/system-clock.js';
+import { uuidGenerator } from './infrastructure/id/uuid-generator.js';
 import { sendProblem } from './http/problem.js';
 
 export interface ServerDependencies {
@@ -78,7 +81,12 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     db: connection.db,
     fallbackTimeZone: config.clinicTimeZone,
   });
-  await registerPatientsRoutes(app, { db: connection.db });
+  await registerPatientsRoutes(app, {
+    db: connection.db,
+    registrations: new DrizzlePatientRegistrationRepository(connection.db),
+    ids: uuidGenerator,
+    clock: systemClock,
+  });
 
   app.get('/', async () => ({
     service: 'denti-code-u3-api',
