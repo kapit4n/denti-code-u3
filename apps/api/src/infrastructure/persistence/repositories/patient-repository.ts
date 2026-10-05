@@ -41,21 +41,7 @@ import {
   type IsoDateTime,
   type PatientId,
 } from '@denti-code-u3/types';
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  gte,
-  inArray,
-  isNull,
-  ne,
-  or,
-  sql,
-  type Column,
-  type SQL,
-} from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import {
   appointments,
   charges,
@@ -69,6 +55,7 @@ import {
 } from '@denti-code-u3/database/schema';
 
 import type { DentiDatabase } from '../postgres/connection.js';
+import { foldAccents, foldable } from '../postgres/fold-accents.js';
 
 /**
  * Escape the LIKE metacharacters, so a patient recorded as `100%` is findable and
@@ -83,51 +70,15 @@ function escapeLikePattern(term: string): string {
 }
 
 /**
- * `lower(translate(column, ...))` — the SQL twin of `foldAccents`.
- *
- * Must stay in step with `ACCENTED`/`UNACCENTED`, or a search folds one side and
- * not the other and stops matching.
- */
-function foldable(column: SQL | Column): SQL {
-  return sql`lower(translate(${column}, ${ACCENTED}, ${UNACCENTED}))`;
-}
-
-/**
- * The Spanish/French/German accented letters this clinic actually sees, and their
- * unaccented equivalents. Kept in step between the SQL and the JavaScript sides by
- * `unaccentedAlphabet()` below.
- */
-const ACCENTED = 'áàäâãéèëêíìïîóòöôõúùüûñçýÁÀÄÂÃÉÈËÊÍÌÏÎÓÒÖÔÕÚÙÜÛÑÇÝ';
-const UNACCENTED = 'aaaaaeeeeiiiiooooouuuuncyAAAAAEEEEIIIIOOOOOUUUUNCY';
-
-/**
  * Fold a search term the way the SQL folds a stored name.
  *
- * The database is created with `--locale=C` so that a developer's container and a
- * production server sort the same way. That is a deliberate trade: `C` sorts by
- * byte value, so `Ñuñez` comes *after* `Patient`, and `lower()` folds only ASCII,
- * so `lower('ÑUÑEZ')` is still `ÑUÑEZ` and a search for `Ñuñez` matches nothing.
- *
- * Neither is acceptable for a clinic that looks patients up by name, so both sides
- * are folded explicitly rather than trusting the server. The alternative,
- * `unaccent()`, needs `CREATE EXTENSION` — a privilege and a deployment step — for
- * the same result, and is `STABLE` rather than `IMMUTABLE`, so it cannot be indexed.
- * `translate()` is immutable, built in, and one line.
+ * The two halves live in `postgres/fold-accents.ts`, which explains why folding is
+ * needed at all; `normaliseTerm` is only the "absent means no term" part.
  */
 function normaliseTerm(term: string | undefined): string | null {
   if (term === undefined) return null;
   const folded = foldAccents(term.trim()).toLowerCase();
   return folded.length === 0 ? null : folded;
-}
-
-/**
- * The same accent-stripping the SQL does, for a term typed on a keyboard.
- *
- * `NFD` splits `ñ` into `n` + a combining tilde, and removing the marks leaves the
- * plain letter. Composed accents (`á`) and precomposed `ñ` therefore both fold.
- */
-function foldAccents(value: string): string {
-  return value.normalize('NFD').replace(/\p{Diacritic}/gu, '');
 }
 
 /**
@@ -301,6 +252,7 @@ export class DrizzlePatientRepository implements PatientRepository {
     /**
      * The stored columns are folded in SQL as well as the term being folded in
      * JavaScript — folding only one side is how `Ñuñez` stops matching `nunez`.
+     * Both halves come from `postgres/fold-accents.ts`.
      *
      * `LIKE ... ESCAPE` rather than `ILIKE`, so the escaping above is honoured.
      * `ILIKE` honours it too, but it cannot be turned into an index expression,

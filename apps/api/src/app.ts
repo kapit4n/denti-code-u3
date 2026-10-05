@@ -20,10 +20,14 @@ import { registerHealthRoutes } from './http/routes/health.js';
 import { registerDashboardRoutes } from './http/routes/dashboard.js';
 import { registerAppointmentsRoutes } from './http/routes/appointments.js';
 import { registerClinicRoutes } from './http/routes/clinic.js';
+import { registerDentistsRoutes } from './http/routes/dentists.js';
+import { registerChairsRoutes } from './http/routes/chairs.js';
 import { registerPatientsRoutes } from './http/routes/patients.js';
 import { DrizzlePatientRepository } from './infrastructure/persistence/repositories/patient-repository.js';
 import { DrizzleAppointmentRepository } from './infrastructure/persistence/repositories/appointment-repository.js';
 import { DrizzleClinicRepository } from './infrastructure/persistence/repositories/clinic-repository.js';
+import { DrizzleDentistRepository } from './infrastructure/persistence/repositories/dentist-repository.js';
+import { DrizzleChairRepository } from './infrastructure/persistence/repositories/chair-repository.js';
 import { systemClock } from './infrastructure/clock/system-clock.js';
 import { uuidGenerator } from './infrastructure/id/uuid-generator.js';
 import { sendProblem } from './http/problem.js';
@@ -112,6 +116,12 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   // The clinic's own record, so the browser renders the calendar in the clinic's
   // day rather than the visitor's.
   await registerClinicRoutes(app, { clinics });
+
+  // The two resources a booking is made against. `POST /appointments` requires a
+  // `dentistId` and accepts a `chairId`, so until these answered there was no way to
+  // name one — the appointment write side had no read side to sit on.
+  await registerDentistsRoutes(app, { dentists: new DrizzleDentistRepository(connection.db) });
+  await registerChairsRoutes(app, { chairs: new DrizzleChairRepository(connection.db) });
 
   app.get('/', async () => ({
     service: 'denti-code-u3-api',

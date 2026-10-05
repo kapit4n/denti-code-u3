@@ -304,29 +304,87 @@ export interface VisitRepository {
   save(visit: Visit): Promise<void>;
 }
 
+/**
+ * A clinician the clinic can book.
+ *
+ * **What this shape lost, and why.** It used to promise `specialties: string[]` and
+ * `defaultChairId`, neither of which any column can supply: `dentists.speciality` is
+ * a single text value, and there is nowhere to store a default chair. A port that
+ * describes a table that does not exist is not a design, it is a guess that the first
+ * implementer has to either invent a migration for or quietly drop. `speciality` is
+ * now the one value the row holds, and a default chair comes back when a column for
+ * it exists — it is a migration, not a type.
+ *
+ * `licenceNumber` is deliberately **absent**. A list of bookable clinicians has no
+ * use for a licence number, and a shape that returns the whole row is a shape that
+ * eventually gets sent somewhere it should not be.
+ */
 export interface DentistSummary {
   readonly id: DentistId;
-  readonly userId: string;
+  /** Null for a clinician with no login: `user_id` is `on delete set null`. */
+  readonly userId: string | null;
   readonly fullName: string;
-  readonly specialties: readonly string[];
-  readonly defaultChairId?: ChairId;
-}
-
-export interface DentistRepository {
-  listByClinic(clinicId: ClinicId): Promise<readonly DentistSummary[]>;
-  findById(clinicId: ClinicId, dentistId: DentistId): Promise<DentistSummary | undefined>;
-}
-
-export interface ChairSummary {
-  readonly id: ChairId;
-  readonly roomId?: string;
-  readonly name: string;
-  readonly kind: string;
+  /** The one speciality the row holds, or null. Never an empty string. */
+  readonly speciality: string | null;
+  /**
+   * The colour the clinic gives this clinician, or null.
+   *
+   * Read here rather than invented in the UI because two dentists sharing a chip
+   * colour on the agenda's filter is a bug the clinic cannot fix without a
+   * deployment.
+   */
+  readonly color: string | null;
+  /**
+   * False once the clinician has left.
+   *
+   * Carried rather than filtered out: a deactivated dentist still appears on
+   * appointments booked while they worked, and hiding the row would leave the agenda
+   * naming nobody.
+   */
   readonly isActive: boolean;
 }
 
+/**
+ * Asking for a clinic's clinicians.
+ *
+ * An object rather than a bare boolean, because a call site reading
+ * `listByClinic(id, true)` says nothing about which true it means.
+ */
+export interface DentistListRequest {
+  /** Undefined means *no filter*: every dentist, active or not. */
+  readonly onlyActive?: boolean;
+}
+
+export interface DentistRepository {
+  listByClinic(
+    clinicId: ClinicId,
+    request?: DentistListRequest,
+  ): Promise<readonly DentistSummary[]>;
+  findById(clinicId: ClinicId, dentistId: DentistId): Promise<DentistSummary | undefined>;
+}
+
+/** A treatment unit (sillón) the clinic books into. */
+export interface ChairSummary {
+  readonly id: ChairId;
+  /** Null for a chair not assigned to a room; the column is `on delete set null`. */
+  readonly roomId: string | null;
+  /** The room's name, or null with no room. Never an id offered as a label. */
+  readonly roomName: string | null;
+  readonly name: string;
+  readonly isActive: boolean;
+}
+
+/**
+ * A chair with no room is still a chair: `rooms` is optional on the row, so the
+ * filter is the same question it is for a dentist and is answered the same way.
+ */
+export interface ChairListRequest {
+  /** Undefined means *no filter*: every chair, active or not. */
+  readonly onlyActive?: boolean;
+}
+
 export interface ChairRepository {
-  listByClinic(clinicId: ClinicId): Promise<readonly ChairSummary[]>;
+  listByClinic(clinicId: ClinicId, request?: ChairListRequest): Promise<readonly ChairSummary[]>;
 }
 
 /**

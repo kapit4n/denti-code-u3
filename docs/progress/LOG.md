@@ -1090,3 +1090,80 @@ pnpm run test             422 unit/component (12/12 tasks, 58 new)
 pnpm run test:integration 118 integration (10 files, real PostgreSQL 17)
 pnpm run test:e2e         60/60 passed (5 new, 1 replaced)
 ```
+
+---
+
+## Session 18 — the two lists a booking is made against
+
+**Started from:** `da72df6`. `POST /api/v1/appointments` requires a `dentistId` and
+accepts a `chairId`, and nothing could name either — the booking form was blocked on
+a missing read side.
+
+**What was added**
+
+- `DrizzleDentistRepository` and `DrizzleChairRepository`, implementing the two ports
+  that had been declared since session 8 with no caller, plus
+  `GET /api/v1/dentists` and `GET /api/v1/chairs` and the `onlyActive` query schemas.
+- `dentistListQuerySchema` / `chairListQuerySchema` in `packages/validation/src/clinic`.
+- 12 integration tests, two rooms and 4 chairs in the seed, and the appointments
+  seated in them.
+
+**Decisions worth recording**
+
+- **The ports described tables that do not exist.** `DentistSummary` promised
+  `specialties: string[]` and `defaultChairId`; `ChairSummary` promised `kind`. None
+  is fillable from a column. They were corrected in writing rather than satisfied by
+  three invented migrations — the same argument as the appointment port losing its
+  speculative methods in session 13. `licenceNumber` is deliberately not returned: a
+  list of bookable clinicians has no use for it.
+- **Sorting is folded, and the folding moved.** The database runs `--locale=C`, so
+  `Álvaro Núñez` sorts after `Beatriz Ñaupari` on byte value. Rather than copy the
+  accent table into a second repository, the SQL/JS twins moved to
+  `apps/api/src/infrastructure/persistence/postgres/fold-accents.ts` — and the
+  comment there promised an `unaccentedAlphabet()` guard that had never been
+  written, so it is now `fold-accents.test.ts`.
+- **`roomName` comes from a LEFT JOIN.** `chairs.room_id` is nullable, so an inner
+  join would hide every unassigned chair from the list of bookable chairs.
+- **Two endpoints, not one "booking options" endpoint**, and no client query hooks:
+  a hook with no caller is a promise the first consumer has to keep or break.
+- **No rule about booking an inactive dentist.** `createAppointment` does not check
+  `isActive`, so a client that hides inactive rows is currently the only thing
+  preventing it — a rule in the browser. Recorded as product question 17 rather than
+  decided here.
+
+**A test that could not fail**
+
+The first ordering assertion used `Dr. Álvaro` and `Dra. Ñuñez`. It passed with the
+folding _removed_, because the shared title prefix decides the comparison before the
+accent is reached. Rewritten without a prefix it fails when the folding goes, and the
+chair's `LEFT JOIN` fails three tests when it becomes an inner join. Both checked by
+reintroducing the defect.
+
+**The development database was reset** (`db:reset` then `db:migrate`, `db:seed`) so
+the new chairs are visible on the agenda: the seed is idempotent by id, so the four
+existing appointments kept `chair_id = null` and the feature would have looked
+unfinished. The database held nothing but seed rows (3 patients, 2 dentists, 4
+appointments, 1 visit, 1 plan, 2 charges, 2 payments), so nothing was lost.
+
+**Surfaced, not fixed**
+
+- `appointments_room_no_overlap` treats a **room** as exclusive, so two chairs in one
+  room cannot both be working at the same time — the constraint answers a different
+  question from the one a room with two chairs poses. Recorded as T8.
+- Whether an inactive dentist or chair may still be booked: product question 17.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             429 unit/component (12/12 tasks, 7 new)
+pnpm run test:integration 130 integration (11 files, 12 new, real PostgreSQL 17)
+pnpm run test:e2e         60/60 passed (no UI moved)
+pnpm run db:migrate       no migration needed — no column added
+pnpm run db:seed          2 rooms, 4 chairs; agenda now names a chair per block
+live API                  /dentists, /chairs, ?onlyActive=true, 422 on ?onlyActive=yes
+defect checks             folding removed -> 1 failure; leftJoin -> innerJoin -> 3
+```

@@ -64,21 +64,32 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 17)
+## Verification log (last run, session 18)
 
-| Command                     | Result                                                      |
-| --------------------------- | ----------------------------------------------------------- |
-| `pnpm run typecheck`        | 12/12 tasks pass                                            |
-| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`                       |
-| `pnpm run format`           | applied; `pnpm run format:check` clean                      |
-| `pnpm run test`             | 12/12 tasks pass — 422 tests (58 new)                       |
-| `pnpm run test:integration` | 10 files, 118 tests pass against real PostgreSQL 17         |
-| `pnpm run build`            | 5/5 tasks pass                                              |
-| `pnpm run test:e2e`         | 60 passed (5 new, 1 replaced)                               |
-| `pnpm run guard:boundaries` | OK — and `check-boundaries.mjs` needed no edit this session |
+| Command                     | Result                                                 |
+| --------------------------- | ------------------------------------------------------ |
+| `pnpm run typecheck`        | 12/12 tasks pass                                       |
+| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`                  |
+| `pnpm run format`           | applied; `pnpm run format:check` clean                 |
+| `pnpm run test`             | 12/12 tasks pass — 429 tests (7 new)                   |
+| `pnpm run test:integration` | 11 files, 130 tests pass against real PostgreSQL 17    |
+| `pnpm run build`            | 5/5 tasks pass                                         |
+| `pnpm run test:e2e`         | 60 passed (no UI moved this session)                   |
+| `pnpm run guard:boundaries` | OK                                                     |
+| `pnpm run db:migrate`       | no migration needed — this session adds no column      |
+| `pnpm run db:seed`          | adds 2 rooms and 4 chairs; `db:reset` run to seat them |
 
-Per-package unit/component tests: domain 145, validation 44, api-client 15, api 53
+Per-package unit/component tests: domain 145, validation 50, api-client 15, api 58
 (integration skipped here, run separately), app 162, desktop 3.
+
+**Two assertions in the new integration test were wrong before the code was, and the
+defect check caught them.** The first version named the clinicians `Dr. Álvaro` and
+`Dra. Ñuñez` and asserted a folded order — which passes with _or_ without folding,
+because the shared `Dr.`/`Dra.` prefix decides the comparison before the accent is
+reached. Rewritten without a common prefix (`Álvaro Núñez` sorts before
+`Beatriz Ñaupari` only when the `Á` is folded), it then failed as it should when the
+folding was removed. The lesson is the same one the e2e specs learned: an assertion
+that cannot fail is not an assertion.
 
 **Two of this session's own tests were wrong before the code was.** The first
 version of the drag spec asserted that the drop sent `17:00Z` — the _end_ of the
@@ -155,6 +166,23 @@ both and neither existed yet.
 
 ## Decisions made this session (not yet in ADRs)
 
+- **Two endpoints, not one "booking options" endpoint.** Dentists and chairs are
+  two resources with two independent lifetimes, and the form's dentist dropdown has
+  no reason to be invalidated when a chair is renamed. A single endpoint would make
+  each of them wait on the other, and would be a shape named after a screen.
+- **The ports were corrected against the schema, not implemented as written.**
+  `DentistSummary.specialties`, `defaultChairId` and `ChairSummary.kind` cannot be
+  filled from any column. Implementing them would have meant inventing three
+  migrations to satisfy a type written before anyone looked at the tables; dropping
+  them costs nothing and records the truth. This is the same argument as the
+  `AppointmentRepository` port losing its five speculative methods in session 13.
+- **No client query hooks were added.** `useDentists`/`useChairs` would have no
+  caller until the booking form exists, and this project's rule is that a hook with
+  no caller is a promise the first consumer has to keep or break loudly.
+- **The seed was extended rather than the endpoint designed around the seed.** An
+  endpoint returning an empty list in the only database anyone will open is not a
+  working feature, so the seed gained 2 rooms and 4 chairs and the appointments are
+  now seated in them.
 - **A `.sh` entry point for the fallback, not a second implementation of it.**
   `scripts/run-desktop.sh` runs the newest kept build (or a numbered one) and
   delegates to `scripts/desktop-pin.mjs`, so the shell script and
@@ -452,13 +480,53 @@ editing. Both sides now go through `PatientRepository`. Remaining:
      grid asserts pixel offsets, so a failure there would be about
      FullCalendar's layout rather than about this application.
 
-   **Still to do: the booking form** — blocked, not deferred. It cannot be built
-   honestly on what the API has: `createAppointmentSchema` requires `dentistId`,
-   and **no endpoint lists dentists or chairs**, so a form would have to ask the
-   receptionist to type a UUID. That read endpoint comes first; the form, the
-   empty-slot click, and the "New Visit" and next-appointment actions it
-   un-disables follow from it. `api-client` write methods for the three
-   endpoints are called directly by the mutations, as every other feature does.
+   - **The booking form's blocker is gone** (session 18): `GET /api/v1/dentists`
+     and `GET /api/v1/chairs` now name the two things a booking is made against.
+
+   **The bookable resources, session 18.** `GET /api/v1/dentists` and
+   `GET /api/v1/chairs`, with `DrizzleDentistRepository` and
+   `DrizzleChairRepository` behind the ports that had been declared since
+   session 8 with nobody calling them.
+
+   - **The ports were wrong and were corrected rather than implemented as
+     written.** `DentistSummary` promised `specialties: string[]` and
+     `defaultChairId`, and `ChairSummary` promised `kind` — none of which any
+     column can supply (`dentists.speciality` is one text value, and there is
+     nowhere to store a default chair). A port describing a table that does not
+     exist is not a design; it is a guess the first implementer has to either
+     invent a migration for or quietly drop. It was dropped, in writing.
+   - **`licenceNumber` is deliberately not returned.** A list of bookable
+     clinicians has no use for it, and a shape that returns the whole row is a
+     shape that eventually gets sent somewhere it should not be.
+   - **`onlyActive` defaults to _no filter_,** the same default the patient list
+     uses and for the same reason: a clinician who has left still appears on the
+     appointments they worked, and hiding the row leaves those naming nobody. An
+     unreadable flag is a 422 rather than being read as `false`.
+   - **Names are sorted folded, and that is load-bearing.** The database runs
+     `--locale=C`, so `Álvaro Núñez` sorts _after_ `Beatriz Ñaupari` on byte
+     value. The accent folding moved out of the patient repository into
+     `persistence/postgres/fold-accents.ts` rather than being copied — two copies
+     of an accent table is one of them going stale. It came with a guard: the
+     comment in the patient repository promised an `unaccentedAlphabet()` check
+     that did not exist, and the two strings' equal length is now a test instead.
+   - **`roomName` is joined, not left as a uuid.** "Sillón 3" identifies nothing
+     in a clinic with three rooms. The join is a `LEFT JOIN`, because
+     `chairs.room_id` is nullable and an inner join would hide every unassigned
+     chair from the list of bookable chairs.
+   - **12 integration tests,** each of the two load-bearing ones verified by
+     reintroducing the defect: removing the folding fails the ordering test, and
+     turning the left join into an inner join fails three.
+   - **No rule about who may be booked.** `isActive` is returned as a fact and
+     nothing enforces it, because `createAppointment` does not look at it — which
+     means a client that hides the inactive ones is currently the only thing
+     stopping it. That is a rule in the browser, and it is now recorded as
+     product question 17 rather than decided here.
+
+   **Still to do: the booking form** — not started, no longer blocked. The form,
+   the empty-slot click (`selectable`), and the "New Visit" and next-appointment
+   actions it un-disables follow from the two lists above. `api-client` write
+   methods for the three endpoints are called directly by the mutations, as
+   every other feature does.
 
 7. [ ] Visits, the clinical timeline, treatments, payments, inventory, reports.
 
@@ -831,3 +899,40 @@ endpoint is the next task.
 5/5 · 422 unit/component (58 new) · 118 integration · 60/60 e2e (5 new, 1
 replaced). No migration, no seed change, no API change: this session added no
 server behaviour, only a client for behaviour that already existed.
+
+Session 18: the two lists a booking is made against — `GET /api/v1/dentists` and
+`GET /api/v1/chairs` — which is what the booking form was blocked on. The ports had
+been declared since session 8 with nobody calling them, and reading them against the
+schema showed they described tables that do not exist: `specialties`,
+`defaultChairId` and `kind` have no columns. Correcting them was the first real work
+of the session and cheaper than the three migrations that implementing them as
+written would have required.
+
+The part that turned out to matter most was not the endpoint but the **sort**. The
+development database runs `--locale=C`, so `Álvaro Núñez` sorts after `Beatriz
+Ñaupari` on byte value and every accented clinician sinks to the bottom of a
+dropdown. The patient repository already solved this; the folding moved out of it
+into `persistence/postgres/fold-accents.ts` rather than being copied, because two
+copies of an accent table is one of them going stale — and because the comment there
+promised an `unaccentedAlphabet()` guard that had never existed, which is now a
+test.
+
+My first version of the ordering assertion named the clinicians `Dr. Álvaro` and
+`Dra. Ñuñez` and passed with the folding _removed_. A shared title prefix decides the
+comparison before the accent is reached, so the test could not fail. Rewritten
+without the prefix, it fails when the folding goes — and so does the chair's `LEFT
+JOIN` when it is turned into an inner one. Both were checked by reintroducing the
+defect, which is the only way to know an assertion is doing anything.
+
+One thing was deliberately left undecided: whether an inactive dentist may still be
+booked. `createAppointment` does not look at `isActive` and the new endpoints enforce
+nothing, so today a client that hides the inactive rows is the only thing preventing
+it — a rule in the browser, which this project refuses everywhere else. Rather than
+add a write-path rule that nobody asked for, it is product question 17. The dev
+database was reset so the seed's new chairs are visible on the agenda; it contained
+nothing but seed rows, so nothing was lost.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard · format · build
+5/5 · 429 unit/component (7 new) · 130 integration (12 new) · 60/60 e2e unchanged ·
+both endpoints answered by a real API against the dev database, including the 422
+for an unreadable `?onlyActive`. No migration: this session adds no column.

@@ -16,12 +16,14 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import {
   appointments,
+  chairs,
   charges,
   clinicOperatingHours,
   clinics,
   dentists,
   patients,
   payments,
+  rooms,
   treatmentPlanItems,
   treatmentPlans,
   visits,
@@ -111,6 +113,67 @@ async function seedDevelopmentData(database: ReturnType<typeof drizzle>): Promis
     ])
     .onConflictDoNothing();
 
+  // Rooms and chairs exist in the seed because `GET /api/v1/chairs` has to answer
+  // something in development, and because an agenda whose blocks all say "No chair
+  // assigned" is not the picture a receptionist works from.
+  //
+  // Two rooms, four chairs, and the appointments below are seated in them without
+  // ever overlapping inside one room: `appointments_room_no_overlap` treats a room as
+  // exclusive, so two chairs in `Aula 1` cannot hold two appointments at once. That
+  // constraint is worth a second look — a room with two chairs exists precisely so
+  // both can be working — but changing an exclusion constraint is a migration and a
+  // product decision, not something a seed should quietly work around by giving
+  // every chair its own room. Recorded in `docs/open-questions.md`.
+  await database
+    .insert(rooms)
+    .values([
+      {
+        id: '11111111-3333-4444-8555-000000000001',
+        clinicId: DEVELOPMENT_CLINIC_ID,
+        name: 'Aula 1',
+      },
+      {
+        id: '11111111-3333-4444-8555-000000000002',
+        clinicId: DEVELOPMENT_CLINIC_ID,
+        name: 'Aula 2',
+      },
+    ])
+    .onConflictDoNothing();
+
+  await database
+    .insert(chairs)
+    .values([
+      {
+        id: '11111111-4444-4555-8666-000000000001',
+        clinicId: DEVELOPMENT_CLINIC_ID,
+        roomId: '11111111-3333-4444-8555-000000000001',
+        name: 'Sillón 1',
+      },
+      {
+        id: '11111111-4444-4555-8666-000000000002',
+        clinicId: DEVELOPMENT_CLINIC_ID,
+        roomId: '11111111-3333-4444-8555-000000000001',
+        name: 'Sillón 2',
+      },
+      {
+        id: '11111111-4444-4555-8666-000000000003',
+        clinicId: DEVELOPMENT_CLINIC_ID,
+        roomId: '11111111-3333-4444-8555-000000000002',
+        name: 'Sillón 3',
+      },
+      // Out of service, and still listed. The name says what the chair *is* and
+      // `isActive` says what is true of it — a status written into a name is a second
+      // source of truth, and renaming the chair would have to edit the status too.
+      {
+        id: '11111111-4444-4555-8666-000000000004',
+        clinicId: DEVELOPMENT_CLINIC_ID,
+        roomId: null,
+        name: 'Sillón 4',
+        isActive: false,
+      },
+    ])
+    .onConflictDoNothing();
+
   await database
     .insert(patients)
     .values([
@@ -165,6 +228,8 @@ async function seedDevelopmentData(database: ReturnType<typeof drizzle>): Promis
         clinicId: DEVELOPMENT_CLINIC_ID,
         patientId: '11111111-3333-4444-8555-000000000001',
         dentistId: '11111111-2222-4333-8444-000000000001',
+        chairId: '11111111-4444-4555-8666-000000000001',
+        roomId: '11111111-3333-4444-8555-000000000001',
         startsAt: at(0, 9, 0),
         durationMinutes: 45,
         status: 'CONFIRMED',
@@ -174,6 +239,10 @@ async function seedDevelopmentData(database: ReturnType<typeof drizzle>): Promis
         clinicId: DEVELOPMENT_CLINIC_ID,
         patientId: '11111111-3333-4444-8555-000000000002',
         dentistId: '11111111-2222-4333-8444-000000000001',
+        // 10:00 follows the 09:00–09:45 above without touching it, so the two can
+        // share `Aula 1` without the room exclusion constraint objecting.
+        chairId: '11111111-4444-4555-8666-000000000002',
+        roomId: '11111111-3333-4444-8555-000000000001',
         startsAt: at(0, 10, 0),
         durationMinutes: 60,
         status: 'SCHEDULED',
@@ -183,6 +252,8 @@ async function seedDevelopmentData(database: ReturnType<typeof drizzle>): Promis
         clinicId: DEVELOPMENT_CLINIC_ID,
         patientId: '11111111-3333-4444-8555-000000000001',
         dentistId: '11111111-2222-4333-8444-000000000002',
+        chairId: '11111111-4444-4555-8666-000000000003',
+        roomId: '11111111-3333-4444-8555-000000000002',
         startsAt: at(0, 11, 30),
         durationMinutes: 30,
         status: 'ARRIVED',
@@ -192,6 +263,8 @@ async function seedDevelopmentData(database: ReturnType<typeof drizzle>): Promis
         clinicId: DEVELOPMENT_CLINIC_ID,
         patientId: '11111111-3333-4444-8555-000000000002',
         dentistId: '11111111-2222-4333-8444-000000000001',
+        chairId: '11111111-4444-4555-8666-000000000001',
+        roomId: '11111111-3333-4444-8555-000000000001',
         // Three days out, at a normal clinic hour rather than the seed's run time.
         startsAt: at(3, 9, 0),
         durationMinutes: 45,
@@ -309,5 +382,5 @@ async function seedDevelopmentData(database: ReturnType<typeof drizzle>): Promis
     ])
     .onConflictDoNothing();
 
-  return `clinic ${DEVELOPMENT_CLINIC_ID}, 3 patients, 2 dentists, 4 appointments, 1 visit, 1 plan (2 items), 2 charges, 2 payments`;
+  return `clinic ${DEVELOPMENT_CLINIC_ID}, 3 patients, 2 dentists, 2 rooms, 4 chairs, 4 appointments, 1 visit, 1 plan (2 items), 2 charges, 2 payments`;
 }
