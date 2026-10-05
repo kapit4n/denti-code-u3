@@ -222,7 +222,9 @@ test.describe('Booking an appointment', () => {
     await expect(page.getByTestId('appointment-booking-dialog')).toBeVisible();
   });
 
-  test('asks only for the active resources', async ({ page }) => {
+  test('asks only for the active resources, while the filter bar asks for all of them', async ({
+    page,
+  }) => {
     const api = await installApi(page, bookingFixtures());
 
     await page.goto('/agenda');
@@ -230,12 +232,23 @@ test.describe('Booking an appointment', () => {
 
     // A convenience, not the rule: the API enforces it (ADR 0020) and a clinician
     // deactivated while the dialog was open is refused by name. What is asserted here
-    // is only that the dropdown and the API agree on which clinicians to offer.
-    await expect
-      .poll(() => api.requests.filter((url) => url.includes('/dentists')).length)
-      .toBeGreaterThan(0);
-    const dentistRequest = api.requests.find((url) => url.includes('/dentists'));
-    expect(dentistRequest).toContain('onlyActive=true');
+    // is only that the two callers disagree in the right direction.
+    //
+    // **Both requests, not the first one.** The agenda mounts a filter bar, so
+    // `?onlyActive=false` went out on page load, before the dialog ever opened — and
+    // `requests.find(url => url.includes('/dentists'))` returns the *earliest* match,
+    // which is the bar's. That assertion passed for the wrong reason until it was
+    // written this way: it would have reported the dialog asking for the whole clinic
+    // as a pass.
+    await expect.poll(() => api.requests.filter((url) => url.includes('/dentists')).length).toBe(2);
+
+    const [filterRequest, dialogRequest] = api.requests.filter((url) => url.includes('/dentists'));
+    expect(filterRequest).toContain('onlyActive=false');
+    expect(dialogRequest).toContain('onlyActive=true');
+
+    const [filterChairs, dialogChairs] = api.requests.filter((url) => url.includes('/chairs'));
+    expect(filterChairs).toContain('onlyActive=false');
+    expect(dialogChairs).toContain('onlyActive=true');
   });
 
   test('closes without booking anything when the dialog is dismissed', async ({ page }) => {

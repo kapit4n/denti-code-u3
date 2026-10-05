@@ -1398,3 +1398,108 @@ answered before.
 
 **Not done, and deliberately:** dentist and chair filters above the agenda grid. The
 booking path itself is complete from all three doors.
+
+---
+
+## Session 22 — the agenda's filters
+
+**What was done**
+
+- `AgendaFilterBar` (new, with tests): dentist and chair chips above the grid, a "clear"
+  escape, and the two lists fetched per endpoint. The bar asks
+  `GET /api/v1/dentists?onlyActive=false` and the same for chairs; the booking dialog
+  keeps `onlyActive=true`. `onlyActive` became a **required** argument rather than a
+  defaulted one, and it is part of both query keys, so the two answers cannot overwrite
+  each other in the cache.
+- `agenda-range-query.ts`: `AgendaFilters`, `NO_AGENDA_FILTERS`, `hasAgendaFilters`, and
+  ids in the key **sorted** — a filter is a set, and clicking two chips in either order
+  asks for one answer. An explicit empty selection produces the same key as passing
+  nothing, or the grid and any second caller would each fetch the unfiltered day.
+- `AgendaCalendar` owns the filter state beside the range, so it survives navigating to
+  next week, and the empty state now distinguishes "nothing in this range" from
+  "nothing matches these filters in this range".
+- `dentistChipColor` (new, with tests): `#rgb`/`#rrggbb` or nothing. `dentists.color` is
+  an unvalidated `text` column, and a chip is either the colour the clinic chose or has
+  no swatch.
+- Tests: repaired `agenda-filter-bar.test.tsx`, `agenda-calendar.test.tsx` and
+  `agenda-range-query.test.tsx`; added `e2e/web/agenda-filters.spec.ts` (8) and a
+  second validation pair for the blank-dropping filter transform.
+
+**Two assertions that disagreed with the system rather than with the code**
+
+- `?dentistIds=` is **not** "a filter that matched nothing" — the comment in `toQuery`
+  claimed that. Against the running API it returns the whole day, because
+  `uuidListSchema` drops the blank and the repository skips a zero-length filter. The
+  comment now says that, and records that the client's own `length` check changes no
+  response and stays only because two incidental server-side guards are not a contract.
+- Releasing a chip does not produce a third request: `mount.tsx` sets `staleTime: 30_000`
+  app-wide, so returning to a narrowing fetched moments ago is served from cache. The
+  spec now documents the reuse instead of contradicting it.
+
+**A gap found by checking by hand rather than by reading**
+
+`?dentistIds=` is parsed by a transform that was untested: the repository's "ignores an
+empty filter rather than returning nothing" was asserted against real rows, and nothing
+pinned the step above it that turns `''` into `[]` instead of a 422 — and nothing in the
+app sends an empty filter today, so the branch is reachable only by the next client that
+does. Two tests now pin it, verified by replacing `.filter(Boolean)` and watching both
+fail.
+
+**Five defects the tests caught, four of them in the tests**
+
+1. The calendar spec counted _every_ request and meant "the range"; mounting the filter
+   bar added two, so six assertions started failing in the harness. `rangeCalls()` and
+   `writes()` now, and the tests that indexed `mock.calls[1]`/`[2]` positionally select
+   by what a request is.
+2. `expect(style).toContain('0ea5e9')` could never pass — jsdom serialises colours as
+   `rgb(14, 165, 233)`.
+3. `getByRole('button', { name: /Sillón/ })` threw on ambiguity. A loose pattern is not a
+   weaker name, it is a different question, and it has no answer once there are two
+   chairs.
+4. The colour-injection test passed **because of jsdom**, not the validator: the hostile
+   fixture `#0ea5e9; background-image: url(...)` is refused by the CSS parser, so
+   deleting the validator left it green. `chartreuse` is a perfectly valid
+   `background-color`, and that fixture fails the moment the check goes.
+5. The e2e mock's `find` on `/dentists` returns the **earliest** match, which after this
+   session is the filter bar's — so `booking.spec.ts` was reporting "the dialog asked
+   for every clinician in the clinic" as a pass. It now asserts both requests, per
+   endpoint, in opposite directions.
+
+**Mutations verified (each reintroduced, each failing)**
+
+| Mutation                                     | Caught by                           |
+| -------------------------------------------- | ----------------------------------- |
+| `useAgendaRange(range, filters)` → `(range)` | 5 e2e specs + component test        |
+| filter bar → `onlyActive: true`              | filter-bar test + `booking.spec.ts` |
+| drop `.sort()` from the key ids              | "same key however clicked"          |
+| drop the ids from `agendaRangeKey`           | 3 tests across both files           |
+| drop `hasAgendaFilters`                      | filtered-empty-state assertions     |
+| drop the `#rgb`-only validation              | `dentist-chip-color.test.ts`        |
+| `.filter(Boolean)` → `.filter(() => true)`   | the 2 new validation tests          |
+
+Note: an e2e run needs `pnpm run build --force` first — the specs test the built
+bundle, and the first attempt at the first mutation passed 8/8 against stale output.
+
+**Verified against the running API** (port 3010, seeded day): `/health` OK;
+`?onlyActive=false` returns the seeded clinicians; a day returns 4 appointments
+unfiltered and 2 narrowed to one dentist **and** one chair; `?dentistIds=` returns 4, as
+above.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             516 unit/component (12/12 tasks, 28 new)
+pnpm run test:integration 136 integration (11 files, real PostgreSQL 17)
+pnpm run test:e2e         85/85 passed (8 new)
+pnpm run db:migrate       no migration needed — no column added
+```
+
+**Not done, and deliberately.** Room columns. They need a `roomId` in `AgendaEntry`,
+which the read model does not have because the write side declined a room it could not
+report (ADR 0018) — so this reopens a decision rather than extending the filters, and
+`room_no_overlap` has no read side for the same reason. Written up in `docs/roadmap.md`
+under M5 rather than left as a checkbox.

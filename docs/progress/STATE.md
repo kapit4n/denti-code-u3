@@ -1,28 +1,27 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 21 (booking without a grid: the profile's and the
-> dashboard's doors into the booking dialog, with the time stated in the
-> clinic's own wall clock rather than the browser's)
+> Last updated: session 22 (the agenda's filters: chips that narrow the _request_
+> rather than the drawing, and a clinic that can still be asked about the clinician
+> who has left)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
 
 **PHASE 4 — CLINICAL WORKFLOWS** (Milestone 5 of `docs/roadmap.md`)
 
-**Status: Milestone 4 complete; Milestone 5 in progress.** Session 13 delivered
-the agenda's read side — the `AgendaEntry` read model, `AppointmentRepository`,
-the Drizzle implementation, `GET /api/v1/appointments`, and the dashboard reading
-today's book through the same repository. Session 14 delivered the grid that
-consumes it: `/agenda` with day, week and month views, FullCalendar confined to
-two adapters and one component by an enforced guard, the clinic's timezone and
-opening hours read from the API rather than assumed, and 10 e2e tests that pin
-the timezone down. Session 15 delivered the **write side** the grid was waiting
-for: `createAppointment`, `rescheduleAppointment` and `transitionAppointmentStatus`
-as domain use cases, the three endpoints, and the tenant foreign keys that make
-"an appointment's patient belongs to its clinic" a database guarantee rather than
-a check somebody can forget (ADR 0018). The grid is still read-only — nothing
-calls the endpoints yet — but the server can now refuse a write, which is what a
-drag needs before it is allowed to exist.
+**Status: Milestone 4 complete; Milestone 5 nearly so — visits remain.** Sessions 13–21
+delivered the agenda end to end: the `AgendaEntry` read model and `AppointmentRepository`,
+`GET /api/v1/appointments`, the grid with day/week/month views confined to two adapters
+by an enforced guard, the three write endpoints with the tenant foreign keys that make
+"an appointment's patient belongs to its clinic" a database guarantee (ADR 0018), the
+drag/resize/status UI, the bookable-resources endpoints, the rule that an inactive
+clinician or chair cannot be booked (ADR 0020), and a booking dialog reachable from all
+three doors a receptionist starts from.
+
+Session 22 delivered the one thing item 5 of the plan below had been waiting for: the
+agenda's filters. `AgendaFilterBar` chooses clinicians and chairs, and the narrowing is
+**the request's**, not the browser's. Room _columns_ remain, and are blocked rather than
+deferred — they need a `roomId` in the read model, which ADR 0018 deliberately left out.
 
 ## Task origin
 
@@ -63,22 +62,119 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 21)
+## Verification log (last run, session 22)
 
 | Command                     | Result                                              |
 | --------------------------- | --------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                    |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`               |
-| `pnpm run format`           | applied; `pnpm run format:check` clean              |
-| `pnpm run test`             | 12/12 tasks pass — 488 tests (23 new)               |
+| `pnpm run format:check`     | clean                                               |
+| `pnpm run test`             | 12/12 tasks pass — 516 tests (28 new)               |
 | `pnpm run test:integration` | 11 files, 136 tests pass against real PostgreSQL 17 |
 | `pnpm run build`            | 5/5 tasks pass                                      |
-| `pnpm run test:e2e`         | 77 passed (8 new, all booking-without-a-slot)       |
+| `pnpm run test:e2e`         | 85 passed (8 new, all agenda filters)               |
 | `pnpm run guard:boundaries` | OK                                                  |
 | `pnpm run db:migrate`       | no migration needed — this session adds no column   |
 
-Per-package unit/component tests: domain 154, validation 59, api-client 15, api 58
-(integration skipped here, run separately), app 199, desktop 3.
+Per-package unit/component tests: domain 154, validation 61, api-client 15, api 58
+(integration skipped here, run separately), app 225, desktop 3.
+
+**The session's real subject was tests that could not fail, and four of the five this
+session wrote or repaired were in that category.** The filter bar and its colour rule
+were implemented before this session opened and none of it had been run; the first
+`pnpm test` failed eight times, and after fixing the obvious causes three assertions
+were still green for reasons that had nothing to do with the code.
+
+1. **The calendar spec counted every request and meant "the range".** The grid mounts
+   the filter bar, so `/agenda` now asks for `/dentists` and `/chairs` too, and six
+   assertions that read `toHaveBeenCalledTimes(1)` were counting the filter bar's two.
+   They had started failing for a reason in the harness. The file now has `rangeCalls()`
+   and `writes()`, and every assertion that says "the range" reads the range. Two tests
+   also indexed `mock.calls[1]` and `[2]` positionally to find the write and the refetch
+   it triggers — which, with two more requests interleaved, asserts the harness's
+   timing. They now select by what a request _is_.
+2. **A colour assertion that could never pass.** `expect(style).toContain('0ea5e9')`:
+   jsdom normalises a CSS colour when it serialising the attribute, so the value is
+   `rgb(14, 165, 233)`. Proved by rendering one `<span>` rather than by reading the
+   DOM implementation's source.
+3. **A locator that matched two chairs.** `getByRole('button', { name: /Sillón/ })`
+   threw on ambiguity — a loose pattern is not a weaker version of a specific name, it
+   is a different question, and it has no answer once there is more than one chair. The
+   two exact names beside it were the real assertion all along.
+4. **The colour-injection test was passing because of jsdom, not the validator.**
+   `dentists.color` is unvalidated text and the hostile fixture was
+   `#0ea5e9; background-image: url(...)`. Removing the validator's check entirely left
+   the component test green, because the browser's CSS parser refuses a second
+   declaration in a single property. A keyword is a perfectly valid `background-color`
+   that the parser has no reason to object to, so the fixture is now `chartreuse` —
+   and that fails the moment the validator goes. The unit test is where the injection
+   string belongs: an assertion about the function's answer rather than about jsdom.
+   The source comment claimed the component was "an inline-style injection point",
+   which overstated it; it now says what the validator actually guarantees (one shape
+   accepted, nothing else) and which of the three hazards the DOM refuses anyway.
+5. **The request's list test, in two versions.** The first asserted `.some(url =>
+url.includes('onlyActive=false'))` across _both_ resource lists — so flipping the
+   dentists to `onlyActive=true` left it green, because the chairs still said `false`.
+   It now asserts per endpoint. And the test written to prove an empty selection is
+   omitted survived its own mutation, because `buildQueryString` in the API client
+   already drops `''`; it has been rewritten as an honest contract test, and the guard it
+   was supposed to protect was found to be redundant (below).
+
+**Two assertions disagreed with the system rather than with the code, and both were
+wrong.** The first claimed `?dentistIds=` is "a filter that matched nothing". Checked
+against the running API, it is not: it returns the whole day, because `uuidListSchema`
+drops the blank and the repository skips a zero-length filter. The comment now says so,
+and records that the client-side `length` check changes no response — it stays because
+the two server-side guards are a coincidence rather than a contract, and because
+`filters?.dentistIds.join(',')` reads like a bug that somebody would "fix" by adding
+the branch back somewhere else. The second was an e2e assertion that releasing a chip
+produces a third request; it does not, because `mount.tsx` sets `staleTime: 30_000` for
+every query in the app, so returning to a narrowing fetched moments ago is served from
+cache. That is now a test that _documents_ the reuse instead of one that contradicts it.
+
+**A real coverage gap came out of checking by hand rather than by reading.** The schema
+step that turns `?dentistIds=` into `[]` instead of a 422 was unpinned: the repository's
+"ignores an empty filter rather than returning nothing" was tested against real rows,
+and the transform above it was not tested at all. Two tests now pin the blank-dropping
+and the blanks-between-ids case, verified by replacing `.filter(Boolean)` and watching
+both fail.
+
+**The e2e mock earned its 501 again.** `allAgendaFixtures()` carried a comment saying
+the grid does not read dentists or chairs, and every read-only agenda spec 501'd the
+moment the filter bar was mounted. The fixtures now serve the _full_ lists, and the
+comment says why they are there. The booking spec had the mirror defect:
+`requests.find(url => url.includes('/dentists'))` returns the **earliest** match, which
+is now the filter bar's request — so that test was reporting "the dialog asked for every
+clinician in the clinic" as a pass. It now asserts both requests, in the right
+directions, and both resource types.
+
+**Five things this session proved rather than assumed.**
+
+1. **The narrowing is the request's.** Mutating `useAgendaRange(range, filters)` back to
+   `useAgendaRange(range)` fails five of the eight new e2e specs and the component test
+   that names it — which is the whole design in one line: no request, no narrowing.
+2. **The two resource callers genuinely disagree.** Mutating the filter bar to
+   `onlyActive: true` fails `booking.spec.ts`'s assertion and the filter bar's own.
+   Neither spec could have passed before this session, because there was only one caller.
+3. **A filter is a set, and the cache key has to know it.** Dropping `.sort()` from the
+   ids in `agendaRangeKey` fails "is the same key however the ids were clicked": without
+   it, two clicks in opposite order hold two copies of one answer and the second is
+   fetched rather than reused. Dropping the ids from the key altogether fails three
+   tests across both files.
+4. **jsdom is not a specification.** The colour assertion's expected value could not be
+   produced by any correct implementation, and the injection test's _pass_ came from
+   jsdom's CSS parser rather than from the code under test. Both were only visible by
+   running the thing the assertion claimed about.
+5. **An e2e run needs a rebuild to test a mutation.** The first attempt at verifying
+   (1) passed 8/8 against the mutated source, because the specs run against the built
+   bundle. Worth knowing before concluding an assertion is weak.
+
+**Not done, and deliberately.** Room columns in the agenda, which is the rest of item 5.
+They need a `roomId` in `AgendaEntry`, and the write side declined a room precisely
+because the read model could not report one (ADR 0018) — so this reopens a decision
+rather than extending the filters. The `room_no_overlap` exclusion constraint has no
+read side for the same reason. Both are written up in `docs/roadmap.md` under M5 rather
+than left as a checkbox.
 
 **Session 21 changed nothing on the server, and one e2e spec said so loudly.** The
 profile and the dashboard both started asking `GET /api/v1/clinic`, which they had no
@@ -187,6 +283,70 @@ is a small pre-existing gap and was left alone rather than widened into.
 both and neither existed yet.
 
 ## Decisions made this session (not yet in ADRs)
+
+- **The filters are the server's, and that is the whole design.** `AgendaFilterBar`
+  changes the request; it never hides blocks that have already been fetched. A
+  browser-side filter renders an identical grid today and is wrong the first time the
+  API learns a rule the client has not heard of — and nothing in a component test could
+  catch it, because the two are the same pixels. The e2e specs assert on request URLs
+  for this reason, and one of them asserts nothing about the screen at all.
+- **`onlyActive` became a required argument rather than a defaulted one.** The booking
+  dialog wants `true` and the filter bar wants `false`, and they are asking different
+  questions. A defaulted parameter would have handed one of them the other's list the
+  first time a caller forgot to say which — and `onlyActive` is now part of both query
+  keys, so the two answers cannot overwrite each other in the cache. This is the same
+  argument as ADR 0020's split of `AppointmentWriteDependencies`: make the difference
+  impossible to forget rather than merely discouraged.
+- **The bar reads the full list, the dialog reads the active one, and that asymmetry is
+  the feature.** A clinician who has left is still filterable because "what did their
+  day look like" is a question the clinic asks; hiding them makes it unanswerable while
+  the grid still draws their appointments, which is why the chips read the full list and
+  why a departed clinician is labelled `(inactive)` rather than hidden. The chip's label
+  is the reason: a quiet day that has no explanation is a mystery.
+- **A chip's colour is a validated hex triplet or nothing.** `dentists.color` is an
+  unvalidated `text` column arriving from what is effectively an admin screen, and the
+  tempting thing to do with a string like that is hand it to `style`. `dentistChipColor`
+  accepts `#rgb`/`#rrggbb` and answers `undefined` for everything else, so a chip is
+  either the colour the clinic chose or has no swatch. Written down because the guard's
+  real value turned out to be narrower than the reason first given for it: a keyword
+  like `chartreuse` is a _valid_ CSS colour the browser would happily apply, so only the
+  validator refuses it.
+- **The filter state lives in the calendar, beside the range.** Both are statements
+  about what the grid is drawing, so both belong to the component that draws it. A
+  filter on the route would be passed down to be handed straight back; a filter in a
+  store would outlive the screen. It also survives navigating to next week, which is
+  tested — asking for "Dr Rivera's day, next week" should not require choosing her
+  again.
+- **`agendaRangeKey` sorts the ids, and an explicit empty selection is not a separate
+  key.** A filter is a set: clicking two chips in either order asks for one day with two
+  names on it, and without the sort the cache holds two copies and the second is
+  fetched. `NO_AGENDA_FILTERS` must produce the same key as passing nothing at all, or
+  the grid (which always passes filters) and any second caller (which passes none)
+  would each fetch the unfiltered day.
+- **An empty narrowed range says so differently.** "No appointments in this range" and
+  "no appointments match these filters in this range" are different facts, and reading
+  the second as the first sends someone looking for a cancellation that never happened.
+- **The redundant guard stayed, with an honest comment.** `toQuery`'s `length` check and
+  `buildQueryString`'s dropping of empty values both prevent `?dentistIds=` from being
+  sent, so neither is load-bearing alone and the first version of the test could not
+  fail. The branch stays because the server's tolerance is two incidental guards rather
+  than a contract, and because the alternative line reads like a bug someone would
+  "fix". The comment now says all of that instead of asserting a hazard that a live
+  request disproved.
+- **The e2e mock serves one list per path, and that is recorded as a limit.** It keys on
+  method and pathname and never on the query string, so the bar and the dialog cannot
+  be given different lists in one spec. It does not matter here because the two callers
+  differ in what they _ask_ and the specs assert the query string, but it does mean a
+  departed clinician cannot appear in a booking spec's fixtures. Recorded in
+  `api-responses.ts` rather than left to be rediscovered.
+
+### Decisions from session 20 (the booking form)
+
+- **The grid is the time picker, and the click is the decision of when.** The dialog
+  shows the clicked time read-only rather than offering a second control for a decision
+  already made — and session 21 relaxed that for the two doors with no grid behind them.
+- **The form reuses the API's field schemas** rather than restating them, so a form can
+  never accept something the endpoint refuses.
 
 - **The booking rule's wiring is ADR 0020, and the reason it needed one is the
   second-order part.** Adding `dentists` and `chairs` to
@@ -482,11 +642,23 @@ editing. Both sides now go through `PatientRepository`. Remaining:
          clicking an empty slot to book it — is still deliberately unwired, for
          the reason in item 6: there is no form to open yet.
 
-5. [ ] **Filters.** Dentist and chair filters are in `AgendaWindow` and the API
-       accepts them, but nothing in the UI sends them yet. (`AgendaEntry` has
-       carried `chairId`/`chairName` since session 13 — an earlier note here said
-       otherwise.) Room columns still need a `roomId` the read model does not have,
-       and the `room_no_overlap` constraint has no read side at all.
+5. [~] **Filters.** Dentist and chair filters are **done in session 22**:
+   `AgendaFilterBar` above the grid, narrowing **the request** rather than the
+   drawing, with the state held beside the range so it survives navigating to
+   next week. Both lists are fetched per endpoint and per caller's question — the
+   bar asks `?onlyActive=false` (a departed clinician is still filterable, and
+   labelled `(inactive)`; the grid still draws their appointments) while the
+   booking dialog keeps `?onlyActive=true`, and `onlyActive` is part of both cache
+   keys so the answers cannot overwrite each other. 10 new e2e specs assert the
+   query string; five of them assert nothing about the screen at all.
+
+       **Room columns remain, and are blocked rather than deferred.** They need a
+       `roomId` in `AgendaEntry`, which the read model does not have: the write side
+       declined a room precisely because it could not report one (ADR 0018), so
+       adding it reopens a decision instead of extending the filters. The
+       `room_no_overlap` constraint has no read side for the same reason. This is now
+       written up in `docs/roadmap.md` under M5 rather than left as a checkbox.
+
 6. [~] **Appointment write side.** API done in session 15: `createAppointment`,
    `rescheduleAppointment`, `transitionAppointmentStatus`, the three endpoints,
    the tenant foreign keys, and 25 integration tests including the concurrent-write

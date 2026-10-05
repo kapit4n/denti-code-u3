@@ -178,6 +178,46 @@ describe('agendaRangeQuerySchema', () => {
 
     expect(result.success).toBe(false);
   });
+
+  it('reads an empty filter list as no filter at all', () => {
+    // `?dentistIds=` is what a cleared selection looks like if a client sends the
+    // empty string rather than omitting the parameter. Two things have to hold for
+    // that to be harmless, and only the second was covered:
+    //
+    // - the blank is dropped here, so `''` does not reach `uuidSchema` and 422 the
+    //   whole request — an unfiltered day reported as a server error;
+    // - the repository then skips a zero-length filter, which
+    //   `agenda.integration.test.ts` asserts against real rows.
+    //
+    // Pinned separately because the failure is invisible: the client omits the
+    // parameter entirely, so nothing in the app ever sends `?dentistIds=` today and
+    // this branch would only be reached by the next client that does.
+    const result = agendaRangeQuerySchema.safeParse({
+      from: '2026-09-30T03:00:00.000Z',
+      to: '2026-10-01T03:00:00.000Z',
+      dentistIds: '',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.dentistIds).toEqual([]);
+  });
+
+  it('drops blanks between real ids rather than rejecting the list', () => {
+    const result = agendaRangeQuerySchema.safeParse({
+      from: '2026-09-30T03:00:00.000Z',
+      to: '2026-10-01T03:00:00.000Z',
+      dentistIds: '44444444-4444-4444-8444-444444444444,,55555555-5555-4555-8555-555555555555',
+    });
+
+    // The alternative is a 422 for a list a human could type, which is the wrong
+    // lesson: it reads as "this endpoint rejects two clinicians", not "that comma
+    // was a typo".
+    expect(result.success).toBe(true);
+    expect(result.data?.dentistIds).toEqual([
+      '44444444-4444-4444-8444-444444444444',
+      '55555555-5555-4555-8555-555555555555',
+    ]);
+  });
 });
 
 describe('scheduleConflictDetailsSchema', () => {

@@ -122,7 +122,7 @@ natural output of Milestone 5. See `docs/progress/STATE.md`.
 owns business rules; the clinic timezone is respected.
 
 **Status: the grid, the server's write side, and every write the agenda offers are
-done — including creating one.** `/agenda` draws day, week and month views of
+done — including creating one — and the grid can now be narrowed.** `/agenda` draws day, week and month views of
 `GET /api/v1/appointments` through FullCalendar behind two adapters (ADR 0011), in the
 timezone and opening hours the API reports for the clinic. The grid fetches exactly
 the window it is showing and re-fetches on every navigation. Cancelled and no-show
@@ -154,7 +154,20 @@ the API still enforcing the rule behind them (ADR 0020). The dialog decides noth
 about whether the booking is allowed: every slot opens it, and a refusal from the
 domain is what is displayed.
 
-Not started: dentist and chair filters above the grid.
+The grid can now be narrowed. Chips above the grid choose clinicians and chairs, and
+the narrowing is **the server's**: a chip changes the request rather than hiding blocks
+already fetched, because a client-side filter renders an identical grid today and is
+wrong the first time the API learns a rule the client has not heard of. The bar reads
+the _full_ lists — `?onlyActive=false` — while the booking dialog reads the active-only
+ones, and the two callers cannot share a cached answer because they are asking different
+questions: "what did their day look like" against "who can this be booked against". A
+clinician who has left is still filterable, and still marked as such on the chip.
+
+Room _columns_ remain not started. They need a `roomId` in `AgendaEntry`, which the read
+model does not have and which ADR 0018 deliberately left out because the write side
+declined a room it could not report; adding it reopens that decision rather than
+extending this one. The `room_no_overlap` exclusion constraint has no read side for the
+same reason — nothing can put an appointment in a room yet.
 
 ---
 

@@ -18,6 +18,14 @@
  * **Business hours** come from the clinic's opening hours rather than a constant, so
  * the shaded non-working region is the clinic's own.
  *
+ * **Filters.** The dentist and chair chips above the grid narrow the *request*, not
+ * the drawing: what the grid shows is the API's answer to "these clinicians, these
+ * chairs, these days". Hiding fetched events in the browser would be a second
+ * implementation of the same question, free to disagree with the first. The filters
+ * live in this component rather than on the route because they are a statement about
+ * what the grid is drawing, which is the same claim the range makes — and the same
+ * reason they survive navigating to next week.
+ *
  * **Writes.** Four gestures, and none of them decides anything about the schedule:
  * a drag and a resize are read by `from-calendar-event.ts` into a domain intent and
  * sent to the API, a click on a block opens the quick panel, and a click on an empty
@@ -47,7 +55,12 @@ import type { DatesSetArg, EventClickArg } from '@fullcalendar/core';
 import type { AgendaEntry, Clinic } from '@denti-code-u3/domain';
 import { AlertCircle, CalendarDays } from 'lucide-react';
 
-import { useAgendaRange, type AgendaRange } from '../queries/agenda-range-query.js';
+import {
+  useAgendaRange,
+  hasAgendaFilters,
+  type AgendaFilters,
+  type AgendaRange,
+} from '../queries/agenda-range-query.js';
 import { useRescheduleAppointment } from '../mutations/use-reschedule-appointment.js';
 import { toRescheduleIntent, type CalendarEventChange } from '../adapters/from-calendar-event.js';
 import { agendaEntryFromEvent, toCalendarEvents } from '../adapters/to-calendar-event.js';
@@ -55,6 +68,7 @@ import { toBusinessHours, toScrollTime } from '../adapters/to-business-hours.js'
 import { describeAppointmentFailure } from '../describe-appointment-failure.js';
 import { AppointmentQuickPanel } from './appointment-quick-panel.js';
 import { AppointmentBookingDialog } from './appointment-booking-dialog.js';
+import { AgendaFilterBar } from './agenda-filter-bar.js';
 
 export interface AgendaCalendarProps {
   readonly clinic: Clinic;
@@ -72,6 +86,20 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
    * stays disabled rather than asking for an empty window.
    */
   const [range, setRange] = useState<AgendaRange | undefined>(undefined);
+
+  /**
+   * Which clinicians and chairs the grid is narrowed to, or none.
+   *
+   * Held here for the same reason the range is: both are statements about what the
+   * grid is drawing, and both belong to the component that draws it. A filter kept
+   * on the route would be passed down to be handed straight back, and a filter kept
+   * in a store would outlive the screen it describes.
+   *
+   * It also survives navigation, because the component is not unmounted by moving to
+   * next week — asking "Dr Rivera's day, next week" should not require choosing her
+   * again.
+   */
+  const [filters, setFilters] = useState<AgendaFilters>({ dentistIds: [], chairIds: [] });
 
   /** The appointment the quick panel is showing, or none. */
   const [selected, setSelected] = useState<AgendaEntry | undefined>(undefined);
@@ -93,7 +121,7 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
    */
   const [writeFailure, setWriteFailure] = useState<string | undefined>(undefined);
 
-  const { data, isPending, error } = useAgendaRange(range);
+  const { data, isPending, error } = useAgendaRange(range, filters);
   const reschedule = useRescheduleAppointment();
   const events = useMemo(() => toCalendarEvents(data?.items ?? []), [data]);
 
@@ -168,6 +196,7 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
 
   return (
     <section aria-label="Agenda" className="flex flex-col gap-3">
+      <AgendaFilterBar filters={filters} onChange={setFilters} />
       <div
         className="relative min-h-[40rem]"
         // FullCalendar renders a plain div and takes over the subtree, so it cannot
@@ -256,7 +285,15 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
       {!isPending && !error && events.length === 0 && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <CalendarDays className="h-4 w-4" aria-hidden />
-          No appointments in this range.
+          {/*
+            Two different facts, and conflating them sends a receptionist looking for
+            a cancellation that did not happen. An empty filtered grid is the API
+            saying there is nothing for that clinician in that range; an empty day is
+            saying there is nothing at all.
+          */}
+          {hasAgendaFilters(filters)
+            ? 'No appointments match these filters in this range.'
+            : 'No appointments in this range.'}
         </p>
       )}
 

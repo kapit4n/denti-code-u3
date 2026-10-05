@@ -414,26 +414,99 @@ export function schedulingConflict(startsAt: string, endsAt: string): Fixture['b
 export const emptyAgenda = { items: [], window: agendaEntries.window } as const;
 
 /**
- * Both endpoints the agenda needs.
+ * Every endpoint the agenda needs.
  *
  * A spec spreads this and overrides the one it cares about. Spreading matters: the
  * route loads the clinic before it can ask for appointments, so a spec that mocked
  * only `/appointments` would leave `/clinic` unmatched — which the mock answers with
  * 501, by design.
  *
- * **Deliberately not the booking endpoints.** This grid does not read dentists or
- * chairs; only the dialog does, and only once a slot is clicked. Putting them here
- * would make a read-only spec look like it depends on resources it never asks for.
+ * **The clinicians and chairs are here because the grid reads them**, not the dialog.
+ * The filter bar is mounted by the calendar itself, so `/agenda` asks for both lists
+ * on load whether or not a slot is ever clicked — which is why this comment used to
+ * claim the opposite, and why every read-only agenda spec failed with a 501 the moment
+ * the bar was added. The lists are the *full* ones, because the bar's question is
+ * "what did their day look like" and a clinician who has left is still filterable.
+ * `bookingFixtures` overrides both with the active-only lists the dialog wants.
  */
 export function allAgendaFixtures(): MockedResponses {
   return {
     '/api/v1/clinic': { body: clinicSettings },
     '/api/v1/appointments': { body: agendaEntries },
+    '/api/v1/dentists': { body: everyDentistList },
+    '/api/v1/chairs': { body: everyChairList },
   };
 }
 
 export const DENTIST_ID = '11111111-2222-4333-8444-000000000001';
 export const CHAIR_ID = '11111111-5555-4666-8777-000000000001';
+
+/** The clinician who has left the clinic, and is still on the agenda's fixtures. */
+export const DEPARTED_DENTIST_ID = '11111111-2222-4333-8444-000000000003';
+
+/**
+ * Every clinician, active or not, as the agenda's filter bar asks for them
+ * (`?onlyActive=false`).
+ *
+ * Three rows on purpose. The departed one is the whole argument for the full list: a
+ * bar that hid them would make "what did Dr. Quispe's day look like" unanswerable
+ * while the grid still draws their appointments. `color` is a hex triplet on the first
+ * and `null` on the second, so a spec can see a swatch on one chip and not the other —
+ * the column is unvalidated text, which is why the component only paints it after
+ * checking the shape.
+ */
+export const everyDentistList = {
+  items: [
+    {
+      id: DENTIST_ID,
+      fullName: 'Dra. Rivera',
+      speciality: 'Endodoncia',
+      color: '#0ea5e9',
+      isActive: true,
+    },
+    {
+      id: '11111111-2222-4333-8444-000000000002',
+      fullName: 'Dr. Quispe',
+      speciality: null,
+      color: null,
+      isActive: true,
+    },
+    {
+      id: DEPARTED_DENTIST_ID,
+      fullName: 'Dr. Núñez',
+      speciality: null,
+      color: null,
+      isActive: false,
+    },
+  ],
+} as const;
+
+/** Every chair, active or not, as the agenda's filter bar asks for them. */
+export const everyChairList = {
+  items: [
+    {
+      id: CHAIR_ID,
+      roomId: '11111111-6666-4777-8888-000000000001',
+      roomName: 'Sala 1',
+      name: 'Sillón 1',
+      isActive: true,
+    },
+    {
+      id: '11111111-5555-4666-8777-000000000002',
+      roomId: null,
+      roomName: null,
+      name: 'Sillón 4',
+      isActive: true,
+    },
+    {
+      id: '11111111-5555-4666-8777-000000000003',
+      roomId: '11111111-6666-4777-8888-000000000002',
+      roomName: 'Sala 2',
+      name: 'Sillón 9',
+      isActive: false,
+    },
+  ],
+} as const;
 
 /**
  * `GET /api/v1/dentists?onlyActive=true`, as the booking dialog asks for it.
@@ -442,6 +515,12 @@ export const CHAIR_ID = '11111111-5555-4666-8777-000000000001';
  * dialog filtered for active clinicians" from "the dialog happens to have one
  * clinician". The appointment already on the grid belongs to the first of them, so a
  * spec booking with the second also proves the choice is not silently reused.
+ *
+ * The mock keys on the method and the pathname, never on the query string, so this
+ * list also answers the filter bar's `?onlyActive=false` request in any spec that
+ * registers it. That is harmless — the two callers differ in what they *ask*, and
+ * `booking.spec.ts` asserts the query string rather than the contents of the answer —
+ * but it does mean a departed clinician cannot be in a booking spec's fixtures.
  */
 export const dentistList = {
   items: [

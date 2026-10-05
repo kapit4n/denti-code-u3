@@ -147,8 +147,11 @@ export function AppointmentBookingDialog({
   onBooked,
 }: AppointmentBookingDialogProps) {
   const create = useCreateAppointment();
-  const dentists = useDentists();
-  const chairs = useChairs();
+  // Active rows only: a clinician or chair that cannot be booked should not be
+  // offered here. The agenda's filters ask for the other list — see
+  // `bookable-resources-query.ts` for why the two callers differ.
+  const dentists = useDentists({ onlyActive: true });
+  const chairs = useChairs({ onlyActive: true });
 
   /**
    * The clicked slot as the field's value, and whether that value can be changed.
