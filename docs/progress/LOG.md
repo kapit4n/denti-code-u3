@@ -757,3 +757,90 @@ pnpm run test             265 unit/component (12/12 tasks)
 pnpm run test:integration 85 integration (8 files)
 pnpm run test:e2e         46/46 passed
 ```
+
+---
+
+## Session 14 — the agenda grid (Milestone 5, slice 2)
+
+Started by `77c6355` (the agenda read side). Scope: the read-only calendar that
+consumes it, plus the clinic-settings endpoint it needs. No write side.
+
+### Delivered
+
+| Area         | Change                                                                   |
+| ------------ | ------------------------------------------------------------------------ |
+| API          | `GET /api/v1/clinic`, `DrizzleClinicRepository`, app wiring              |
+| Domain       | `ClinicRepository` trimmed: `updateOperatingHours` removed               |
+| App          | `/agenda` route, `AgendaCalendar`, `useAgendaRange`, `useClinicSettings` |
+| Adapters     | `to-calendar-event.ts`, `to-business-hours.ts`                           |
+| Dependencies | `@fullcalendar/{core,react,daygrid,timegrid,luxon3}@6`, `luxon@3`        |
+| Guard        | rule 5 in `scripts/check-boundaries.mjs`                                 |
+| Tests        | 50 unit/component, 8 integration, 10 e2e                                 |
+| Docs         | ADR 0011 brought in line with reality, roadmap status, STATE, log        |
+
+### Design decisions
+
+- **The timezone is data, not configuration.** It and the opening hours come from
+  `GET /api/v1/clinic`. A `VITE_` constant cannot be right for the second clinic
+  one API will serve, and FullCalendar's `timeZone: 'local'` is wrong for every
+  clinic the moment a receptionist travels.
+- **No clinic, no grid.** The route renders an error rather than a calendar in the
+  browser's zone; an e2e test asserts no appointments request is made at all.
+- **`datesSet` is the fetch window.** The grid knows what it is showing, including a
+  month view's leading days. A second implementation of "which days are on screen"
+  is the thing that drifts.
+- **No `placeholderData`.** Yesterday's events must not appear under today's date.
+- **Business hours are a third adapter.** The domain speaks ISO weekdays
+  (`1 = Monday … 7 = Sunday`); FullCalendar speaks `Date.getDay()`. Passing the
+  number through opens every clinic a day late and still looks plausible.
+- **A row that cannot be placed is dropped, not widened.** A `businessHours` entry
+  with no `daysOfWeek` means _every day_, so garbage hours would shade the whole
+  week — the opposite of the comment above it, which is how it shipped in the first
+  draft.
+- **Statuses are styling, not domain.** Colour comes from the existing tokens;
+  cancelled and no-show are struck through rather than hidden, so a deliberately
+  empty slot does not look bookable.
+- **Read-only on purpose.** `editable`, `selectable` and `eventClick` are unwired.
+  Nothing that looks live and is not.
+
+### Two defects the tests caught
+
+1. The unmappable-weekday bug above: an empty spread read as "every day".
+2. The e2e timezone spec asserted an event was _visible_, which its own docstring
+   claimed proved the timezone and did not. It now reads the rendered hour;
+   pointing the component at `America/New_York` fails it with
+   `Received string: "10:00 - 11:00"`.
+
+Also a third, mine: a missing `)` in the first draft of the weekday test, which
+every parser in the toolchain rejected while the isolated snippet I was testing
+passed — the file, not the snippet, was wrong.
+
+### Still open
+
+- Appointment write side: `CreateAppointment`, `RescheduleAppointment`,
+  `TransitionAppointment`, conflict errors in the UI, and the forms that un-disable
+  "New Visit" and the profile's next-appointment action. `from-calendar-event.ts`
+  (ADR 0011) arrives with it.
+- Dentist and chair filters. The API accepts them; no UI sends them.
+  `AgendaEntry` has no `chairId`/`chairName` — decide before chair columns.
+- `apps/api/src/http/routes/dashboard.ts` still receives `db` for the non-appointment
+  aggregates.
+- Patient phone is still returned by the list endpoint while its column comment says
+  it is encrypted and never returned. Needs a product decision.
+- Dashboard `<h1>` is still a time-of-day greeting rather than the page name.
+- No authentication, so `request.clinicId` still comes from `CLINIC_ID`.
+
+### Verification
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + boundary guard OK
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             315 unit/component (12/12 tasks)
+pnpm run test:integration 93 integration (9 files, real PostgreSQL)
+pnpm run test:e2e         56/56 passed
+guard:boundaries          OK, and verified by leaking @fullcalendar/core into
+                           a query and watching it fail
+mutations                 5 adapter mutations, 5 caught
+```

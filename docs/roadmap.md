@@ -122,6 +122,15 @@ natural output of Milestone 5. See `docs/progress/STATE.md`.
 **Exit criteria:** conflicts are detected by the domain/API; the calendar never
 owns business rules; the clinic timezone is respected.
 
+**Status: the read-only grid is done; every write is not.** `/agenda` draws day,
+week and month views of `GET /api/v1/appointments` through FullCalendar behind
+two adapters (ADR 0011), in the timezone and opening hours the API reports for
+the clinic. The grid fetches exactly the window it is showing and re-fetches on
+every navigation. Not started: appointment creation and editing, drag/drop
+rescheduling, dentist and chair filters, and the click panel. Cancelled and
+no-show appointments are already drawn (struck through) rather than hidden, so a
+slot that is deliberately empty does not look bookable.
+
 ---
 
 ## Milestone 6 — VISITS

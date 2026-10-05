@@ -275,3 +275,102 @@ export const PATIENT_LIST_RESPONSE = {
   items: patientSummaries,
   pagination: { page: 1, limit: 20, total: 3, totalPages: 1 },
 } as const;
+
+/**
+ * The clinic's own record, as `GET /api/v1/clinic` returns it.
+ *
+ * The agenda cannot be drawn without this: the timezone decides where every
+ * appointment lands on the grid, and the opening hours decide what is shaded as
+ * non-working. Both come from the clinic, not from a build-time constant, because
+ * one API serves every clinic.
+ *
+ * `America/Lima` is UTC-5 all year, which makes the fixture's instants readable:
+ * 14:00Z is 09:00 local, so a spec can assert a wall-clock hour without doing
+ * timezone arithmetic of its own.
+ */
+export const clinicSettings = {
+  id: '11111111-1111-4111-8111-000000000001',
+  name: 'Clínica Dental U3',
+  legalName: 'Denti-Code U3 S.A.C.',
+  timeZone: 'America/Lima',
+  currency: 'PEN',
+  operatingHours: [
+    // ISO weekdays: 1 = Monday … 7 = Sunday.
+    { weekday: 1, opensAtLocalTime: '08:00', closesAtLocalTime: '13:00', isClosed: false },
+    { weekday: 2, opensAtLocalTime: '08:00', closesAtLocalTime: '13:00', isClosed: false },
+    { weekday: 3, opensAtLocalTime: '08:00', closesAtLocalTime: '13:00', isClosed: false },
+    { weekday: 4, opensAtLocalTime: '08:00', closesAtLocalTime: '13:00', isClosed: false },
+    { weekday: 5, opensAtLocalTime: '08:00', closesAtLocalTime: '13:00', isClosed: false },
+    // Saturday is open in the morning only; Sunday is closed outright.
+    { weekday: 6, opensAtLocalTime: '09:00', closesAtLocalTime: '12:00', isClosed: false },
+    { weekday: 7, opensAtLocalTime: '00:00', closesAtLocalTime: '00:00', isClosed: true },
+  ],
+  settings: {},
+} as const;
+
+/**
+ * One day's agenda, as `GET /api/v1/appointments` returns it.
+ *
+ * Three statuses on purpose, so a spec can tell whether the grid distinguishes what
+ * the clinic must act on: `CONFIRMED` is a patient coming, `CANCELLED` is a slot
+ * deliberately left empty, and `NO_SHOW` is a chair that stayed empty. Cancelled and
+ * no-show are in the response because a receptionist needs to see them; hiding them
+ * would make a chair look bookable.
+ */
+export const agendaEntries = {
+  items: [
+    {
+      id: '11111111-4444-4555-8666-000000000011',
+      patientId: ANA_ID,
+      patientFirstName: 'Ana',
+      patientLastName: 'García',
+      dentistId: '11111111-2222-4333-8444-000000000001',
+      dentistFullName: 'Dra. Rivera',
+      startsAt: '2026-10-05T14:00:00.000Z',
+      endsAt: '2026-10-05T15:00:00.000Z',
+      status: 'CONFIRMED',
+    },
+    {
+      id: '11111111-4444-4555-8666-000000000012',
+      patientId: LUIS_ID,
+      patientFirstName: 'Luis',
+      patientLastName: 'Fernández',
+      dentistId: '11111111-2222-4333-8444-000000000002',
+      dentistFullName: 'Dr. Quispe',
+      startsAt: '2026-10-05T16:00:00.000Z',
+      endsAt: '2026-10-05T17:00:00.000Z',
+      status: 'SCHEDULED',
+    },
+    {
+      id: '11111111-4444-4555-8666-000000000013',
+      patientId: ANA_ID,
+      patientFirstName: 'Ana',
+      patientLastName: 'García',
+      dentistId: null,
+      dentistFullName: null,
+      startsAt: '2026-10-05T18:00:00.000Z',
+      endsAt: '2026-10-05T18:30:00.000Z',
+      status: 'CANCELLED',
+    },
+  ],
+  // The window the app asked for is echoed back, so a spec can compare the two.
+  window: { from: '2026-10-05T00:00:00.000Z', to: '2026-10-06T00:00:00.000Z' },
+} as const;
+
+/** An agenda with nothing in the visible range. */
+export const emptyAgenda = { items: [], window: agendaEntries.window } as const;
+
+/**
+ * Both endpoints the agenda needs.
+ *
+ * A spec spreads this and overrides the one it cares about. Spreading matters: the
+ * route loads the clinic before it can ask for appointments, so a spec that mocked
+ * only `/appointments` would leave `/clinic` unmatched — which the mock answers with
+ * 501, by design.
+ */
+export function allAgendaFixtures(): MockedResponses {
+  return {
+    '/api/v1/clinic': { body: clinicSettings },
+    '/api/v1/appointments': { body: agendaEntries },
+  };
+}

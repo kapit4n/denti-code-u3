@@ -19,9 +19,11 @@ import { registerClinicScope } from './http/plugins/clinic-scope.js';
 import { registerHealthRoutes } from './http/routes/health.js';
 import { registerDashboardRoutes } from './http/routes/dashboard.js';
 import { registerAppointmentsRoutes } from './http/routes/appointments.js';
+import { registerClinicRoutes } from './http/routes/clinic.js';
 import { registerPatientsRoutes } from './http/routes/patients.js';
 import { DrizzlePatientRepository } from './infrastructure/persistence/repositories/patient-repository.js';
 import { DrizzleAppointmentRepository } from './infrastructure/persistence/repositories/appointment-repository.js';
+import { DrizzleClinicRepository } from './infrastructure/persistence/repositories/clinic-repository.js';
 import { systemClock } from './infrastructure/clock/system-clock.js';
 import { uuidGenerator } from './infrastructure/id/uuid-generator.js';
 import { sendProblem } from './http/problem.js';
@@ -101,6 +103,10 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   // The dashboard keeps `db` for the aggregates that have no port yet — counts,
   // revenue, occupancy — and says so on `DashboardDependencies`.
   await registerAppointmentsRoutes(app, { appointments });
+
+  // The clinic's own record, so the browser renders the calendar in the clinic's
+  // day rather than the visitor's.
+  await registerClinicRoutes(app, { clinics: new DrizzleClinicRepository(connection.db) });
 
   app.get('/', async () => ({
     service: 'denti-code-u3-api',

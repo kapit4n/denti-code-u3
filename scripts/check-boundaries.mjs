@@ -41,6 +41,25 @@ const WORKSPACE_PACKAGES = [
   { name: '@denti-code-u3/database', dir: 'database' },
 ];
 
+/**
+ * Files in `packages/app` allowed to import FullCalendar (ADR 0011).
+ *
+ * Matched on a path suffix, because the rule is about *where* the import happens,
+ * not about what the file is called.
+ *
+ * The component's own test is on the list deliberately. Asserting that the grid was
+ * handed the clinic's timezone means naming `CalendarOptions`, and a wildcard for
+ * `*.test.*` would let any future spec start building `EventInput`s — which is the
+ * leak this rule exists to stop. Listing the one file keeps the exception visible:
+ * adding another means editing this array and saying why.
+ */
+const CALENDAR_ADAPTER_ALLOWED = [
+  'features/agenda/adapters/to-calendar-event.ts',
+  'features/agenda/adapters/to-business-hours.ts',
+  'features/agenda/components/agenda-calendar.tsx',
+  'features/agenda/components/agenda-calendar.test.tsx',
+];
+
 /** Specifiers `packages/domain` may never import, at any depth. */
 const DOMAIN_FORBIDDEN_SPECIFIERS = [
   'react',
@@ -287,7 +306,26 @@ function main() {
     }
   }
 
-  // ---- rule 5: the deployment shells stay thin (ADR 0008) --------------
+  // ---- rule 5: FullCalendar stays behind its adapters (ADR 0011) ------
+  //
+  // ADR 0011 says the calendar library is replaceable, and that is only true if
+  // nothing outside two adapter files and one component can name its types. The
+  // failure is gradual rather than sudden: a query starts returning `EventInput`,
+  // a helper imports `EventApi` to read a field, and the agenda's data shape leaks
+  // into a second feature. By then "only the adapters import FullCalendar" is no
+  // longer a change anyone makes.
+  for (const file of listSourceFiles(path.join(root, 'packages/app/src'))) {
+    for (const specifier of collectImportSpecifiers(fs.readFileSync(file, 'utf8'))) {
+      if (!specifier.startsWith('@fullcalendar/')) continue;
+      if (!CALENDAR_ADAPTER_ALLOWED.some((allowed) => file.endsWith(allowed))) {
+        errors.push(
+          `packages/app: ${relative(root, file)} imports "${specifier}" (FullCalendar may only be used in features/agenda/adapters/* and features/agenda/components/agenda-calendar.tsx — ADR 0011).`,
+        );
+      }
+    }
+  }
+
+  // ---- rule 6: the deployment shells stay thin (ADR 0008) --------------
   for (const shell of THIN_SHELLS) {
     for (const forbidden of FORBIDDEN_SHELL_PATHS) {
       const target = path.join(root, shell.dir, forbidden);

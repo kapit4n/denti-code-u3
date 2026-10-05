@@ -34,16 +34,27 @@ packages/domain/appointment        Domain Appointment (status, startsAt,
 packages/api-client                AgendaRange fetch (REST, ISO dates)
         ↓  TanStack Query
 packages/app/features/agenda/
-   ├── queries/agenda-range-query.ts
-   ├── adapters/to-calendar-event.ts      ← the ONLY place EventInput is created
-   └── adapters/from-calendar-event.ts    ← the ONLY place a drop/resize is read
-                                              back into domain input
+   ├── queries/agenda-range-query.ts          deals in AgendaEntry, never EventInput
+   ├── adapters/to-calendar-event.ts          ← the ONLY place EventInput is created
+   ├── adapters/to-business-hours.ts          ← the ONLY place Clinic hours become
+   │                                            FullCalendar businessHours
+   ├── adapters/from-calendar-event.ts        ← the ONLY place a drop/resize is read
+   │                                            back into domain input
+   └── components/agenda-calendar.tsx         ← the ONLY component that renders it
 ```
+
+`to-business-hours.ts` is a third adapter rather than part of the component because
+it performs a translation, not a layout: the domain speaks ISO weekdays
+(`1 = Monday … 7 = Sunday`) and FullCalendar speaks `Date.getDay()`
+(`0 = Sunday … 6 = Saturday`). Passing the number straight through opens every
+clinic a day late and closes it a day early — a bug that looks like a plausible
+calendar, which is why it belongs in a tested adapter beside the event one.
 
 Rules:
 
-- No `EventObject`/`EventInput` type crosses a module boundary outside the two
-  adapter files. Queries return domain-shaped appointments.
+- No `EventObject`/`EventInput` type crosses a module boundary outside the
+  adapter files and the calendar component. Queries return domain-shaped
+  appointments.
 - Date/time handling in the domain is UTC `Date`/`ISO string`; the calendar
   adapter is the only place that converts to FullCalendar's local-time shape and
   applies the clinic's IANA timezone.
@@ -56,8 +67,12 @@ Rules:
   server's answer. The calendar never mutates its own state as the source of
   truth.
 - If FullCalendar were ever to be replaced (or a bespoke grid built), only the
-  two adapter files and the calendar component change; queries, domain and API
-  are untouched.
+  adapter files and the calendar component change; queries, domain and API are
+  untouched.
+- **The clinic's timezone and opening hours are inputs to the grid, not
+  constants in it.** They arrive from `GET /api/v1/clinic`, so one API can serve
+  several clinics. The grid never falls back to the browser's zone: without a
+  zone there is no grid.
 
 ## Rationale
 
@@ -103,7 +118,17 @@ Negative / accepted costs:
 
 ## Verification
 
-- ESLint/guard: `EventInput`/`EventObject` may only be imported in
-  `features/agenda/adapters/*` and the calendar component.
-- Unit tests cover `toCalendarEvent` / `fromCalendarEvent` mapping without
-  rendering a calendar.
+- `scripts/check-boundaries.mjs` (rule 5) fails the build when any file in
+  `packages/app/src` imports `@fullcalendar/*` outside an explicit allowlist:
+  the three adapters, the calendar component, and that component's test —
+  the test alone is listed because asserting that the grid was handed the
+  clinic's timezone means naming `CalendarOptions`. The allowlist is an array
+  in the script, so widening it is a visible edit rather than a wildcard.
+- Unit tests cover the adapter mapping without rendering a calendar, and
+  assert that the instants are **passed through** rather than adjusted: the
+  API sends UTC, the grid is told the clinic's zone, and converting twice is
+  how a 09:00 booking becomes 02:00 on a screen.
+- `e2e/web/agenda.spec.ts` runs the browser in `America/New_York` against a
+  clinic in `America/Lima` and asserts a 14:00Z booking renders at 9:00. It was
+  checked by pointing the component at the browser's zone: the spec failed with
+  `Received string: "10:00 - 11:00"`.

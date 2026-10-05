@@ -28,7 +28,7 @@ import type {
   PatientOdontogram,
   PatientProfile,
 } from '../patient/index.js';
-import type { Clinic, ClinicOperatingHours, ClinicRole } from '../organization/index.js';
+import type { Clinic, ClinicRole } from '../organization/index.js';
 import type { Prescription } from '../prescription/index.js';
 
 /**
@@ -222,13 +222,25 @@ export interface ChairRepository {
   listByClinic(clinicId: ClinicId): Promise<readonly ChairSummary[]>;
 }
 
+/**
+ * The clinic itself: who it is, where its day starts, and when it is open.
+ *
+ * `updateOperatingHours` used to be declared here and never implemented, because
+ * nothing called it either. It returns with the settings slice that owns the form
+ * for it, for the same reason the appointment port stopped declaring methods with
+ * no caller: a port that promises writes nobody asked for is a promise the first
+ * implementer has to keep or break loudly.
+ */
 export interface ClinicRepository {
   findById(clinicId: ClinicId): Promise<Clinic | undefined>;
+  /**
+   * The clinic a request is scoped to when there is no authenticated user yet.
+   *
+   * It exists because `request.clinicId` still comes from `CLINIC_ID`; it is not a
+   * fallback to be grown into a "default clinic" concept, and it disappears with
+   * authentication.
+   */
   getDefault(): Promise<Clinic | undefined>;
-  updateOperatingHours(
-    clinicId: ClinicId,
-    operatingHours: readonly ClinicOperatingHours[],
-  ): Promise<void>;
 }
 
 export interface TreatmentCatalogueItem {

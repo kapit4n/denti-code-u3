@@ -1,18 +1,23 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 10 (patient registration: domain use case, atomic record
-> numbers, POST endpoint, RHF + Zod form, both "New Patient" actions enabled)
+> Last updated: session 14 (the agenda grid: `/agenda` in day/week/month,
+> FullCalendar behind two adapters, clinic timezone and opening hours from
+> `GET /api/v1/clinic`, the ADR 0011 boundary now enforced by a script)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
 
 **PHASE 4 — CLINICAL WORKFLOWS** (Milestone 5 of `docs/roadmap.md`)
 
-**Status: Milestone 4 complete; Milestone 5 started.** Session 13 delivered the
-agenda's read side — the `AgendaEntry` read model, `AppointmentRepository`, the
-Drizzle implementation, `GET /api/v1/appointments`, and the dashboard reading
-today's book through the same repository. The calendar UI and the appointment
-write side are not started.
+**Status: Milestone 4 complete; Milestone 5 in progress.** Session 13 delivered
+the agenda's read side — the `AgendaEntry` read model, `AppointmentRepository`,
+the Drizzle implementation, `GET /api/v1/appointments`, and the dashboard reading
+today's book through the same repository. Session 14 delivered the grid that
+consumes it: `/agenda` with day, week and month views, FullCalendar confined to
+two adapters and one component by an enforced guard, the clinic's timezone and
+opening hours read from the API rather than assumed, and 10 e2e tests that pin
+the timezone down. The appointment **write** side is not started, so the grid is
+deliberately read-only.
 
 ## Task origin
 
@@ -51,29 +56,36 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 8)
+## Verification log (last run, session 14)
 
-| Command                     | Result                                                       |
-| --------------------------- | ------------------------------------------------------------ |
-| `pnpm run typecheck`        | 12/12 tasks pass                                             |
-| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`                        |
-| `pnpm run format:check`     | All files match Prettier                                     |
-| `pnpm run test`             | 12/12 tasks pass                                             |
-| `pnpm run test:integration` | 10/10 pass against real PostgreSQL 17                        |
-| `pnpm run build`            | not run this session — deferred deliberately (see below)     |
-| `pnpm run test:e2e`         | not run this session; pages verified by hand instead         |
-| API boot                    | `/health` ok; all 5 dashboard + 3 patient routes return 200  |
-| Seed                        | `pnpm run db:seed` idempotent, clinic id matches `.env`      |
-| Web dev server (`:5173`)    | Dashboard, list, profile and global search render, no errors |
+| Command                     | Result                                                     |
+| --------------------------- | ---------------------------------------------------------- |
+| `pnpm run typecheck`        | 12/12 tasks pass                                           |
+| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`                      |
+| `pnpm run format`           | applied; `pnpm run format:check` clean                     |
+| `pnpm run test`             | 12/12 tasks pass — 315 tests                               |
+| `pnpm run test:integration` | 9 files, 93 tests pass against real PostgreSQL 17          |
+| `pnpm run build`            | 5/5 tasks pass; the agenda chunk is 300 kB (90 kB gzipped) |
+| `pnpm run test:e2e`         | 56 passed (46 before, +10 agenda)                          |
+| `pnpm run guard:boundaries` | OK, with one pre-existing warning (see Open questions)     |
 
-Per-package unit tests: domain 90, validation 28, api-client 14, api 23, app 30.
+Per-package unit/component tests: domain 115, validation 36, api-client 15, api
+42 (integration skipped here, run separately), app 107.
 
-**On skipping the build:** the user asked for implementation first and for the
-expensive full build review to be deferred, because it was slow. Everything else
-above _was_ run. `pnpm run build` and `pnpm run test:e2e` are still owed before
-the milestone is signed off, and the browser verification was done with a
-throwaway Playwright script rather than a committed spec — it should become a
-real e2e spec in the same milestone.
+**Two defects this session's tests caught, both invisible on screen.**
+
+1. The first cut of `to-business-hours.ts` spread an empty object for a weekday it
+   could not translate, which FullCalendar reads as "every day" — the exact
+   opposite of the comment written above it. It now drops the row, and a test
+   asserts no `EventInput` ever comes out without `daysOfWeek`.
+2. The e2e timezone spec asserted only that an event was _visible_, which is what
+   its own docstring claimed to check and was not: it would have passed with the
+   grid in the browser's zone. It now asserts the rendered hour, and pointing the
+   component at `America/New_York` makes it fail with `Received string:
+"10:00 - 11:00"`.
+
+The ADR 0011 boundary was also verified by breaking it: importing `@fullcalendar/core`
+from `agenda-range-query.ts` fails `guard:boundaries`.
 
 **Defects found by running the app that no unit test could have caught.** Each
 one produced plausible-looking output rather than an error, which is why review
@@ -269,12 +281,34 @@ editing. Both sides now go through `PatientRepository`. Remaining:
        "today" instead of two. See ADR 0017 for why booked minutes are clipped to
        the window: counting an appointment that began yesterday evening against
        today's capacity would report a day as over 100% booked.
-4. [ ] **Calendar UI.** FullCalendar is not installed yet (ADR 0011). The agenda
-       endpoint has no consumer until the day/week views exist.
-5. [ ] **Appointment write side**: `CreateAppointment`, `RescheduleAppointment`,
+4. [x] **Calendar UI (read-only).** `/agenda` renders `timeGridDay`,
+       `timeGridWeek` and `dayGridMonth` of `GET /api/v1/appointments`.
+       FullCalendar is confined to `adapters/to-calendar-event.ts`,
+       `adapters/to-business-hours.ts` and `components/agenda-calendar.tsx`
+       by rule 5 of `scripts/check-boundaries.mjs`, which fails the build on
+       any other `@fullcalendar/*` import in `packages/app/src`. - The **visible window is the fetch window**: FullCalendar's own
+       `datesSet` reports the range, so a month grid asks for a month. There
+       is no second opinion about which days are on screen. - **No `placeholderData`.** Navigating to tomorrow must not paint
+       today's appointments under tomorrow's dates; an empty grid with a
+       loading hint is the honest answer. - **The timezone and opening hours are inputs, not constants.** They
+       come from `GET /api/v1/clinic` (added this session, with
+       `DrizzleClinicRepository`), because one API serves several clinics.
+       Without a clinic the route renders an error instead of a grid in the
+       browser's own zone. - **ISO weekdays are translated.** The domain says `1 = Monday …
+7 = Sunday`; FullCalendar wants `0 = Sunday … 6 = Saturday`. - **Statuses are colour, cancelled and no-show included.** They are
+       drawn struck through and muted, because a slot that is deliberately
+       empty must not look bookable. - Read-only on purpose: `editable`, `selectable` and `eventClick` are
+       not wired. A control that looks live and is not is worse than an
+       absent one.
+5. [ ] **Filters.** Dentist and chair filters are in `AgendaWindow` and the API
+       accepts them, but nothing in the UI sends them yet. `AgendaEntry` has no
+       `chairId`/`chairName`, so chair columns need that field first.
+6. [ ] **Appointment write side**: `CreateAppointment`, `RescheduleAppointment`,
        `TransitionAppointment`, conflict errors surfaced to the UI, and the forms
-       that un-disable "New Visit" and the profile's next-appointment action.
-6. [ ] Visits, the clinical timeline, treatments, payments, inventory, reports.
+       that un-disable "New Visit" and the profile's next-appointment action. This
+       is also what makes the grid writable: `from-calendar-event.ts` (ADR 0011)
+       does not exist yet.
+7. [ ] Visits, the clinical timeline, treatments, payments, inventory, reports.
 
 **Milestone 5 onward** — visits, odontogram, treatments, payments, inventory,
 reports, auth: not started.
@@ -493,3 +527,46 @@ and 15 mutations are caught.
 **Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
 warning) · format · build 5/5 · 265 unit/component · 85 integration (30 new) ·
 46/46 e2e.
+
+---
+
+Session 14: the agenda grid, and the first thing the app asks the server instead of
+assuming.
+
+The decision that shaped this slice was where the calendar's timezone comes from.
+Every FullCalendar example passes `timeZone: 'local'` or nothing at all, and both are
+wrong here: one API serves every clinic, so a browser-derived zone draws a Lima
+clinic's morning in the afternoon for anyone travelling, and a `VITE_CLINIC_TIME_ZONE`
+constant cannot be right for the second clinic that appears next year. So the clinic's
+own record became an input: `GET /api/v1/clinic`, `DrizzleClinicRepository`, ISO
+weekdays translated into the `Date.getDay()` numbers the library wants, and a route
+that renders an error rather than a grid when the clinic cannot be loaded. The
+alternative — a constant with a comment — is cheaper and would have been wrong the
+first time the clinic changed its country.
+
+ADR 0011 said FullCalendar would live behind two adapter files. That held up, with one
+addition: opening hours are a translation too, and they became a third adapter beside
+the event one, because a weekday number that passes through unchanged opens every
+clinic a day late and still looks like a plausible calendar. The boundary is now
+enforced rather than documented — rule 5 of `scripts/check-boundaries.mjs` fails when
+anything outside an explicit allowlist imports `@fullcalendar/*`, verified by leaking
+one into a query and watching the guard fail.
+
+The range is not computed anywhere. FullCalendar's `datesSet` reports what the grid is
+showing, and that is the fetch window, so a month view asks for a month and there is no
+second implementation of "which days are on screen" to drift. Deliberately no
+`placeholderData`: navigating to tomorrow must not paint today's appointments under
+tomorrow's dates.
+
+Two bugs were caught by writing the assertions honestly rather than conveniently. The
+business-hours adapter spread an empty object for a weekday it could not translate,
+which FullCalendar reads as _every day_ — the opposite of the comment above it; the
+adapter now drops such a row and a test asserts nothing comes out without
+`daysOfWeek`. And the e2e timezone spec asserted that an event was visible, which is
+not the same as asserting it was drawn at the clinic's hour; it now reads the rendered
+time, and pointing the component at the browser's zone fails it with
+`Received string: "10:00 - 11:00"`.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
+warning) · format · build 5/5 · 315 unit/component (50 new) · 93 integration
+(8 new) · 56/56 e2e (10 new) · 5 adapter mutations all caught.
