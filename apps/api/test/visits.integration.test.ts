@@ -26,7 +26,7 @@
  * It uses `TEST_DATABASE_URL` so it can never touch development data.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
@@ -40,6 +40,8 @@ import { DrizzleVisitRepository } from '../src/infrastructure/persistence/reposi
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
 import {
   completeVisitRecord,
+  getVisit,
+  listVisitsForPatient,
   reopenVisitRecord,
   startVisit,
   type AppointmentRepository,
@@ -85,6 +87,16 @@ describeIntegration('starting a visit (PostgreSQL)', () => {
   };
   const patients = {
     ana: '4d4d1111-1111-4111-8111-111111111111',
+    /**
+     * A second patient in *this* clinic, and a third who has never been treated.
+     *
+     * Both exist for the timeline's sake. With one patient in the clinic, a timeline test
+     * cannot tell "ordered correctly" from "returned everything": ordering and scoping
+     * break the same way on a single row, so the read side needs a patient of its own to
+     * exclude and a patient with no visits at all.
+     */
+    bruno: '4d4d3333-3333-4333-8333-333333333333',
+    untouched: '4d4d4444-4444-4444-8444-444444444444',
     foreign: '4d4d2222-2222-4222-8222-222222222222',
   };
   const chairs = {
@@ -151,10 +163,26 @@ describeIntegration('starting a visit (PostgreSQL)', () => {
     return () => asVisitId(`6f6f0000-0000-4000-8000-${String(sequence++).padStart(12, '0')}`);
   };
 
-  const start = (appointmentId: AppointmentId, seed = 1, clinic: ClinicId = clinicId) =>
+  /**
+   * Start a visit from a booking.
+   *
+   * `startedAt` exists because `startVisit` takes its start time from the clock, and one
+   * fixed `NOW` gives every visit the *same* `started_at`. That is harmless for every other
+   * test here and fatal for the timeline: three visits tied on the column being ordered
+   * have no defined order, so the timeline test would be asserting PostgreSQL's tie-break
+   * rather than the repository's `orderBy` — and would keep passing if the `orderBy` were
+   * deleted outright. Passing each visit its own start time is what makes the ordering
+   * claim testable.
+   */
+  const start = (
+    appointmentId: AppointmentId,
+    seed = 1,
+    clinic: ClinicId = clinicId,
+    startedAt: IsoDateTime = NOW,
+  ) =>
     startVisit(clinic, appointmentId, {
       unitOfWork,
-      clock: { now: () => NOW },
+      clock: { now: () => startedAt },
       newId: idsFrom(seed),
     });
 
@@ -234,12 +262,32 @@ describeIntegration('starting a visit (PostgreSQL)', () => {
       insert into patients (id, clinic_id, first_name, last_name)
       values
         (${patients.ana}, ${clinicId}, 'Ana', 'Aguilar'),
-        (${patients.foreign}, ${otherClinicId}, 'Foreign', 'Patient')
+        (${patients.foreign}, ${otherClinicId}, 'Foreign', 'Patient'),
+        (${patients.bruno}, ${clinicId}, 'Bruno', 'Baptista'),
+        (${patients.untouched}, ${clinicId}, 'Carla', 'Costa')
       on conflict (id) do nothing
     `;
   });
 
   beforeEach(clearFixtures);
+
+  /**
+   * Put the clinicians back.
+   *
+   * One test deletes a dentist on purpose, to see what `on delete set null` leaves behind.
+   * That deletion is permanent and `clearFixtures` does not restore rows — only visits and
+   * appointments — so without this the next four tests failed on a missing clinician,
+   * which is how a perfectly good fixture turns into a mystery.
+   */
+  afterEach(async () => {
+    await sql`
+      insert into dentists (id, clinic_id, full_name)
+      values
+        (${dentists.alice}, ${clinicId}, 'Dr Alice'),
+        (${dentists.other}, ${otherClinicId}, 'Dr Foreign')
+      on conflict (id) do nothing
+    `;
+  });
 
   afterAll(async () => {
     await clearFixtures();
@@ -522,6 +570,140 @@ describeIntegration('starting a visit (PostgreSQL)', () => {
       expect(row.status).toBe('COMPLETED');
       expect(row.endedAt).toBe(CLOSED_AT);
       expect(await countVisits(appointmentId)).toBe(1);
+    });
+  });
+
+  describe('reading a visit', () => {
+    it('reads back the visit it wrote, with the end time it decided', async () => {
+      const appointmentId = await book({ startsAt: at('14:00') });
+      const started = await start(appointmentId, 90);
+      await completeVisitRecord(clinicId, started.visit.id, closureDependencies);
+
+      const found = await getVisit(clinicId, started.visit.id, {
+        visits: visitsRepository,
+      });
+
+      // The round trip the write side's tests could not make: the entity the domain built
+      // is compared against the entity the repository reads, and the two agree. Before the
+      // read side existed, the row was only ever compared against itself.
+      expect(found).toMatchObject({
+        id: started.visit.id,
+        clinicId,
+        patientId: asPatientId(patients.ana),
+        appointmentId,
+        status: 'COMPLETED',
+        startedAt: NOW,
+        endedAt: CLOSED_AT,
+      });
+    });
+
+    it('reads a re-opened visit with no end time', async () => {
+      const appointmentId = await book({ startsAt: at('14:00') });
+      const started = await start(appointmentId, 91);
+      await completeVisitRecord(clinicId, started.visit.id, closureDependencies);
+      await reopenVisitRecord(clinicId, started.visit.id, closureDependencies);
+
+      const found = await getVisit(clinicId, started.visit.id, { visits: visitsRepository });
+
+      // Cleared in the row, not merely absent from the entity the use case returned. This
+      // is the pair of assertions session 24 could not write, because the read side did
+      // not exist to write them against.
+      expect(found.status).toBe('OPEN');
+      expect(found.endedAt).toBeUndefined();
+    });
+
+    it('carries a departed clinician as null rather than dropping the key', async () => {
+      const appointmentId = await book({ startsAt: at('14:00') });
+      const started = await start(appointmentId, 92);
+
+      // The clinician leaves: `on delete set null` takes the link and keeps the visit.
+      // `${dentists.alice}` rather than `dentists.own` because the fixture key was renamed
+      // in session 24 and this line kept the old name — postgres-js refuses an
+      // `undefined` parameter outright, which is at least a louder failure than a null.
+      await sql`delete from dentists where id = ${dentists.alice}`;
+
+      const found = await getVisit(clinicId, started.visit.id, { visits: visitsRepository });
+
+      // A visit outlives the employment that produced it. Omitting the key would make
+      // this indistinguishable from a visit that was never asked about a clinician
+      // (ADR 0021), and the entity type says the difference is real.
+      expect('dentistId' in found).toBe(true);
+      expect(found.dentistId).toBeNull();
+      expect(found.status).toBe('OPEN');
+    });
+
+    it('refuses a visit belonging to another clinic', async () => {
+      const appointmentId = await book({ startsAt: at('14:00') });
+      const started = await start(appointmentId, 93);
+
+      await expect(
+        getVisit(otherClinicId, started.visit.id, { visits: visitsRepository }),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+
+    it("lists a patient's visits newest first, and nobody else's", async () => {
+      const patientId = patients.ana;
+      // Insertion order is 94, 95, 96 and the answer must be the reverse of it, so
+      // dropping `orderBy` — which returns insertion order here — is caught.
+      const older = await start(
+        await book({ startsAt: at('09:00'), patient: patientId }),
+        94,
+        clinicId,
+        at('09:00'),
+      );
+      const newer = await start(
+        await book({ startsAt: at('14:00'), patient: patientId }),
+        95,
+        clinicId,
+        at('14:00'),
+      );
+      // A third visit for somebody else, inserted between the two above and *not* part of
+      // the answer. An ordering bug and a scoping bug look identical on a table holding
+      // one patient's visits, so the excluded row is interleaved to separate them.
+      await start(
+        await book({ startsAt: at('11:00'), patient: patients.bruno }),
+        96,
+        clinicId,
+        at('11:00'),
+      );
+
+      const list = await listVisitsForPatient(clinicId, asPatientId(patientId), {
+        visits: visitsRepository,
+      });
+
+      // The order a clinician reads a history in. Insertion order is 94, 95, 96; the
+      // answer is 95, 94 with 96 absent. So dropping `orderBy` (insertion order) and
+      // dropping the patient filter (96 included) are both caught, and neither is caught by
+      // the other.
+      expect(list.map((entry) => entry.id)).toEqual([newer.visit.id, older.visit.id]);
+    });
+
+    it('lists nothing for a patient who has never been treated, and does not refuse', async () => {
+      const list = await listVisitsForPatient(clinicId, asPatientId(patients.untouched), {
+        visits: visitsRepository,
+      });
+
+      // `[]`, not `NOT_FOUND`. A patient with no visits is not a missing patient, and
+      // `GET /patients/:id` answering 404 for another clinic's patient is not a precedent
+      // to copy into a list (ADR 0023).
+      expect(list).toEqual([]);
+    });
+
+    it("lists nothing for another clinic's patient, identically", async () => {
+      // The other clinic's fixture patient, asked about from this clinic. The row exists
+      // and belongs elsewhere.
+      const here = await listVisitsForPatient(clinicId, asPatientId(patients.foreign), {
+        visits: visitsRepository,
+      });
+      const there = await listVisitsForPatient(otherClinicId, asPatientId(patients.foreign), {
+        visits: visitsRepository,
+      });
+
+      // Compared side by side on purpose: the property that matters is that a caller
+      // cannot tell "no visits" from "not your patient", and only a comparison shows that
+      // (ADR 0014).
+      expect(here).toEqual([]);
+      expect(there).toEqual([]);
     });
   });
 

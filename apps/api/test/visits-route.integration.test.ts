@@ -56,6 +56,15 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
   const otherClinicId = '7a7a2222-2222-4222-8222-222222222222';
 
   const patient = '7b7b1111-1111-4111-8111-111111111111';
+  /**
+   * A second patient in this clinic, and one who has never been treated.
+   *
+   * The timeline's two answers both need a patient who is not the default one: "these are
+   * this patient's visits" and "this patient has none" are indistinguishable from the
+   * patient's own list if the patient always has a visit.
+   */
+  const secondPatient = '7b7b3333-3333-4333-8333-333333333333';
+  const untouchedPatient = '7b7b4444-4444-4444-8444-444444444444';
   const otherPatient = '7b7b2222-2222-4222-8222-222222222222';
   const dentist = '7c7c1111-1111-4111-8111-111111111111';
   const otherDentist = '7c7c2222-2222-4222-8222-222222222222';
@@ -107,7 +116,14 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
    */
   let bookings = 0;
 
-  const startAndReturnId = async (clinic = clinicId) => {
+  /**
+   * Start a visit over HTTP, naming the patient.
+   *
+   * The start time is always the suite's `NOW`, because that is the clock the app was
+   * registered with. The timeline's ordering cannot be tested against visits that all
+   * share one start time, so `seedVisit` below writes the rows for that test instead.
+   */
+  const startAndReturnId = async (clinic = clinicId, patientId = patient) => {
     // Each booking gets its own *hour*, because the fixture's 45-minute duration means
     // two bookings an hour apart still overlap. Two bookings for the same clinician at
     // overlapping times are refused by `appointments_dentist_no_overlap` — correct, and
@@ -116,11 +132,67 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
     // reaching the assertion it was written for, and the second attempt spaced them by one
     // *minute* and died the same way.
     bookings += 1;
-    const appointmentId = await book({ startsAt: at(4 + bookings, 0) });
-    const response = await start({ appointmentId }, clinic);
+    const appointmentId = await book({ startsAt: at(4 + bookings, 0), patientId });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/visits',
+      headers: { 'x-clinic-id': clinic },
+      payload: { appointmentId },
+    });
     expect(response.statusCode).toBe(201);
     return (response.json() as { visit: { id: string } }).visit.id;
   };
+
+  /**
+   * A visit row written directly, for the two things the endpoint cannot produce: a chosen
+   * `started_at`, and a visit that is already closed before anything reads it.
+   *
+   * Only the read tests need these. Everything about *starting* a visit goes through
+   * `POST /visits`, because that is the behaviour under test elsewhere in this file.
+   */
+  const seedVisit = async (options: {
+    patientId?: string;
+    startedAt: string;
+    status?: 'OPEN' | 'COMPLETED';
+    endedAt?: string | null;
+    clinic?: string;
+  }) => {
+    // The clinician follows the clinic. Writing this clinic's dentist against the other
+    // clinic's patient is refused by `visits_dentist_same_clinic_fk`, which is migration
+    // 0003's tenant guarantee doing exactly its job — the first version of this helper
+    // hardcoded `dentist` and the "seed a visit in another clinic" test died on it.
+    const clinic = options.clinic ?? clinicId;
+    const clinician = clinic === otherClinicId ? otherDentist : dentist;
+
+    const [row] = await sql`
+      insert into visits
+        (clinic_id, patient_id, dentist_id, status, started_at, ended_at)
+      values (
+        ${clinic},
+        ${options.patientId ?? patient},
+        ${clinician},
+        ${options.status ?? 'OPEN'},
+        ${options.startedAt},
+        ${options.endedAt ?? null}
+      )
+      returning id
+    `;
+    return (row as { id: string }).id;
+  };
+
+  const getVisit = (visitId: string, clinic = clinicId) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${visitId}`,
+      headers: { 'x-clinic-id': clinic },
+    });
+
+  const getTimeline = (patientId: string, clinic = clinicId) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${patientId}/visits`,
+      headers: { 'x-clinic-id': clinic },
+    });
 
   const close = (visitId: string, action: 'complete' | 'reopen', clinic = clinicId) =>
     app.inject({
@@ -204,6 +276,8 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       insert into patients (id, clinic_id, first_name, last_name)
       values
         (${patient}, ${clinicId}, 'Ana', 'Pérez'),
+        (${secondPatient}, ${clinicId}, 'Bruno', 'Baptista'),
+        (${untouchedPatient}, ${clinicId}, 'Carla', 'Costa'),
         (${otherPatient}, ${otherClinicId}, 'Bo', 'Peep')
       on conflict (id) do nothing
     `;
@@ -226,7 +300,14 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
   afterAll(async () => {
     await app.close();
     await clearFixtures();
-    await sql`delete from patients where id in (${patient}, ${otherPatient})`;
+    // Every fixture patient, not just the first two. This list grew in session 25 and the
+    // teardown did not, so the two new patients survived and the `delete from clinics`
+    // below was refused by `patients_clinic_id_clinics_id_fk` — a leaked fixture showing
+    // up as an unrelated constraint violation in a different statement.
+    await sql`
+      delete from patients
+      where id in (${patient}, ${secondPatient}, ${untouchedPatient}, ${otherPatient})
+    `;
     await sql`delete from dentists where id in (${dentist}, ${otherDentist})`;
     await sql`delete from chairs where id in (${chair}, ${otherChair})`;
     await sql`delete from clinics where id in (${clinicId}, ${otherClinicId})`;
@@ -473,6 +554,167 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
     // A hand-typed id would otherwise arrive as PostgreSQL's `22P02`, which is a 500.
     expect(response.statusCode).toBe(422);
     expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+  });
+
+  describe('GET /api/v1/visits/:visitId', () => {
+    it('reads a visit back over HTTP, end time and all', async () => {
+      const visitId = await startAndReturnId();
+      expect((await close(visitId, 'complete')).statusCode).toBe(200);
+
+      const response = await getVisit(visitId);
+
+      expect(response.statusCode).toBe(200);
+      // The write's answer and the read's answer come from the same row, so a completed
+      // visit is visibly completed with the end time the clock gave it.
+      expect(response.json()).toMatchObject({
+        id: visitId,
+        patientId: patient,
+        dentistId: dentist,
+        appointmentId: expect.any(String),
+        status: 'COMPLETED',
+        startedAt: NOW,
+        endedAt: NOW,
+      });
+    });
+
+    it('reads a re-opened visit with no end time', async () => {
+      const visitId = await startAndReturnId();
+      await close(visitId, 'complete');
+      await close(visitId, 'reopen');
+
+      const response = await getVisit(visitId);
+
+      // `endedAt` absent rather than null: the entity spells "has no end time" as
+      // `undefined`, and the wire form follows the entity (ADR 0022).
+      const body = response.json() as { status: string; endedAt?: string };
+      expect(response.statusCode).toBe(200);
+      expect(body.status).toBe('OPEN');
+      expect(body.endedAt).toBeUndefined();
+    });
+
+    it('answers 404 for a visit another clinic holds', async () => {
+      const visitId = await startAndReturnId();
+
+      const response = await getVisit(visitId, otherClinicId);
+
+      // Identical to an id that is nowhere, which the next test checks with the same
+      // assertion — the pair is the point (ADR 0014).
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+    });
+
+    it('answers 404 for a visit id that is nowhere', async () => {
+      const response = await getVisit(missingId);
+
+      // The same body as the other clinic's visit, asserted separately rather than by
+      // comparing the two responses: if they ever diverge, both tests fail and the reason
+      // is visible in the failure rather than hidden in an equality diff.
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+    });
+
+    it('answers 422 for a path id that is not a uuid', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/visits/not-a-uuid',
+        headers: { 'x-clinic-id': clinicId },
+      });
+
+      // Before the guard existed this was a `22P02` reported as a 500 — which is how the
+      // write side's helper came to default its clinic to an empty string in the first
+      // place (ADR 0022).
+      expect(response.statusCode).toBe(422);
+      expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+    });
+  });
+
+  describe('GET /api/v1/patients/:patientId/visits', () => {
+    it("lists the patient's visits newest first, and nobody else's", async () => {
+      const older = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+      const newer = await seedVisit({ startedAt: `${day}T14:00:00.000Z` });
+      // Interleaved between the two, and not in the answer. An ordering fault and a
+      // scoping fault look the same on a table holding one patient's visits, so the
+      // excluded row sits between the included ones where it cannot hide behind either.
+      const somebodyElse = await seedVisit({
+        patientId: secondPatient,
+        startedAt: `${day}T11:00:00.000Z`,
+      });
+
+      const response = await getTimeline(patient);
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as { visits: { id: string }[] };
+      expect(body.visits.map((entry) => entry.id)).toEqual([newer, older]);
+      expect(body.visits.map((entry) => entry.id)).not.toContain(somebodyElse);
+    });
+
+    it('lists every visit of the patient, uncapped', async () => {
+      const ids = [];
+      for (let hour = 6; hour < 16; hour += 1) {
+        ids.push(
+          await seedVisit({ startedAt: `${day}T${String(hour).padStart(2, '0')}:00:00.000Z` }),
+        );
+      }
+
+      const response = await getTimeline(patient);
+
+      // Ten visits. A bare `.limit(10)` would pass this by accident, so the count is
+      // asserted against ten rows that all exist — and the "uncapped" claim is really
+      // that there is no limit to grow into without changing this test (ADR 0023).
+      expect((response.json() as { visits: unknown[] }).visits).toHaveLength(10);
+    });
+
+    it('answers 200 with an empty list for a patient who has never been treated', async () => {
+      const response = await getTimeline(untouchedPatient);
+
+      // 200 and `[]`, not 404. A patient with no visits is not a missing patient — and
+      // `GET /patients/:id` answering 404 for another clinic's patient is not the
+      // precedent to copy into a list (ADR 0023).
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ visits: [] });
+    });
+
+    it("answers exactly the same thing for another clinic's patient", async () => {
+      // This clinic's patient gets a real visit, and the other clinic's patient gets one
+      // in their own clinic — seeded here so the foreign timeline is genuinely non-empty
+      // and the answer is genuinely a suppression rather than a coincidence.
+      await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+      await seedVisit({
+        patientId: otherPatient,
+        startedAt: `${day}T10:00:00.000Z`,
+        clinic: otherClinicId,
+      });
+
+      const treated = await getTimeline(patient);
+      const foreign = await getTimeline(otherPatient);
+
+      // The two answers are compared, because the property is that they are
+      // indistinguishable *despite* the rows differing — only a side-by-side comparison
+      // shows that (ADR 0014).
+      expect((foreign.json() as { visits: unknown[] }).visits).toEqual([]);
+      expect((treated.json() as { visits: unknown[] }).visits).toHaveLength(1);
+
+      // And the foreign clinic does see its own, so the empty answer above is this
+      // clinic's scoping and not a fixture that was never written.
+      const theirOwn = await getTimeline(otherPatient, otherClinicId);
+      expect((theirOwn.json() as { visits: unknown[] }).visits).toHaveLength(1);
+    });
+
+    it('answers 422 for a patient id that is not a uuid, naming the field it got wrong', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/patients/not-a-uuid/visits',
+        headers: { 'x-clinic-id': clinicId },
+      });
+
+      expect(response.statusCode).toBe(422);
+      // The message names the *patient*, because this path has no visit id in it. The
+      // helper it shares with the visit route hardcoded "the visit id in the path", which
+      // on this URL points a client at a parameter it never sent.
+      expect(response.json()).toMatchObject({
+        error: { code: 'VALIDATION_ERROR', message: expect.stringContaining('patient') },
+      });
+    });
   });
 
   it('takes the clinic from the request scope, not from the booking', async () => {

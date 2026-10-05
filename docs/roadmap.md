@@ -179,6 +179,13 @@ same reason — nothing can put an appointment in a room yet.
   - **Not done: walk-in.** A patient who arrives with no booking is a different request
     — it names a patient and a clinician instead of an appointment — and the rules about
     what it may omit deserve their own argument before they become a schema.
+- Visit read side
+  - **Done (session 25).** `GET /api/v1/visits/:visitId` and
+    `GET /api/v1/patients/:patientId/visits` (ADR 0023). No filterable collection, and
+    the timeline is uncapped on purpose — a silently truncated clinical history is worse
+    than a long one.
+  - **Not done:** consolidating the patient profile's inline `visits` query, which is
+    recorded in ADR 0023 as open work rather than a rejection.
 - Visit workspace: patient/visit header, left section nav, right workspace
 - Clinical notes
 - Treatment records per visit

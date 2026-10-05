@@ -1604,3 +1604,52 @@ bookings spaced by a minute that a 45-minute duration made overlap.
 authenticated actor to record, and the requirements arrive in Milestone 12), walk-ins,
 the visit read side, the visit workspace UI, notes, treatments, charges and payments.
 No UI calls either endpoint, so the e2e count is unchanged.
+
+---
+
+## Session 25 — The visit read side
+
+**Done.** `getVisit` and `listVisitsForPatient` (`packages/domain/src/visit/visit-read.ts`);
+`GET /api/v1/visits/:visitId` and `GET /api/v1/patients/:patientId/visits`; ADR 0023;
+7 unit tests and 17 integration tests. Three repository methods that had no caller now
+have one — a visit closed by the API can be seen closed.
+
+**Decided.** No filterable collection: no question about visits is answered by a window
+and filters, so building one would be inventing filters without a caller to ask. The
+timeline answers `200 []` for an untreated patient, where `GET /patients/:id` answers
+`404` — different questions, and a list that 404s every untreated patient is a bug in
+rule's clothing. Another clinic's patient also answers `[]`, and is indistinguishable
+from the untreated case on purpose: a list endpoint cannot refuse "does this patient
+exist here" without leaking "does this patient exist somewhere". Uncapped, because a
+silently truncated clinical history is worse than a long one.
+
+**Deferred, recorded as open work.** Replacing the patient profile's inline `visits`
+query with `VisitRepository.findForPatient`. It projects different columns for one
+screen's card layout, and it sits inside a five-query block issued together for a
+documented reason.
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             549 unit/component (7 new)
+pnpm run test:integration 189 integration (13 files, 17 new, real PostgreSQL 17)
+pnpm run test:e2e         85/85 passed (unchanged — no UI calls these endpoints)
+pnpm run db:generate      no schema changes, nothing to migrate
+```
+
+Mutations checked: `orderBy` removed from `findForPatient` (caught by 2), the clinic
+filter dropped from `findForPatient` (caught by 1), the clinic filter dropped from
+`findById` (caught by 4), and `NOT_FOUND` replaced with a fabricated visit (caught by 3).
+
+**Fixture leaks found and fixed while testing.** Two patients added for the timeline
+tests without adding them to the route suite's teardown, which surfaced as an unrelated
+`patients_clinic_id_clinics_id_fk` violation in a later statement — the database refusing
+to delete a clinic a forgotten fixture still belonged to. And a test that deletes a dentist
+on purpose, permanently, broke the four tests after it until the fixture was restored in
+`afterEach`.
+
+**Not done, and deliberately.** Walk-ins, the visit workspace UI, clinical notes,
+treatment records, prescriptions, charges, files and payments. Consolidating the patient
+profile's visit query. No UI calls these endpoints, so the e2e count is unchanged.

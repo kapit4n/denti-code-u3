@@ -1,7 +1,7 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 24 (closing a visit, and refusing to pretend that reopening is
-> audited)
+> Last updated: session 25 (the visit read side: two questions, and refusing to answer a
+> third nobody has asked)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -21,6 +21,11 @@ Session 22 delivered the one thing item 5 of the plan below had been waiting for
 agenda's filters. `AgendaFilterBar` chooses clinicians and chairs, and the narrowing is
 **the request's**, not the browser's. Room _columns_ remain, and are blocked rather than
 deferred — they need a `roomId` in the read model, which ADR 0018 deliberately left out.
+
+Session 25 delivered the **third slice**, and the smallest yet: reading one. Until now
+every visit route was a `POST`, so a visit closed by the API could not be seen closed
+anywhere. `GET /api/v1/visits/:visitId` and `GET /api/v1/patients/:patientId/visits`
+(ADR 0023) give the three dormant repository methods callers at last.
 
 Session 24 delivered the **second slice**: closing one. `POST /api/v1/visits/:visitId/complete`
 and `.../reopen` are bodyless, and the decision worth its weight is what they _do not_ do
@@ -1247,3 +1252,48 @@ checked: the repository's own clock, the transition table widened into idempoten
 the empty-clinic default. The appointment-independence assertions could not be mutated
 today — `AppointmentRepository` has no status-change method yet, so there is nothing for
 the domain to couple to; they are tripwires for whoever adds it.
+
+Session 25: the visit read side. `getVisit` and `listVisitsForPatient`,
+`GET /api/v1/visits/:visitId` and `GET /api/v1/patients/:patientId/visits`, ADR 0023.
+Fourteen integration tests, seven unit tests, and no UI.
+
+Two use cases that are almost nothing, and the argument is about what they are _allowed_
+to be. There is no filterable collection, because no question about visits is answered by
+a window and a set of filters — the appointments list is a scheduling question and earns
+every filter it has, while a visit is a clinical record with no schedule. Inventing
+filters now would mean inventing them without a caller to ask, which is
+premature abstraction in a costume.
+
+The decision worth writing down is that the timeline answers **`200 []` for a patient who
+has never been treated**, where `GET /patients/:id` answers `404` for a patient this
+clinic does not hold. They are not the same question and copying the reflex would produce
+a timeline that 404s every untreated patient. The deeper half: another clinic's patient
+**also** answers `[]`, and the two are indistinguishable on purpose — a list endpoint
+cannot refuse to answer "does this patient exist here" without leaking "does this patient
+exist somewhere". It answers exactly one question, which is which visits you may read.
+Both tests assert the pair side by side, because that is the only way to check
+indistinguishability.
+
+The timeline is uncapped. A patient with thirty years of history is a few hundred rows,
+and the cost of a bare `.limit()` is a silently truncated clinical history, which is worse
+than a long one — a clinician reading "these are this patient's visits" has to be able to
+trust that it is all of them. The patient profile's own copy caps at ten, which is
+defensible there because it is a preview and this is the real thing.
+
+Consolidating the patient profile's inline `visits` query was declined for this slice and
+recorded as **open work**, not a rejection: it projects different columns for one screen,
+and it sits inside a five-query block whose comment explains why they are issued together.
+
+The session's best material was a fixture that would not stop leaking. Adding two patients
+for the timeline tests without adding them to the teardown left rows behind, and the
+symptom was not a failed assertion but an unrelated `patients_clinic_id_clinics_id_fk`
+violation three statements later in a different suite — the database refusing to delete a
+clinic that a forgotten fixture still belonged to. The integration suite grew the same
+way: a test that deletes a dentist on purpose, permanently, leaving four later tests to
+fail on a missing clinician.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
+warning) · format · build 5/5 · 549 unit/component (7 new) · 189 integration (17 new,
+real PostgreSQL 17) · 85/85 e2e unchanged, no UI calls either endpoint · no migration ·
+four mutations checked: `orderBy` removed, the clinic filter dropped from each of the two
+reads, and `NOT_FOUND` replaced with a fabricated visit.
