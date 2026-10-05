@@ -151,6 +151,15 @@ function ports(
       stored.set(appointmentId, changed);
       return changed;
     },
+    becomeVisit: async (clinicId, appointmentId, visitId, status) => {
+      const found = stored.get(appointmentId);
+      if (!found || found.clinicId !== clinicId) {
+        return undefined;
+      }
+      const changed: Appointment = { ...found, visitId, status };
+      stored.set(appointmentId, changed);
+      return changed;
+    },
   };
 
   const clinics: ClinicRepository = {

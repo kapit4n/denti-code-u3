@@ -25,10 +25,12 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core/columns/common';
 
 import { appointmentStatusEnum } from './enums.js';
 import { chairs, clinics, dentists, rooms } from './organization.js';
 import { patients } from './patient.js';
+import { visits } from './visit.js';
 
 /**
  * End of an appointment, as SQL.
@@ -78,8 +80,15 @@ export const appointments = pgTable(
     startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
     durationMinutes: integer('duration_minutes').notNull(),
     status: appointmentStatusEnum('status').notNull().default('SCHEDULED'),
-    /** Set exactly once, by `startVisitFromAppointment`. */
-    visitId: uuid('visit_id'),
+    /** Set exactly once, by `startVisitFromAppointment`.
+     *
+     * The other half of the pair with `visits.appointment_id`, and declared with the
+     * same lazy arrow for the same load-order reason: the two schema files reference
+     * each other, and only a deferred reference survives either being evaluated
+     * first. `restrict` rather than `set null`, because nulling this would leave an
+     * appointment marked `IN_TREATMENT` with no clinical record behind it (ADR 0021).
+     */
+    visitId: uuid('visit_id').references((): AnyPgColumn => visits.id, { onDelete: 'restrict' }),
     notes: text('notes'),
     cancelledReason: text('cancelled_reason'),
     createdBy: uuid('created_by'),

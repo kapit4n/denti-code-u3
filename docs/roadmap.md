@@ -174,6 +174,11 @@ same reason — nothing can put an appointment in a room yet.
 ## Milestone 6 — VISITS
 
 - Visit creation from an appointment (and walk-in)
+  - **Done (session 23): from an appointment.** `POST /api/v1/visits`, one field in the
+    body, one transaction writing two rows, both links `on delete restrict` (ADR 0021).
+  - **Not done: walk-in.** A patient who arrives with no booking is a different request
+    — it names a patient and a clinician instead of an appointment — and the rules about
+    what it may omit deserve their own argument before they become a schema.
 - Visit workspace: patient/visit header, left section nav, right workspace
 - Clinical notes
 - Treatment records per visit

@@ -1,8 +1,7 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 22 (the agenda's filters: chips that narrow the _request_
-> rather than the drawing, and a clinic that can still be asked about the clinician
-> who has left)
+> Last updated: session 23 (starting a visit: two rows, one transaction, and the
+> foreign keys that make the bridge impossible to leave half-done)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -22,6 +21,12 @@ Session 22 delivered the one thing item 5 of the plan below had been waiting for
 agenda's filters. `AgendaFilterBar` chooses clinicians and chairs, and the narrowing is
 **the request's**, not the browser's. Room _columns_ remain, and are blocked rather than
 deferred — they need a `roomId` in the read model, which ADR 0018 deliberately left out.
+
+Session 23 delivered the **first slice of Milestone 6**: starting a visit from an
+appointment. `POST /api/v1/visits` takes one field, reads the patient, clinician and chair
+off the booking, and writes the visit and the appointment's move in one transaction
+(ADR 0021). The links became real foreign keys, both `on delete restrict`. A walk-in is
+deliberately not here, and no visit UI exists yet.
 
 ## Task origin
 
@@ -62,225 +67,62 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 22)
+## Verification log (last run, session 23)
 
-| Command                     | Result                                              |
-| --------------------------- | --------------------------------------------------- |
-| `pnpm run typecheck`        | 12/12 tasks pass                                    |
-| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`               |
-| `pnpm run format:check`     | clean                                               |
-| `pnpm run test`             | 12/12 tasks pass — 516 tests (28 new)               |
-| `pnpm run test:integration` | 11 files, 136 tests pass against real PostgreSQL 17 |
-| `pnpm run build`            | 5/5 tasks pass                                      |
-| `pnpm run test:e2e`         | 85 passed (8 new, all agenda filters)               |
-| `pnpm run guard:boundaries` | OK                                                  |
-| `pnpm run db:migrate`       | no migration needed — this session adds no column   |
+| Command                     | Result                                                                     |
+| --------------------------- | -------------------------------------------------------------------------- |
+| `pnpm run typecheck`        | 12/12 tasks pass                                                           |
+| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`                                      |
+| `pnpm run format:check`     | clean                                                                      |
+| `pnpm run test`             | 12/12 tasks pass — 533 tests (17 new)                                      |
+| `pnpm run test:integration` | 13 files, 158 tests pass against real PostgreSQL 17                        |
+| `pnpm run build`            | 5/5 tasks pass                                                             |
+| `pnpm run test:e2e`         | 85 passed (unchanged — no UI moved this session)                           |
+| `pnpm run guard:boundaries` | OK                                                                         |
+| `pnpm run db:migrate`       | `0003_visit_links_and_tenant_keys` applied; `db:generate` reports no drift |
 
-Per-package unit/component tests: domain 154, validation 61, api-client 15, api 58
+Per-package unit/component tests: domain 166, validation 66, api-client 15, api 58
 (integration skipped here, run separately), app 225, desktop 3.
 
-**The session's real subject was tests that could not fail, and four of the five this
-session wrote or repaired were in that category.** The filter bar and its colour rule
-were implemented before this session opened and none of it had been run; the first
-`pnpm test` failed eight times, and after fixing the obvious causes three assertions
-were still green for reasons that had nothing to do with the code.
+**The session's real subject was a rule that was dead code, and only a third test could
+see it.** `startVisitFromAppointment` refuses an appointment that already has a visit —
+written in session 15 and tested ever since against a hand-built entity. The repository's
+`ENTITY_COLUMNS` projection never selected `visit_id`, so no appointment read by the API
+had ever carried one. The rule could not fire. Every sequential duplicate was caught
+instead by the unique index on `visits.appointment_id`, which answers identically: same
+`DUPLICATED_RECORD`, same 409, same one row. There was no symptom to notice.
 
-1. **The calendar spec counted every request and meant "the range".** The grid mounts
-   the filter bar, so `/agenda` now asks for `/dentists` and `/chairs` too, and six
-   assertions that read `toHaveBeenCalledTimes(1)` were counting the filter bar's two.
-   They had started failing for a reason in the harness. The file now has `rangeCalls()`
-   and `writes()`, and every assertion that says "the range" reads the range. Two tests
-   also indexed `mock.calls[1]` and `[2]` positionally to find the write and the refetch
-   it triggers — which, with two more requests interleaved, asserts the harness's
-   timing. They now select by what a request _is_.
-2. **A colour assertion that could never pass.** `expect(style).toContain('0ea5e9')`:
-   jsdom normalises a CSS colour when it serialising the attribute, so the value is
-   `rgb(14, 165, 233)`. Proved by rendering one `<span>` rather than by reading the
-   DOM implementation's source.
-3. **A locator that matched two chairs.** `getByRole('button', { name: /Sillón/ })`
-   threw on ambiguity — a loose pattern is not a weaker version of a specific name, it
-   is a different question, and it has no answer once there is more than one chair. The
-   two exact names beside it were the real assertion all along.
-4. **The colour-injection test was passing because of jsdom, not the validator.**
-   `dentists.color` is unvalidated text and the hostile fixture was
-   `#0ea5e9; background-image: url(...)`. Removing the validator's check entirely left
-   the component test green, because the browser's CSS parser refuses a second
-   declaration in a single property. A keyword is a perfectly valid `background-color`
-   that the parser has no reason to object to, so the fixture is now `chartreuse` —
-   and that fails the moment the validator goes. The unit test is where the injection
-   string belongs: an assertion about the function's answer rather than about jsdom.
-   The source comment claimed the component was "an inline-style injection point",
-   which overstated it; it now says what the validator actually guarantees (one shape
-   accepted, nothing else) and which of the three hazards the DOM refuses anyway.
-5. **The request's list test, in two versions.** The first asserted `.some(url =>
-url.includes('onlyActive=false'))` across _both_ resource lists — so flipping the
-   dentists to `onlyActive=true` left it green, because the chairs still said `false`.
-   It now asserts per endpoint. And the test written to prove an empty selection is
-   omitted survived its own mutation, because `buildQueryString` in the API client
-   already drops `''`; it has been rewritten as an honest contract test, and the guard it
-   was supposed to protect was found to be redundant (below).
+1. **The fix is one column, and the test that proves it is a repository test.** Dropping
+   `visitId: appointments.visitId` from the projection again fails "hands the domain the
+   link it needs to refuse a duplicate" — and leaves the sequential-duplicate test
+   _passing_. That is the point: the omission is invisible at every boundary, which is
+   why it survived six sessions. The new test asserts on what `findById` returns before
+   and after a visit is started, not on what the endpoint answers.
+2. **The write order is a constraint, not a preference.** The visit is written first
+   because `appointments.visit_id` names a row the next statement creates. Reversing the
+   two writes in `startVisit` fails six of the twelve domain tests, and the integration
+   suite would refuse the second statement with `23503`.
+3. **The fixture fought the constraint, and the constraint was right.** The first teardown
+   deleted visits, then appointments. Both links are `on delete restrict`, so there is
+   **no order in which those two rows can simply be deleted** — PostgreSQL refused the
+   very first run. The fixture now clears both links and then deletes, which is what the
+   domain does through status transitions and what a fixture has to do by hand.
 
-**Two assertions disagreed with the system rather than with the code, and both were
-wrong.** The first claimed `?dentistIds=` is "a filter that matched nothing". Checked
-against the running API, it is not: it returns the whole day, because `uuidListSchema`
-drops the blank and the repository skips a zero-length filter. The comment now says so,
-and records that the client-side `length` check changes no response — it stays because
-the two server-side guards are a coincidence rather than a contract, and because
-`filters?.dentistIds.join(',')` reads like a bug that somebody would "fix" by adding
-the branch back somewhere else. The second was an e2e assertion that releasing a chip
-produces a third request; it does not, because `mount.tsx` sets `staleTime: 30_000` for
-every query in the app, so returning to a narrowing fetched moments ago is served from
-cache. That is now a test that _documents_ the reuse instead of one that contradicts it.
+**Three test-only defects surfaced before any implementation defect did, which is the
+usual order.** A rollback test that replaced the whole appointments repository failed
+with `findById is not a function` — a repository is a class instance, so spreading it
+copies an object with no own methods, and the test would have gone on "passing" against a
+transaction that did nothing. It uses a proxy that breaks only `becomeVisit`. A
+`countVisits(undefined)` assertion could never find a row that does not exist, so a
+tenant test proved nothing; it counts by clinic. And the other clinic's booking needed
+that clinic's patient, dentist and chair — its own same-clinic foreign key refused the
+mixed fixture, which is the appointment table's half of the rule these tests cover for
+visits.
 
-**A real coverage gap came out of checking by hand rather than by reading.** The schema
-step that turns `?dentistIds=` into `[]` instead of a 422 was unpinned: the repository's
-"ignores an empty filter rather than returning nothing" was tested against real rows,
-and the transform above it was not tested at all. Two tests now pin the blank-dropping
-and the blanks-between-ids case, verified by replacing `.filter(Boolean)` and watching
-both fail.
-
-**The e2e mock earned its 501 again.** `allAgendaFixtures()` carried a comment saying
-the grid does not read dentists or chairs, and every read-only agenda spec 501'd the
-moment the filter bar was mounted. The fixtures now serve the _full_ lists, and the
-comment says why they are there. The booking spec had the mirror defect:
-`requests.find(url => url.includes('/dentists'))` returns the **earliest** match, which
-is now the filter bar's request — so that test was reporting "the dialog asked for every
-clinician in the clinic" as a pass. It now asserts both requests, in the right
-directions, and both resource types.
-
-**Five things this session proved rather than assumed.**
-
-1. **The narrowing is the request's.** Mutating `useAgendaRange(range, filters)` back to
-   `useAgendaRange(range)` fails five of the eight new e2e specs and the component test
-   that names it — which is the whole design in one line: no request, no narrowing.
-2. **The two resource callers genuinely disagree.** Mutating the filter bar to
-   `onlyActive: true` fails `booking.spec.ts`'s assertion and the filter bar's own.
-   Neither spec could have passed before this session, because there was only one caller.
-3. **A filter is a set, and the cache key has to know it.** Dropping `.sort()` from the
-   ids in `agendaRangeKey` fails "is the same key however the ids were clicked": without
-   it, two clicks in opposite order hold two copies of one answer and the second is
-   fetched rather than reused. Dropping the ids from the key altogether fails three
-   tests across both files.
-4. **jsdom is not a specification.** The colour assertion's expected value could not be
-   produced by any correct implementation, and the injection test's _pass_ came from
-   jsdom's CSS parser rather than from the code under test. Both were only visible by
-   running the thing the assertion claimed about.
-5. **An e2e run needs a rebuild to test a mutation.** The first attempt at verifying
-   (1) passed 8/8 against the mutated source, because the specs run against the built
-   bundle. Worth knowing before concluding an assertion is weak.
-
-**Not done, and deliberately.** Room columns in the agenda, which is the rest of item 5.
-They need a `roomId` in `AgendaEntry`, and the write side declined a room precisely
-because the read model could not report one (ADR 0018) — so this reopens a decision
-rather than extending the filters. The `room_no_overlap` exclusion constraint has no
-read side for the same reason. Both are written up in `docs/roadmap.md` under M5 rather
-than left as a checkbox.
-
-**Session 21 changed nothing on the server, and one e2e spec said so loudly.** The
-profile and the dashboard both started asking `GET /api/v1/clinic`, which they had no
-reason to before: the profile now draws its times in the clinic's zone and can open a
-booking dialog, and the dashboard opens the same dialog. The mock answers an unmocked
-endpoint with a 501 and a console error, and four existing profile specs plus the
-dashboard's "no console errors" spec failed on it. That is the mock working as the
-`sessions 17–18` log describes — a spec that does not mock what the page now asks
-fails loudly instead of quietly reading a live database. `clinicFixture()` in
-`e2e/web/fixtures/api-responses.ts` makes the omission a missing import rather than a
-failure three files from the change.
-
-**Two assertions in the new integration test were wrong before the code was, and the
-defect check caught them.** The first version named the clinicians `Dr. Álvaro` and
-`Dra. Ñuñez` and asserted a folded order — which passes with _or_ without folding,
-because the shared `Dr.`/`Dra.` prefix decides the comparison before the accent is
-reached. Rewritten without a common prefix (`Álvaro Núñez` sorts before
-`Beatriz Ñaupari` only when the `Á` is folded), it then failed as it should when the
-folding was removed. The lesson is the same one the e2e specs learned: an assertion
-that cannot fail is not an assertion.
-
-**Two of this session's own tests were wrong before the code was.** The first
-version of the drag spec asserted that the drop sent `17:00Z` — the _end_ of the
-dropped range, read off the fixture instead of the intent — and expected two
-requests where the invalidation correctly makes three. Both failures were in the
-assertion, not in the write: the third request is the range being re-read, which is
-the behaviour item 6 claims. The stub could not see the request method, so a write
-and the read it triggers were answered by the same fixture; `renderCalendar` now
-passes the request to the reply, which is what let the test tell them apart.
-
-**The booking dialog had a hole, and the test that found it was about something
-else.** A chair id that Zod's `uuid` refuses — the right shape, the wrong variant
-nibble — left the submit button doing nothing at all: the form refused, and because
-`chairId` and `notes` had no message of their own, nothing on screen said why. That
-is the one failure mode a form must not have, so every field now renders its own
-message. The test that caught it was asserting the _body_ of a successful booking;
-the chair id in that fixture was one the mock invented, and Zod checked it. Two
-other test-only defects surfaced in the same run: an empty slot click that had to be
-wrapped in `act` to flush, and a `getByLabel('Patient')` in Playwright that matched
-both the dialog's picker and the header's search — the failure pointed at the
-submission rather than at the mis-scoped locator, which is why the e2e helpers are
-now scoped to the dialog.
-
-**A silent failure found by the need for this session's feature, not by a test.**
-The desktop app could not reach its own API. `API_PORT` moved from 3000 to 3010 in
-session 8 and `API_PORT`, `VITE_API_URL` and the Zod defaults all moved with it —
-but the CSP in `apps/desktop/src-tauri/tauri.conf.json` did not, and nothing reads
-that file. The webview therefore blocked every request the desktop app made: a
-shell that rendered correctly over an empty agenda, with nothing in any log and no
-error to follow. No web test could have found it, because the browser deployment
-has no such gate; and the failure looks identical to a bug in the app rather than
-in its host configuration.
-
-`apps/desktop/test/tauri-config.test.ts` now asserts the CSP's `connect-src`
-allows the origin `.env.example` names, and refuses `*` or `unsafe-eval`. The
-assertion was verified the way this project verifies guards: by putting port 3000
-back and watching it fail.
-
-**Three things this session proved rather than assumed.**
-
-1. **The race the domain cannot see.** Two `POST /api/v1/appointments` for the same
-   slot are launched at once in
-   `apps/api/test/appointment-write-route.integration.test.ts`. Each asks the
-   repository what is in the window, each is told "nothing", and each proceeds —
-   both are correct. The exclusion constraint is the only thing that sees both, and
-   the test asserts the result is one 201, one 409 `SCHEDULING_CONFLICT` and one row.
-   Without the `23P01` translation the loser would have been a 500, which is what
-   `isExclusionViolation`'s unit test exists to prevent.
-2. **Tenant isolation is now a database fact.** `0002_appointment_tenant_foreign_keys`
-   makes the patient, dentist, chair and room references composite over
-   `(id, clinic_id)`. Proven by hand against the running database: an insert naming
-   clinic B's patient from clinic A's book is refused by
-   `appointments_patient_same_clinic_fk`, and so is clinic B's chair. The API's
-   clinic scoping (ADR 0014) could not have caught this — it is a rule about which
-   rows may be combined, and the combination happens in a table.
-3. **The constraint caught a real fixture.** The agenda integration test had been
-   inserting a booking in the other clinic's book, with that clinic's patient and
-   that clinic's chair, but with _this_ clinic's dentist — permitted by the old
-   single-column foreign key, and the exact leak the new one closes. It now passes
-   `dentist: null` with a comment saying so.
-
-**Three corrections to earlier claims in this file.** `AgendaEntry` has carried
-`chairId` and `chairName` since session 13; the pending item below said otherwise.
-A booking that consumes no identifier is now true only for the two rules decided
-before the id is allocated (duration, opening hours) — a conflict check needs the
-candidate's own id to exclude itself, and the use case says so. And ADR 0018 was
-written claiming no `roomId` on the write side while the create schema accepted one
-and the repository wrote it: a booking could be given a room it could then never be
-shown and never moved from, which is the "answered with silence" fault the same ADR
-removes `treatmentId` for. The input is gone, the column and the constraint stay, and
-the chair is the resource the write side accepts because it is the one the read model
-reports.
-
-**One known gap, recorded rather than hidden.** A lunch break
-(`clinic_operating_hours.break_starts_at` / `break_ends_at`) is not enforced: the
-columns exist, the domain's `ClinicOperatingHours` does not carry them, and nothing
-in the product exposes them yet. A booking may span a configured break.
-
-**Also fixed in passing.** `apps/api/src/http/routes/appointments.ts` validates its
-path parameter with `uuidSchema`; a hand-typed id in the URL is a 422 rather than
-PostgreSQL's `22P02` arriving as a 500. The patients route still does not, which
-is a small pre-existing gap and was left alone rather than widened into.
-
-**The emergency-booking question is now written down** as #16 in
-`docs/open-questions.md`, with the lunch break as T7, because ADR 0018 points at
-both and neither existed yet.
+**Two assertions were wrong about the API, not about the code.** They expected
+`DUPLICATED_RECORD` and `ILLEGAL_TRANSITION` to reach the client. They do not:
+`toApiErrorCode` collapses every rule refusal to `DOMAIN_RULE_VIOLATION` on purpose, so
+both answer 409 with one code and the meaningful part of the answer is the status.
 
 ## Decisions made this session (not yet in ADRs)
 
@@ -775,10 +617,42 @@ editing. Both sides now go through `PatientRepository`. Remaining:
 
    **Still to do:** nothing in the booking path. The next milestone's work is visits.
 
-7. [ ] Visits, the clinical timeline, treatments, payments, inventory, reports.
+7. [~] **Visits — the clinical timeline, treatments, payments, inventory, reports.**
+   **Slice 1 done in session 23: starting a visit from an appointment** (ADR 0021).
 
-**Milestone 5 onward** — visits, odontogram, treatments, payments, inventory,
-reports, auth: not started.
+   - **`startVisit` is a domain use case over one `UnitOfWork`.** It reads the
+     appointment, takes the time from the `Clock`, calls the pure
+     `startVisitFromAppointment`, and hands both finished entities to one
+     transaction. The visit is written first; the appointment's move second, because
+     its foreign key names the row the previous statement created.
+   - **The bridge is now two foreign keys, neither deletable.**
+     `visits.appointment_id → appointments.id` and
+     `appointments.visit_id → visits.id`, both `on delete restrict`. Migration
+     `0003_visit_links_and_tenant_keys` also makes the visit's patient, dentist and
+     chair references composite over `(id, clinic_id)`, matching the appointments
+     table, so a visit cannot name another clinic's resources.
+   - **`Repositories` was narrowed from nine to six.** `TreatmentRepository`,
+     `PrescriptionRepository` and `PaymentRepository` have no implementation, and
+     handing a transaction a set containing three unconstructible repositories is how
+     a seam starts lying. It grows as the implementations do.
+   - **`AppointmentRepository` gained one operation:** `becomeVisit`. It is a
+     read-modify-write the appointment read port has no name for, and the alternative
+     — an operation-shaped port with its own transaction — would make this use case
+     unable to compose with Milestone 6's billing work.
+   - **`Visit.dentistId` is nullable now.** Creation requires a clinician, because
+     attributing a treatment to nobody is not a record; but the column is
+     `on delete set null (dentist_id)` so a historical visit survives a clinician
+     leaving. The split is deliberate and tested both ways.
+   - **The body is one field wide:** `{ appointmentId }`. No patient, dentist, chair,
+     time, status or clinic. A request that could restate them is a request that could
+     restate them wrongly, and the clinical record would then be evidence of something
+     that did not happen.
+
+   **Still to do, in order:** the walk-in case, a visit read side, closing and reopening
+   a visit, the visit workspace UI, clinical notes, treatments, charges and payments.
+
+**Milestone 6 onward** — the rest of visits, odontogram, treatments, payments,
+inventory, reports, auth: not started.
 
 ## Last session log
 
@@ -1290,3 +1164,34 @@ the change.
 (8 new). No migration and no server code: the validation package's form schema moved,
 the API's own request schema did not, and the endpoint answers exactly what it answered
 before.
+
+Session 23: the first slice of Milestone 6 — starting a visit from an appointment.
+`startVisit`, `POST /api/v1/visits`, `DrizzleVisitRepository`, a `DrizzleUnitOfWork`, and
+migration `0003_visit_links_and_tenant_keys` making the bridge two real foreign keys,
+neither deletable. ADR 0021 argues the transaction, the one-field body, the narrow
+`Repositories` set, the nullable dentist and the deferral of walk-ins.
+
+The find of the session was a rule that had never once run. `startVisitFromAppointment`
+refuses an appointment that already has a visit — session 15, and tested ever since
+against a hand-built entity — while the repository's projection never selected
+`visit_id`, so no appointment the API read had carried one. The rule was dead code and
+every sequential duplicate was being caught by the unique index instead, which answers
+identically: same code, same 409, same single row. Nothing observable was wrong, which is
+exactly why it survived. The test that now pins it asserts on what `findById` returns
+before and after a visit is started, and it was checked by removing the column again —
+which fails that one test and leaves the duplicate test passing, so the two really are
+answering about different things.
+
+The other thing worth recording is that the `restrict` constraints immediately refused
+the integration fixture. Deleting the visits and then the appointments is impossible in
+either order when both links restrict, and the fixture now does what the domain does
+through status transitions: clear both links, then delete. Two fixture bugs were the
+database being right as well — a booking in the other clinic that still named this
+clinic's patient, and a `countVisits(undefined)` assertion that could never match a row
+which does not exist.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
+warning) · format · build 5/5 · 533 unit/component (17 new) · 158 integration (22 new,
+real PostgreSQL 17) · 85/85 e2e unchanged, no UI moved · migration applied to a live
+database and `db:generate` reporting no drift · three mutations checked: the `visit_id`
+projection, the write order, and both links' restrict behaviour.

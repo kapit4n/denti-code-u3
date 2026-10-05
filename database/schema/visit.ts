@@ -10,6 +10,7 @@
 import { relations, sql } from 'drizzle-orm';
 import {
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -19,6 +20,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core/columns/common';
 
 import {
   dentitionEnum,
@@ -38,13 +40,28 @@ export const visits = pgTable(
     clinicId: uuid('clinic_id')
       .notNull()
       .references(() => clinics.id, { onDelete: 'restrict' }),
-    patientId: uuid('patient_id')
-      .notNull()
-      .references(() => patients.id, { onDelete: 'restrict' }),
-    dentistId: uuid('dentist_id').references(() => dentists.id, { onDelete: 'set null' }),
-    chairId: uuid('chair_id').references(() => chairs.id, { onDelete: 'set null' }),
-    /** Unique when present: an appointment becomes a visit exactly once. */
-    appointmentId: uuid('appointment_id'),
+    patientId: uuid('patient_id').notNull(),
+    /** Null once the clinician leaves the clinic — `on delete set null (dentist_id)`. */
+    dentistId: uuid('dentist_id'),
+    /** Null once the chair is removed. */
+    chairId: uuid('chair_id'),
+    /**
+     * Null only for a walk-in. When present it must name a real appointment, and it
+     * is unique — an appointment becomes a visit exactly once (ADR 0021).
+     *
+     * `.references()` rather than the `foreignKey()` helper below, and the reason is
+     * load order rather than preference: `visit.ts` and `appointment.ts` now reference
+     * each other, and `foreignKey({ foreignColumns: [appointments.id] })` reads that
+     * binding while `appointment.ts` is still half-evaluated. The arrow defers it to
+     * migration generation, so neither file needs to know which one loads first.
+     *
+     * `restrict` rather than `set null`: an appointment with a visit is not deleted, it
+     * is cancelled. Nulling this would turn a treated visit into something that reads
+     * as a walk-in, which is a different clinical fact.
+     */
+    appointmentId: uuid('appointment_id').references((): AnyPgColumn => appointments.id, {
+      onDelete: 'restrict',
+    }),
     status: visitStatusEnum('status').notNull().default('OPEN'),
     startedAt: timestamp('started_at', { withTimezone: true }),
     endedAt: timestamp('ended_at', { withTimezone: true }),
@@ -58,6 +75,35 @@ export const visits = pgTable(
     uniqueIndex('visits_appointment_uq').on(table.appointmentId),
     index('visits_patient_started_at_idx').on(table.patientId, table.startedAt),
     index('visits_clinic_status_idx').on(table.clinicId, table.status),
+
+    // The tenant keys. The link to the appointment is declared on the column above,
+    // because it is the one reference here that is cyclic (see that comment).
+    //
+    // Tenant foreign keys, the same composite `(id, clinic_id)` pair that
+    // `appointments` got in migration 0002 and for the same reason (ADR 0014): a key
+    // on the id alone proves the row exists and says nothing about whose it is, so a
+    // visit could hold another clinic's patient (ADR 0021).
+    //
+    // The two nullable ones need `set null (column)` — a dentist who has left the
+    // clinic must not take their visits with them, and without the column list the
+    // delete would try to null `clinic_id` too and be refused by its own NOT NULL.
+    // That form is PostgreSQL 15+; docker-compose.yml pins 17, and migration 0003
+    // carries the same hand-edit.
+    foreignKey({
+      columns: [table.patientId, table.clinicId],
+      foreignColumns: [patients.id, patients.clinicId],
+      name: 'visits_patient_same_clinic_fk',
+    }).onDelete('restrict'),
+    foreignKey({
+      columns: [table.dentistId, table.clinicId],
+      foreignColumns: [dentists.id, dentists.clinicId],
+      name: 'visits_dentist_same_clinic_fk',
+    }).onDelete('set null'),
+    foreignKey({
+      columns: [table.chairId, table.clinicId],
+      foreignColumns: [chairs.id, chairs.clinicId],
+      name: 'visits_chair_same_clinic_fk',
+    }).onDelete('set null'),
   ],
 );
 

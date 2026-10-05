@@ -13,7 +13,17 @@ export interface Visit {
   readonly id: VisitId;
   readonly clinicId: string;
   readonly patientId: PatientId;
-  readonly dentistId: DentistId;
+  /**
+   * The clinician who treated, or `null` once they have left the clinic.
+   *
+   * Nullable because the column is `on delete set null` and a visit outlives the
+   * employment that produced it — and refusing to _start_ a visit without a
+   * clinician is a separate rule, checked by `startVisitFromAppointment`. Creation
+   * requires one; reading a visit whose clinician has since departed does not, because
+   * the alternative is a type that insists on a name the database has already
+   * forgotten (ADR 0021).
+   */
+  readonly dentistId: DentistId | null;
   readonly appointmentId?: AppointmentId;
   readonly chairId?: string;
   readonly startedAt?: IsoDateTime;

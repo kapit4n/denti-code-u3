@@ -22,12 +22,14 @@ import { registerAppointmentsRoutes } from './http/routes/appointments.js';
 import { registerClinicRoutes } from './http/routes/clinic.js';
 import { registerDentistsRoutes } from './http/routes/dentists.js';
 import { registerChairsRoutes } from './http/routes/chairs.js';
+import { registerVisitsRoutes } from './http/routes/visits.js';
 import { registerPatientsRoutes } from './http/routes/patients.js';
 import { DrizzlePatientRepository } from './infrastructure/persistence/repositories/patient-repository.js';
 import { DrizzleAppointmentRepository } from './infrastructure/persistence/repositories/appointment-repository.js';
 import { DrizzleClinicRepository } from './infrastructure/persistence/repositories/clinic-repository.js';
 import { DrizzleDentistRepository } from './infrastructure/persistence/repositories/dentist-repository.js';
 import { DrizzleChairRepository } from './infrastructure/persistence/repositories/chair-repository.js';
+import { DrizzleUnitOfWork } from './infrastructure/persistence/postgres/unit-of-work.js';
 import { systemClock } from './infrastructure/clock/system-clock.js';
 import { uuidGenerator } from './infrastructure/id/uuid-generator.js';
 import { sendProblem } from './http/problem.js';
@@ -133,6 +135,16 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   // name one — the appointment write side had no read side to sit on.
   await registerDentistsRoutes(app, { dentists });
   await registerChairsRoutes(app, { chairs });
+
+  // The bridge from scheduling to clinical. It is given a transaction rather than the
+  // two repositories, because starting a visit writes both rows and a route wired with
+  // repositories could be handed them separately (ADR 0021). The `UnitOfWork` builds
+  // its repositories per transaction, so none of them can write outside it.
+  await registerVisitsRoutes(app, {
+    unitOfWork: new DrizzleUnitOfWork(connection.db),
+    clock: systemClock,
+    ids: uuidGenerator,
+  });
 
   app.get('/', async () => ({
     service: 'denti-code-u3-api',

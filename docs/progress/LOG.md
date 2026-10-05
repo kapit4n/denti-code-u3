@@ -1503,3 +1503,59 @@ which the read model does not have because the write side declined a room it cou
 report (ADR 0018) — so this reopens a decision rather than extending the filters, and
 `room_no_overlap` has no read side for the same reason. Written up in `docs/roadmap.md`
 under M5 rather than left as a checkbox.
+
+---
+
+## Session 23 — Starting a visit (the appointment bridge)
+
+**Delivered.** `startVisit` (a domain use case over one `UnitOfWork`), `POST
+/api/v1/visits`, `DrizzleVisitRepository`, `DrizzleUnitOfWork`, `startVisitSchema`, and
+migration `0003_visit_links_and_tenant_keys`. ADR 0021 argues the transaction, the
+one-field body, the narrowed `Repositories` set, the nullable dentist, and why the
+walk-in case is a separate request rather than an optional field.
+
+`visits.appointment_id → appointments.id` and `appointments.visit_id → visits.id`, both
+`on delete restrict`, plus composite `(id, clinic_id)` foreign keys on the visit's
+patient, dentist and chair — the same tenant guarantee the appointments table has had
+since `0002`.
+
+**The find.** `startVisitFromAppointment` refuses an appointment that already has a
+visit. It had been written in session 15 and tested ever since against a hand-built
+entity, and it had never once run against a real row: the repository's `ENTITY_COLUMNS`
+projection never selected `visit_id`. Every sequential duplicate was being caught by the
+unique index on `visits.appointment_id` instead — same `DUPLICATED_RECORD`, same 409,
+same one row. No symptom existed. The new integration test asserts on what `findById`
+returns before and after a visit is started; removing the column again fails that test
+and leaves the duplicate test passing, which is the proof that the two assertions are
+about different things.
+
+**Other things worth recording.** The `restrict` constraints refused the integration
+fixture on the first run: with both links restricting, there is no order in which a visit
+and its appointment can simply be deleted, so the fixture clears both links first — which
+is what the domain does through status transitions. Two fixture bugs were the database
+being right (a mixed-clinic booking, and a `countVisits(undefined)` that could never match
+a row which does not exist). Two route assertions were wrong about the API rather than the
+code: `toApiErrorCode` collapses every rule refusal to `DOMAIN_RULE_VIOLATION`, so
+`DUPLICATED_RECORD` and `ILLEGAL_TRANSITION` both reach the client as one 409 code.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             533 unit/component (12/12 tasks, 17 new)
+pnpm run test:integration 158 integration (13 files, real PostgreSQL 17)
+pnpm run test:e2e         85/85 passed (unchanged — no UI moved)
+pnpm run db:migrate       0003 applied; db:generate reports no drift
+```
+
+Mutations checked: the `visit_id` projection (caught), the write order in `startVisit`
+(caught, 6 of 12 domain tests), and both `restrict` links (caught by the teardown and by
+the delete tests).
+
+**Not done, and deliberately.** Walk-ins, the visit read side, closing and reopening a
+visit, the visit workspace UI, notes, treatments, charges and payments. No UI exists for
+this slice, so the e2e count is unchanged — the endpoint is reachable but nothing calls
+it yet.

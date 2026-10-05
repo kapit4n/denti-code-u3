@@ -34,15 +34,24 @@ import {
   asClinicId,
   asDentistId,
   asPatientId,
+  asVisitId,
   type AppointmentId,
   type ClinicId,
   type IsoDateTime,
+  type VisitId,
 } from '@denti-code-u3/types';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { appointments, chairs, dentists, patients } from '@denti-code-u3/database/schema';
 
 import type { DentiDatabase } from '../postgres/connection.js';
+import {
+  PG_FOREIGN_KEY_VIOLATION,
+  hasPostgresCode,
+  isExclusionViolation,
+} from '../postgres-error.js';
+
+export { isExclusionViolation } from '../postgres-error.js';
 
 /**
  * The appointment's own extent, as the exclusion constraints build it.
@@ -95,16 +104,14 @@ const ENTITY_COLUMNS = {
   status: appointments.status,
   notes: appointments.notes,
   cancelledReason: appointments.cancelledReason,
+  // The bridge link, read because the domain needs it: an appointment that already
+  // became a visit is refused by a rule in `startVisitFromAppointment`, and a
+  // projection that omitted this column would make that rule dead code, leaving every
+  // duplicate to be caught by the unique index instead. The index would still answer
+  // correctly — but as a 409 from a constraint rather than a refusal that names the
+  // reason, and only for the sequential case. The race is the index's alone.
+  visitId: appointments.visitId,
 } as const;
-
-/** PostgreSQL `exclusion_violation`: the refusal of an overlap constraint. */
-const PG_EXCLUSION_VIOLATION = '23P01';
-
-/** PostgreSQL `foreign_key_violation`. */
-const PG_FOREIGN_KEY_VIOLATION = '23503';
-
-/** How far to walk an error's `cause` chain before giving up. */
-const MAX_CAUSE_DEPTH = 5;
 
 export class DrizzleAppointmentRepository implements AppointmentRepository {
   constructor(private readonly db: DentiDatabase) {}
@@ -315,6 +322,34 @@ export class DrizzleAppointmentRepository implements AppointmentRepository {
   }
 
   /**
+   * Record that this appointment became a visit.
+   *
+   * One statement, and the reason is the same as the transaction around it: `visit_id`
+   * and the status are two columns describing one event, so a write that could set one
+   * without the other leaves an appointment claiming a clinical record that does not
+   * exist (ADR 0021).
+   *
+   * The status arrives as a parameter even though `IN_TREATMENT` is the only value
+   * this bridge can produce, because the rule that chooses it lives in the domain and
+   * a repository that hardcoded it would be a second copy of that rule — the one place
+   * a persistence class should not have opinions.
+   */
+  async becomeVisit(
+    clinicId: ClinicId,
+    appointmentId: AppointmentId,
+    visitId: VisitId,
+    status: AppointmentStatus,
+  ): Promise<Appointment | undefined> {
+    const [row] = await this.db
+      .update(appointments)
+      .set({ visitId, status, updatedAt: new Date() })
+      .where(and(eq(appointments.id, appointmentId), eq(appointments.clinicId, clinicId)))
+      .returning(ENTITY_COLUMNS);
+
+    return row ? toEntity(row) : undefined;
+  }
+
+  /**
    * The agenda's own query, narrowed to one appointment.
    *
    * Same joins, same filters, same projection — the anonymised-patient filter
@@ -385,6 +420,7 @@ function toEntity(row: {
   status: AppointmentStatus;
   notes: string | null;
   cancelledReason: string | null;
+  visitId: string | null;
 }): Appointment {
   return {
     id: asAppointmentId(row.id),
@@ -395,41 +431,16 @@ function toEntity(row: {
     dentistId: row.dentistId === null ? null : asDentistId(row.dentistId),
     ...(row.roomId ? { roomId: row.roomId } : {}),
     ...(row.chairId ? { chairId: asChairId(row.chairId) } : {}),
+    // Absent rather than null while there is no visit: the domain reads this to refuse a
+    // second one, and `undefined` is how "this booking has not been started" is
+    // spelled everywhere else in the entity.
+    ...(row.visitId ? { visitId: asVisitId(row.visitId) } : {}),
     startsAt: row.startsAt.toISOString() as IsoDateTime,
     durationMinutes: row.durationMinutes,
     status: row.status,
     ...(row.notes ? { notes: row.notes } : {}),
     ...(row.cancelledReason ? { cancelledReason: row.cancelledReason } : {}),
   };
-}
-
-/**
- * Whether an error is a Postgres exclusion violation.
- *
- * Not a plain `error.code` check, for the same documented reason as
- * `isUniqueViolation`: Drizzle rethrows driver failures wrapped in its own
- * `DrizzleQueryError` with the original moved to `cause`, so the code is one level
- * down. Reading it off the wrong object returns `undefined` for every error and
- * turns the clinic's most common scheduling mistake into a 500.
- */
-export function isExclusionViolation(error: unknown): boolean {
-  return hasPostgresCode(error, PG_EXCLUSION_VIOLATION);
-}
-
-function hasPostgresCode(error: unknown, code: string): boolean {
-  let current = error;
-
-  for (let depth = 0; depth < MAX_CAUSE_DEPTH; depth += 1) {
-    if (typeof current !== 'object' || current === null) {
-      return false;
-    }
-    if ((current as { readonly code?: unknown }).code === code) {
-      return true;
-    }
-    current = (current as { readonly cause?: unknown }).cause;
-  }
-
-  return false;
 }
 
 /**

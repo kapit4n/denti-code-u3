@@ -46,16 +46,28 @@ export interface UnitOfWork {
   transaction<T>(work: (repositories: Repositories) => Promise<T>): Promise<T>;
 }
 
+/**
+ * What one transaction is handed, as the first user of it arrived.
+ *
+ * **Narrower than Milestone 1 declared it, on purpose.** This listed nine
+ * repositories, three of which (`treatments`, `prescriptions`, `payments`) have no
+ * implementation because the features they serve are unbuilt. A set that cannot be
+ * constructed is not a safety net, so the three were removed and the set grows when
+ * the implementations do. This is the third such deletion in this repository — the
+ * appointment port's five unsatisfiable methods in session 13, the hidden `ends_at`
+ * column in session 3 — and the pattern is consistent (ADR 0021).
+ *
+ * The alternative was to keep the declared nine and have the API's implementation
+ * throw "not implemented yet" for three of them, which is a promise the code has
+ * stopped keeping.
+ */
 export interface Repositories {
   readonly patients: PatientRepository;
-  readonly appointments: AppointmentRepository;
+  readonly appointments: AppointmentRepository & AppointmentWriteRepository;
   readonly visits: VisitRepository;
   readonly clinics: ClinicRepository;
   readonly dentists: DentistRepository;
   readonly chairs: ChairRepository;
-  readonly treatments: TreatmentRepository;
-  readonly prescriptions: PrescriptionRepository;
-  readonly payments: PaymentRepository;
 }
 
 export interface Page<TItem> {
@@ -294,6 +306,28 @@ export interface AppointmentWriteRepository {
     status: AppointmentStatus,
     cancelledReason?: string,
   ): Promise<Appointment | undefined>;
+
+  /**
+   * Record that this appointment became a visit: set `visit_id` and move the status,
+   * in one statement.
+   *
+   * A separate method rather than a `changeStatus` that also accepts a `visitId`,
+   * because the two differ in what they mean. A status change is a decision anybody
+   * may make; becoming a visit is one event with two effects, and it is written by
+   * `startVisit` inside the transaction that writes the visit itself (ADR 0021). The
+   * status is a parameter rather than fixed to `IN_TREATMENT` for the same reason
+   * every other write takes one: the rule that decides it lives in the domain, and a
+   * repository that decided it would be a rule in a persistence class.
+   *
+   * Returns `undefined` when this clinic holds no such appointment, which is what a
+   * visit's own repository sees if the booking was deleted a moment earlier.
+   */
+  becomeVisit(
+    clinicId: ClinicId,
+    appointmentId: AppointmentId,
+    visitId: VisitId,
+    status: AppointmentStatus,
+  ): Promise<Appointment | undefined>;
 }
 
 export interface VisitRepository {
@@ -301,6 +335,15 @@ export interface VisitRepository {
   findOpenForPatient(clinicId: ClinicId, patientId: PatientId): Promise<Visit | undefined>;
   findForPatient(clinicId: ClinicId, patientId: PatientId): Promise<readonly Visit[]>;
   updateStatus(clinicId: ClinicId, visitId: VisitId, status: VisitStatus): Promise<void>;
+
+  /**
+   * Write a visit that the domain has already built.
+   *
+   * Named `save` rather than `insert` to match the sibling prescription and payment
+   * ports, and it is only ever used as an insert: the visit that arrives here was
+   * just created by `startVisitFromAppointment`, and the unique index on
+   * `appointment_id` is what refuses a second one for the same booking.
+   */
   save(visit: Visit): Promise<void>;
 }
 

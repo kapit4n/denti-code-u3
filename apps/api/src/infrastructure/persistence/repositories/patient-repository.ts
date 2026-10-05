@@ -56,6 +56,9 @@ import {
 
 import type { DentiDatabase } from '../postgres/connection.js';
 import { foldAccents, foldable } from '../postgres/fold-accents.js';
+import { isUniqueViolation } from '../postgres-error.js';
+
+export { isUniqueViolation } from '../postgres-error.js';
 
 /**
  * Escape the LIKE metacharacters, so a patient recorded as `100%` is findable and
@@ -93,12 +96,6 @@ function normaliseTerm(term: string | undefined): string | null {
 function isoTimestamp(value: Date): IsoDateTime {
   return value.toISOString();
 }
-
-/** Postgres `unique_violation`. The only way a number can still collide. */
-const PG_UNIQUE_VIOLATION = '23505';
-
-/** How far down a `cause` chain to look for a driver error code. */
-const MAX_CAUSE_DEPTH = 5;
 
 /**
  * One row of the "highest issued record number" query.
@@ -556,28 +553,4 @@ export class DrizzlePatientRepository implements PatientRepository {
       })),
     };
   }
-}
-
-/**
- * Whether an error is a Postgres unique violation.
- *
- * Not a plain `error.code` check: Drizzle rethrows driver failures wrapped in its
- * own `DrizzleQueryError` and moves the original to `cause`, so the code is one
- * level down. Reading it off the wrong object returns `undefined` for every error
- * and silently turns a conflict into a 500.
- */
-export function isUniqueViolation(error: unknown): boolean {
-  let current = error;
-
-  for (let depth = 0; depth < MAX_CAUSE_DEPTH; depth += 1) {
-    if (typeof current !== 'object' || current === null) {
-      return false;
-    }
-    if ((current as { readonly code?: unknown }).code === PG_UNIQUE_VIOLATION) {
-      return true;
-    }
-    current = (current as { readonly cause?: unknown }).cause;
-  }
-
-  return false;
 }
