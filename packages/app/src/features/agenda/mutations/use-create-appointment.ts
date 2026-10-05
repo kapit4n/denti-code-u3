@@ -18,7 +18,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AgendaEntry } from '@denti-code-u3/domain';
-import type { CreateAppointmentFormOutput } from '@denti-code-u3/validation';
+import type { CreateAppointmentInput } from '@denti-code-u3/validation';
 
 import { useApiClient } from '../../../query/api-client-provider.js';
 import { invalidateScheduleQueries } from './invalidate-schedule-queries.js';
@@ -28,8 +28,12 @@ export function useCreateAppointment() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: CreateAppointmentFormOutput) =>
-      client.post<AgendaEntry, CreateAppointmentFormOutput>('/appointments', input),
+    // `CreateAppointmentInput`, the request's own type — not the form's. The dialog has
+    // already turned the clinic's wall clock into an instant by the time this is
+    // called, so what crosses here is the request and should be typed as one; taking
+    // the form's type would make the conversion optional to the compiler's eye.
+    mutationFn: (input: CreateAppointmentInput) =>
+      client.post<AgendaEntry, CreateAppointmentInput>('/appointments', input),
     onSuccess: async (entry) => {
       // The same invalidation a drag does: the grid, the dashboard's "today" and the
       // patient's own next appointment are all answers to the schedule.

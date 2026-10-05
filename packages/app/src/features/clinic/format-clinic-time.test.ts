@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  formatClinicDay,
   formatClinicDayTime,
   formatClinicTime,
   formatClinicTimeRange,
@@ -54,6 +55,23 @@ describe('formatClinicDayTime', () => {
     expect(formatClinicDayTime('2026-10-05T02:00:00.000Z', NEW_YORK, LOCALE)).toBe(
       'Sun 4 Oct, 22:00',
     );
+  });
+});
+
+describe('formatClinicDay', () => {
+  it('names the day the clinic is on, for the moments it records rather than schedules', () => {
+    // 02:00Z on the 5th is still the 4th in Lima: a record created at half past ten at
+    // night belongs to the day the receptionist thinks it does.
+    expect(formatClinicDay('2026-10-05T02:00:00.000Z', LIMA, LOCALE)).toBe('4 Oct 2026');
+    expect(formatClinicDay('2026-10-05T02:00:00.000Z', NEW_YORK, LOCALE)).toBe('4 Oct 2026');
+    expect(formatClinicDay('2026-10-05T02:00:00.000Z', 'Pacific/Auckland', LOCALE)).toBe(
+      '5 Oct 2026',
+    );
+  });
+
+  it('says so rather than drawing a day it cannot read', () => {
+    expect(formatClinicDay('not a date', LIMA, LOCALE)).toBe('—');
+    expect(formatClinicDay(MORNING, 'Mars/Olympus_Mons', LOCALE)).toBe('—');
   });
 });
 

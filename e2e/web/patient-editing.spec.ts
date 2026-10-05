@@ -21,7 +21,7 @@ import { expect, test } from '@playwright/test';
 
 import type { Page } from '@playwright/test';
 
-import { ANA_ID, anaProfile } from './fixtures/api-responses.js';
+import { ANA_ID, anaProfile, clinicFixture } from './fixtures/api-responses.js';
 import { watchForConsoleErrors } from './fixtures/console-errors.js';
 import { installApi } from './fixtures/mock-api.js';
 
@@ -35,6 +35,7 @@ const PROFILE_URL = `/patients/${ANA_ID}`;
 /** The list, so the app's queries resolve without a 501 in the console. */
 async function installPatientApi(page: Page) {
   return installApi(page, {
+    ...clinicFixture(),
     [PROFILE_PATH]: { body: anaProfile },
     [LIST_PATH]: { body: { data: [], meta: { page: 1, pageSize: 25, total: 0 } } },
     // The edit endpoint answers 204 with nothing in it.

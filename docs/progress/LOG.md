@@ -1323,3 +1323,78 @@ API's behaviour is untouched by this session.
 **Not done, and deliberately:** the "New Visit" and next-appointment actions on the
 patient profile. They open the same dialog from a different screen and are the next
 thing on this milestone.
+
+---
+
+## Session 21 — booking without a grid
+
+**What was done**
+
+- `packages/app/src/features/clinic/zoned-wall-clock.ts` (new, with tests): the
+  inverse of `format-clinic-time.ts` and the only place the app turns a wall clock into
+  an instant. Luxon rather than `Intl`, because `Intl` reads a zone's offset at some
+  moment and guesses about the boundary, and because FullCalendar's timezone plugin
+  already brings Luxon here.
+- `createAppointmentFormSchema`: `startsAt` is replaced by `localStartsAt`, a
+  `YYYY-MM-DDTHH:mm` wall clock validated as a shape and as a calendar date. The
+  instant is assembled at submit from `clinic.timeZone` and is no longer a form field.
+- `AppointmentBookingDialog`: `startsAt` and `patient` are both optional. With a slot
+  the time field is `readOnly`; without one it is the person's to fill and the zone is
+  named under it. A wall clock the zone skipped is refused with a sentence naming the
+  zone. The body is written field by field so nothing rides along.
+- `packages/app/src/features/clinic/format-clinic-time.ts`: added `formatClinicDay`,
+  for the moments a clinic records rather than schedules.
+- The patient profile gains **Book appointment** (that patient already chosen) and
+  draws every time it shows in the clinic's zone. The dashboard's **New Visit** is a
+  live action that opens the same dialog.
+- e2e: `web/booking-without-a-slot.spec.ts` (8 new), and `clinicFixture()` for the
+  five existing specs whose pages now ask `GET /api/v1/clinic`.
+
+**What the tests caught**
+
+- **A validator that threw instead of failing.** `z.string().regex(...).refine(...)` —
+  Zod 4 runs the refine even when the regex has already failed, so an empty time field
+  reached `value.split('T')[1].split(':')` and threw. A validator that throws takes the
+  form down; it has to answer. Now one `superRefine` that reports one message for the
+  one problem.
+- **`Date.parse` cannot check that a date exists.** `Date.parse('2026-02-30T09:00:00Z')`
+  returns a number — it reads the 30th of February as the 2nd of March without
+  complaint. The check is now a `Date.UTC` round trip against the parts, where a claim
+  that comes back different is not a date.
+- **Luxon resolves a daylight-saving gap without a murmur**, turning `02:30` on a
+  spring-forward Sunday into `03:30`. The converter round-trips the parsed value and
+  refuses what does not survive the trip; the dialog then says which zone refused it.
+- **A date with a curly apostrophe in a test name** (`the grid's slot`) parsed as a
+  string ending early. Worth one line here because the file that caught it is the
+  converter's own test file.
+- **Five e2e specs failed** the moment the profile and the dashboard began asking
+  `GET /api/v1/clinic`. The mock's 501 is the behaviour the `sessions 17–18` log
+  describes; the fix was fixtures.
+
+**Two things that were wrong before the code was.** The first version of the profile
+spec asserted a whole formatted date, which is the browser's locale and says nothing
+about a timezone — the browser here is `America/New_York`, so en-US gave
+`Tue, Oct 6, 08:00` and the spec failed on the month. It now asserts the hour inside
+the paragraph, which is the one thing being claimed. The second was clicking
+`booking-dentist` where `booking-chair` was meant, which opened the clinician list and
+then waited for a chair in it forever.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             488 unit/component (12/12 tasks, 23 new)
+pnpm run test:integration 136 integration (11 files, real PostgreSQL 17)
+pnpm run test:e2e         77/77 passed (8 new)
+pnpm run db:migrate       no migration needed — no column added
+```
+
+No server code changed. The validation package's _form_ schema moved; the API's request
+schema and the endpoint did not, so `POST /api/v1/appointments` answers exactly what it
+answered before.
+
+**Not done, and deliberately:** dentist and chair filters above the agenda grid. The
+booking path itself is complete from all three doors.

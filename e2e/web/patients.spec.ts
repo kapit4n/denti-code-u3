@@ -19,6 +19,7 @@ import {
   LUIS_ID,
   PATIENT_LIST_RESPONSE,
   anaProfile,
+  clinicFixture,
   luisProfile,
   patientSummaries,
 } from './fixtures/api-responses.js';
@@ -106,6 +107,7 @@ test.describe('Patient profile', () => {
   test('shows a full record, not the list again', async ({ page }) => {
     const errors = watchForConsoleErrors(page);
     await installApi(page, {
+      ...clinicFixture(),
       [`${LIST_PATH}/${ANA_ID}`]: { body: anaProfile },
       [LIST_PATH]: { body: PATIENT_LIST_RESPONSE },
     });
@@ -128,7 +130,10 @@ test.describe('Patient profile', () => {
 
   test('renders empty collections instead of crashing on them', async ({ page }) => {
     const errors = watchForConsoleErrors(page);
-    await installApi(page, { [`${LIST_PATH}/${LUIS_ID}`]: { body: luisProfile } });
+    await installApi(page, {
+      ...clinicFixture(),
+      [`${LIST_PATH}/${LUIS_ID}`]: { body: luisProfile },
+    });
 
     await page.goto(`/patients/${LUIS_ID}`);
 
@@ -142,7 +147,10 @@ test.describe('Patient profile', () => {
   });
 
   test('labels a negative balance as credit rather than as debt', async ({ page }) => {
-    await installApi(page, { [`${LIST_PATH}/${LUIS_ID}`]: { body: luisProfile } });
+    await installApi(page, {
+      ...clinicFixture(),
+      [`${LIST_PATH}/${LUIS_ID}`]: { body: luisProfile },
+    });
 
     await page.goto(`/patients/${LUIS_ID}`);
 
@@ -169,7 +177,9 @@ test.describe('Global patient search', () => {
         body: { items: [anaProfile], pagination: { page: 1, limit: 8, total: 1, totalPages: 1 } },
       },
       // Needed as well as the list: landing on the profile fires the detail
-      // query, and an unmocked endpoint answers 501 by design.
+      // query, and an unmocked endpoint answers 501 by design. So does the
+      // clinic's settings, which the profile now reads its times through.
+      ...clinicFixture(),
       [`${LIST_PATH}/${ANA_ID}`]: { body: anaProfile },
     });
 

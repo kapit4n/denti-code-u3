@@ -224,18 +224,33 @@ describe('createAppointmentFormSchema', () => {
     patientId: PATIENT_ID,
     dentistId: DENTIST_ID,
     chairId: '55555555-5555-4555-8555-555555555555',
-    startsAt: '2026-09-30T14:00:00.000Z',
+    localStartsAt: '2026-09-30T09:00',
     durationMinutes: 30,
     notes: 'First visit',
   };
 
-  it('covers exactly the fields the API accepts, so the form cannot send one it refuses', () => {
+  it('holds a field for every one the API accepts except the instant, which is derived', () => {
     // The patient schemas make the same assertion for the same reason: a form field
     // with no counterpart in the request schema is a field whose only symptom is a
     // 422 the user cannot act on.
-    expect(Object.keys(createAppointmentFormSchema.shape).sort()).toEqual(
-      Object.keys(createAppointmentSchema.shape).sort(),
-    );
+    //
+    // The one field that is not shared is the time, and deliberately so: the form
+    // holds the clinic's wall clock and the app turns it into an instant. Checking
+    // the rest by name is what keeps this honest — a new form field with no request
+    // counterpart fails here instead of on the wire.
+    expect(Object.keys(createAppointmentFormSchema.shape).sort()).toEqual([
+      'chairId',
+      'dentistId',
+      'durationMinutes',
+      'localStartsAt',
+      'notes',
+      'patientId',
+    ]);
+
+    for (const field of Object.keys(createAppointmentFormSchema.shape)) {
+      if (field === 'localStartsAt') continue;
+      expect(createAppointmentSchema.shape).toHaveProperty(field);
+    }
   });
 
   it('reads an empty chair and an empty note as absent, because a form submits them', () => {
@@ -278,12 +293,39 @@ describe('createAppointmentFormSchema', () => {
     expect(messages).toContain('Choose a clinician');
   });
 
-  it('validates the instant it was given, even though the user never typed one', () => {
-    // The start comes from the clicked slot rather than from an input, which makes it
-    // exactly the field a form forgets to check.
-    const result = createAppointmentFormSchema.safeParse({ ...complete, startsAt: 'tomorrow' });
+  it('asks for a wall clock, and says what to do instead of parsing jargon', () => {
+    // `Invalid datetime` is not something a receptionist can act on, and the field is
+    // a choice. Same reasoning as the two pickers above.
+    const result = createAppointmentFormSchema.safeParse({ ...complete, localStartsAt: '' });
 
     expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues.map((issue) => issue.message)).toContain('Choose a date and time');
+  });
+
+  it('refuses an instant where a wall clock belongs', () => {
+    // The whole point of the field: a value carrying an offset has already made the
+    // zone decision that belongs to the clinic, so accepting it would let a caller
+    // book 09:00 in the machine's zone and call it the clinic's.
+    const result = createAppointmentFormSchema.safeParse({
+      ...complete,
+      localStartsAt: '2026-09-30T14:00:00.000Z',
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('refuses a wall clock that reads like a date but is not one', () => {
+    // `datetime-local` cannot produce this, but the value comes over a wire from
+    // wherever the form lives, and 2026-02-30 is what a mistyped month produces.
+    const result = createAppointmentFormSchema.safeParse({
+      ...complete,
+      localStartsAt: '2026-02-30T09:00',
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues.map((issue) => issue.message)).toContain('That date does not exist');
   });
 
   it('refuses a duration the API would refuse', () => {

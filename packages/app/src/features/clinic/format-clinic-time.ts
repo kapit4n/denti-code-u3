@@ -45,6 +45,19 @@ export function formatClinicDayTime(instant: string, timeZone: string, locale?: 
 }
 
 /**
+ * The day, e.g. `5 Oct 2026`, with no time on it.
+ *
+ * For the moments a clinic records rather than schedules: when a patient was added,
+ * when an invoice was written. They are instants too, so they are drawn in the clinic's
+ * zone like everything else — a record created at 22:30 UTC on the 5th belongs to the
+ * 5th in Lima and to the 6th in Auckland, and the day the receptionist remembers is the
+ * clinic's.
+ */
+export function formatClinicDay(instant: string, timeZone: string, locale?: string): string {
+  return format(instant, timeZone, locale, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/**
  * A booked span, e.g. `14:00 – 15:00`.
  *
  * Both ends are drawn in the clinic's zone. When the appointment runs past midnight

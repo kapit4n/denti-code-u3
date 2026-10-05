@@ -6,8 +6,15 @@
  * units, formatted once through the domain's `formatMinorUnits`. A dashboard
  * that recomputes a figure is a second source of truth for it, and the two
  * inevitably disagree.
+ *
+ * It also owns the "New Visit" dialog, because that button is here and the booking
+ * rules are not: the dialog is the agenda's, opened from the dashboard with no slot
+ * and no patient. Holding the open/closed state here rather than in the button keeps
+ * the dashboard's list of actions free of state, and puts the dialog where the person
+ * who opened it is standing.
  */
 
+import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { formatMinorUnits } from '@denti-code-u3/domain';
 import {
@@ -21,6 +28,8 @@ import {
   Users,
 } from 'lucide-react';
 
+import { AppointmentBookingDialog } from '../features/agenda/components/appointment-booking-dialog.js';
+import { useClinicSettings } from '../features/clinic/queries/clinic-settings-query.js';
 import { CalendarPreview } from '../features/dashboard/components/calendar-preview.js';
 import { QuickActions } from '../features/dashboard/components/quick-actions.js';
 import { RecentPatients } from '../features/dashboard/components/recent-patients.js';
@@ -35,6 +44,12 @@ export const Route = createFileRoute('/dashboard')({
 
 function Dashboard() {
   const { data, isPending, error } = useDashboardStats();
+  // The booking dialog needs the clinic, and nothing else on this page does — so this is
+  // the first time the dashboard asks who the clinic is. It was answered on the agenda
+  // already, and cached for the life of the tab. Named `clinicRecord` because `clinic`
+  // below is the dashboard's own bucket of counts, which is a different thing entirely.
+  const { data: clinicRecord } = useClinicSettings();
+  const [isBooking, setIsBooking] = useState(false);
 
   const today = data?.today;
   const clinic = data?.clinic;
@@ -48,7 +63,7 @@ function Dashboard() {
           <h1 className="text-3xl font-bold tracking-tight">{greeting()}</h1>
           <p className="text-muted-foreground">What is happening today?</p>
         </div>
-        <QuickActions />
+        <QuickActions onNewVisit={() => setIsBooking(true)} />
       </header>
 
       <section
@@ -161,6 +176,14 @@ function Dashboard() {
           <UpcomingVisits />
         </div>
       </section>
+
+      {/* Both doors, one dialog: no slot (this is not a grid) and no patient (nobody has
+          been named yet), so it asks for both. It closes itself once the API agrees and
+          the dashboard's own queries refetch — nothing here is inserted optimistically,
+          so "today's" numbers change only when the server says they did. */}
+      {isBooking && clinicRecord ? (
+        <AppointmentBookingDialog clinic={clinicRecord} onClose={() => setIsBooking(false)} />
+      ) : null}
     </div>
   );
 }

@@ -20,7 +20,12 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 
-import { ANA_ID, allDashboardFixtures, dashboardStats } from './fixtures/api-responses.js';
+import {
+  ANA_ID,
+  allDashboardFixtures,
+  clinicFixture,
+  dashboardStats,
+} from './fixtures/api-responses.js';
 import { watchForConsoleErrors } from './fixtures/console-errors.js';
 import { installApi, installApiFailure } from './fixtures/mock-api.js';
 
@@ -38,7 +43,10 @@ function cardTitled(page: Page, title: string): Locator {
 
 test.describe('Dashboard', () => {
   test.beforeEach(async ({ page }) => {
-    await installApi(page, allDashboardFixtures());
+    // The dashboard's own five endpoints, plus the clinic's settings: "New Visit" opens
+    // a booking dialog, and the dialog cannot be opened without knowing the clinic's
+    // timezone. A spec that mocks only the five gets a 501 from the mock, by design.
+    await installApi(page, { ...allDashboardFixtures(), ...clinicFixture() });
   });
 
   test('renders the payload verbatim', async ({ page }) => {

@@ -1,9 +1,8 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 16 (the desktop app can always be tested:
-> `pnpm run desktop:pin` keeps a build that worked and `pnpm run desktop:run`
-> launches it without the working tree — plus the CSP fix that made the desktop
-> app unable to reach its own API)
+> Last updated: session 21 (booking without a grid: the profile's and the
+> dashboard's doors into the booking dialog, with the time stated in the
+> clinic's own wall clock rather than the browser's)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -64,22 +63,33 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 20)
+## Verification log (last run, session 21)
 
 | Command                     | Result                                              |
 | --------------------------- | --------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                    |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`               |
 | `pnpm run format`           | applied; `pnpm run format:check` clean              |
-| `pnpm run test`             | 12/12 tasks pass — 465 tests (23 new)               |
+| `pnpm run test`             | 12/12 tasks pass — 488 tests (23 new)               |
 | `pnpm run test:integration` | 11 files, 136 tests pass against real PostgreSQL 17 |
 | `pnpm run build`            | 5/5 tasks pass                                      |
-| `pnpm run test:e2e`         | 69 passed (9 new, all booking)                      |
+| `pnpm run test:e2e`         | 77 passed (8 new, all booking-without-a-slot)       |
 | `pnpm run guard:boundaries` | OK                                                  |
 | `pnpm run db:migrate`       | no migration needed — this session adds no column   |
 
-Per-package unit/component tests: domain 154, validation 57, api-client 15, api 58
-(integration skipped here, run separately), app 178, desktop 3.
+Per-package unit/component tests: domain 154, validation 59, api-client 15, api 58
+(integration skipped here, run separately), app 199, desktop 3.
+
+**Session 21 changed nothing on the server, and one e2e spec said so loudly.** The
+profile and the dashboard both started asking `GET /api/v1/clinic`, which they had no
+reason to before: the profile now draws its times in the clinic's zone and can open a
+booking dialog, and the dashboard opens the same dialog. The mock answers an unmocked
+endpoint with a 501 and a console error, and four existing profile specs plus the
+dashboard's "no console errors" spec failed on it. That is the mock working as the
+`sessions 17–18` log describes — a spec that does not mock what the page now asks
+fails loudly instead of quietly reading a live database. `clinicFixture()` in
+`e2e/web/fixtures/api-responses.ts` makes the omission a missing import rather than a
+failure three files from the change.
 
 **Two assertions in the new integration test were wrong before the code was, and the
 defect check caught them.** The first version named the clinicians `Dr. Álvaro` and
@@ -571,15 +581,27 @@ editing. Both sides now go through `PatientRepository`. Remaining:
      part worth reading.
 
    - **The booking form exists (session 20).** Clicking an empty slot opens
-     `AppointmentBookingDialog`; the grid is the time picker, so the dialog asks
-     only who, for how long and in which chair, and never shows a time input.
+     `AppointmentBookingDialog`; the grid is the time picker, so the dialog shows
+     the clicked time read-only and asks who, for how long and in which chair.
      Patient (searchable), clinician, chair, duration and notes, all validated by
      `createAppointmentFormSchema` — which reuses the API's own field schemas
      rather than restating them. The click's `Date` is the instant that is sent.
 
-   **Still to do:** the "New Visit" and next-appointment actions on the patient
-   profile, which open the same dialog from a different screen. The booking path
-   itself is complete.
+   - **Booking no longer needs a grid (session 21).** The same dialog is opened from
+     the patient profile ("Book appointment", with that patient already chosen) and
+     from the dashboard ("New Visit", which is no longer a disabled placeholder).
+     With no slot behind either screen the time field is editable, and what it holds
+     is the **clinic's wall clock**: `zonedWallClockSchema` replaces the form's
+     `startsAt` with `localStartsAt`, and `zoned-wall-clock.ts` converts it with
+     `clinic.timeZone`. A time the zone skipped over — the daylight-saving gap — is
+     refused with a sentence naming the zone rather than shifted forward an hour.
+     The instant is now assembled at submit and is not a form field at all, so there
+     is nothing the user cannot see for the schema to validate on their behalf.
+     The profile's own times moved to `formatClinicDayTime`/`formatClinicDay`; they
+     were `toLocaleString()` calls, which answer with the **visitor's** zone and so
+     were right only on a receptionist's machine.
+
+   **Still to do:** nothing in the booking path. The next milestone's work is visits.
 
 7. [ ] Visits, the clinical timeline, treatments, payments, inventory, reports.
 
@@ -1030,3 +1052,69 @@ overlaps the other.
 442 unit/component (9 new) · 136 integration (6 new, real PostgreSQL) · 60/60 e2e
 unchanged. No migration, no UI change: this is the rule the booking form inherits, and
 ADR 0020 records why it is wired this way.
+
+Session 21: booking stopped needing a grid. The session 20 dialog could only be opened
+by clicking an empty slot, which made the grid the app's only way to book anything —
+so the profile and the dashboard, which are where a receptionist actually starts, could
+only offer a link to the agenda. Both now open the same dialog. That part was the
+obvious half.
+
+The other half was the time, and it changed the form's shape. The dialog used to take
+`startsAt` as a prop and pass it straight through as a hidden form field, validated by
+the resolver so that "the whole request is checked by one schema" was true. That only
+worked because the grid had already decided the hour and the user could not see the
+field. Opened from a profile there is no grid, so the time has to become something the
+person states — and what they state is not an instant. Nobody books an appointment at
+`2026-10-06T16:30:00.000Z`; they book it at half past eleven, and which instant that is
+depends on the clinic, not on the machine the receptionist is sitting at.
+
+So `createAppointmentFormSchema` now carries `localStartsAt` — a wall clock,
+`YYYY-MM-DDTHH:mm`, checked as a shape and as a real calendar date — and the instant is
+assembled at submit from `clinic.timeZone`. The consequence worth recording is that
+**the instant is no longer a field at all**, hidden or otherwise. The reason session 20
+gave for validating it in the resolver was to check a value the user cannot see; with
+every field visible, that argument is gone, and keeping a derived value in the form
+anyway would be the shape that lets a default and a typed value disagree about what was
+asked for. `useCreateAppointment` now takes `CreateAppointmentInput` — the request's own
+type — instead of the form's, so the thing on the wire is typed as the request rather
+than as a form that is nearly the same thing.
+
+**Luxon, and not `Intl`, for the conversion.** Reading a zone's offset with `Intl`
+means reading it at some moment and guessing whether it changes across the boundary;
+`DateTime.fromISO(value, { zone })` asks the zone database. It is also already a direct
+dependency of the app for FullCalendar's timezone plugin, so this is the same library
+doing the same job as the grid, not a new one.
+
+Three cases in there were decisions rather than defaults, and all three are now named in
+the code where they live. A wall clock the zone **skipped** — the spring-forward gap,
+where `02:30` never happens — is refused, and the dialog says which zone refused it,
+because the alternative is Luxon's silent `03:30`: a booking an hour later than anyone
+chose, mentioned nowhere. A wall clock the zone **repeated** takes the earlier of the
+two, so the booking is never an hour later than the person asked for; the clinic can
+move it, and the API is the one that finally gets to object. And an unparseable instant
+makes `instantToZonedWallClock` return `undefined` rather than Luxon's
+`"Invalid DateTime"`, which is not a time and would otherwise be typed into a form as
+one.
+
+The profile's own times were a bug this session found on the way past: `toLocaleDateString()`
+and `toLocaleString()` with no `timeZone`, which answer with the **visitor's** zone. On
+every receptionist's machine in Peru that is right, which is why it survived; the day
+someone books from abroad it is an appointment at the wrong hour. Both now go through
+`formatClinicDayTime` / `formatClinicDay` with the clinic's zone, and where the zone is
+still loading the page says "Reading the clinic's clock…" rather than falling back to
+the browser's — a fallback would put "Nothing booked" and "Tonight" in the same slot
+and one of them is a lie.
+
+**The e2e specs that failed are the interesting part of this session.** Four profile
+specs and the dashboard's console-error spec broke the moment the two pages started
+asking `GET /api/v1/clinic`, because the mock answers an unmocked endpoint with a 501
+and logs it. That is the mock doing its job — it is why a spec cannot quietly pass
+against a live database — and the fix was fixtures, not code. `clinicFixture()` now
+exists so the next omission is a missing import rather than a failure three files from
+the change.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard · format · build 5/5 ·
+488 unit/component (23 new) · 136 integration (unchanged, real PostgreSQL) · 77/77 e2e
+(8 new). No migration and no server code: the validation package's form schema moved,
+the API's own request schema did not, and the endpoint answers exactly what it answered
+before.

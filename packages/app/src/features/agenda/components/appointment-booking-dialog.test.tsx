@@ -14,11 +14,16 @@
  * - **What happens when the server says no.** The refusal is displayed. The dialog
  *   does not pre-judge the slot, so a refusal has to be *visible* — swallowing it
  *   would leave a person who clicked at 03:00 with nothing to act on.
+ * - **Whose clock the time is.** Opened from the grid the slot is fixed and shown in
+ *   the clinic's zone; opened from a profile or the dashboard the person types it, and
+ *   what they type is the *clinic's* wall clock, not the machine's. The two are easy to
+ *   confuse and expensive to get wrong — a booking an hour or a day out, for everybody
+ *   in the room.
  */
 
 import { ApiClient } from '@denti-code-u3/api-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -98,9 +103,19 @@ function renderDialog({
       }),
     ),
   patients = [PATIENT],
+  // `undefined` is the agenda's case — a slot was clicked and the time is fixed. Pass
+  // `null` for the profile's and the dashboard's case, where nobody has chosen a time
+  // and the field is theirs to fill. The distinction is the whole difference between
+  // the two doors, so it is a parameter rather than a boolean.
+  startsAt = STARTS_AT,
+  patient,
+  clinic = CLINIC,
 }: {
   readonly booking?: (body: unknown) => Promise<Response>;
   readonly patients?: unknown[];
+  readonly startsAt?: string | null;
+  readonly patient?: { readonly id: string; readonly label: string };
+  readonly clinic?: Clinic;
 } = {}) {
   const fetchImplementation = vi.fn<typeof fetch>((url, init) => {
     const href = String(url);
@@ -148,7 +163,12 @@ function renderDialog({
   render(
     <QueryClientProvider client={queryClient}>
       <ApiClientProvider baseUrl={BASE_URL} client={client}>
-        <AppointmentBookingDialog startsAt={STARTS_AT} clinic={CLINIC} onClose={onClose} />
+        <AppointmentBookingDialog
+          startsAt={startsAt ?? undefined}
+          patient={patient}
+          clinic={clinic}
+          onClose={onClose}
+        />
       </ApiClientProvider>
     </QueryClientProvider>,
   );
@@ -306,6 +326,119 @@ describe('AppointmentBookingDialog', () => {
     // Staying open is the point: the person has to correct the slot or the details,
     // and a dialog that vanished on failure would take their typing with it.
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('locks the time to the clicked slot, because the grid already answered it', () => {
+    renderDialog();
+
+    // Read-only rather than absent: the field is also where a daylight-saving refusal
+    // would appear, and where the person confirms what they are booking. Editable here
+    // would suggest that typing another hour moves the appointment, which it does not.
+    expect(screen.getByTestId('booking-starts-at')).toHaveValue('2026-10-05T09:00');
+    expect(screen.getByTestId('booking-starts-at')).toHaveAttribute('readonly');
+    expect(screen.getByText(/from the slot you clicked/i)).toBeInTheDocument();
+  });
+
+  it('opens with an empty, editable time when no slot was clicked', () => {
+    renderDialog({ startsAt: null });
+
+    // Nothing here can answer "when", so the field is the person's. Empty rather than
+    // filled with a guess: a dialog that defaults to an hour nobody chose is a booking
+    // nobody made.
+    expect(screen.getByTestId('booking-starts-at')).toHaveValue('');
+    expect(screen.getByTestId('booking-starts-at')).not.toHaveAttribute('readonly');
+  });
+
+  it('says whose clock the typed time is in, since a bare wall clock is ambiguous', () => {
+    renderDialog({ startsAt: null });
+
+    expect(screen.getByText(/america\/lima/i)).toBeInTheDocument();
+  });
+
+  it('will not submit without a time, and says so on the field', async () => {
+    const { fetchImplementation } = renderDialog({ startsAt: null });
+
+    await choosePatient(user);
+    await chooseFrom(user, 'booking-dentist', /Dra\. Rivera/);
+    await user.click(screen.getByTestId('booking-submit'));
+
+    // The third required field, and it fails on its own: the other two can be filled
+    // while the person reads this sentence.
+    expect(await screen.findByText('Choose a date and time')).toBeInTheDocument();
+    expect(postedBodies(fetchImplementation)).toHaveLength(0);
+  });
+
+  it('reads the typed time as the clinic clock, not the machine clock', async () => {
+    const { fetchImplementation } = renderDialog({ startsAt: null });
+
+    await choosePatient(user);
+    await chooseFrom(user, 'booking-dentist', /Dra\. Rivera/);
+    // `fireEvent` rather than `user.type`: a `datetime-local` input is typed through
+    // the browser's own segment editor, which jsdom does not implement, so keystrokes
+    // would produce nothing and the test would pass for the wrong reason.
+    fireEvent.change(screen.getByTestId('booking-starts-at'), {
+      target: { value: '2026-10-05T09:00' },
+    });
+    await user.click(screen.getByTestId('booking-submit'));
+
+    await waitFor(() => expect(postedBodies(fetchImplementation)).toHaveLength(1));
+
+    // 09:00 in Lima is 14:00Z. Anything else would mean the booking moved by whatever
+    // offset the machine running the tests happens to have — which for a receptionist
+    // abroad is the whole day.
+    expect(postedBodies(fetchImplementation)[0]).toEqual({
+      patientId: PATIENT_ID,
+      dentistId: DENTIST_ID,
+      startsAt: STARTS_AT,
+      durationMinutes: 30,
+    });
+  });
+
+  it('refuses a wall clock the zone skipped over, and books nothing', async () => {
+    // A clinic in New York on 8 March 2026, the morning the clocks jump from 02:00 to
+    // 03:00. 02:30 is a string every other library will happily turn into 03:30.
+    const { fetchImplementation } = renderDialog({
+      startsAt: null,
+      clinic: { ...CLINIC, timeZone: 'America/New_York' },
+    });
+
+    await choosePatient(user);
+    await chooseFrom(user, 'booking-dentist', /Dra\. Rivera/);
+    fireEvent.change(screen.getByTestId('booking-starts-at'), {
+      target: { value: '2026-03-08T02:30' },
+    });
+    await user.click(screen.getByTestId('booking-submit'));
+
+    // The only check the dialog makes itself, and it names the zone so the person can
+    // see which clock refused them.
+    expect(
+      await screen.findByText(/does not exist on that date in America\/New_York/i),
+    ).toBeInTheDocument();
+    expect(postedBodies(fetchImplementation)).toHaveLength(0);
+  });
+
+  it('names the patient it was opened for, and books them without a search', async () => {
+    const { fetchImplementation } = renderDialog({
+      startsAt: null,
+      patient: { id: PATIENT_ID, label: 'Ana Torres' },
+    });
+
+    // Opened from Ana's profile: the title says whose it is, and the picker shows her
+    // rather than an empty box to search. Prefilled and not locked — a person who
+    // opened it for the wrong patient can pick the right one instead of closing it.
+    expect(
+      screen.getByRole('heading', { name: /new appointment for ana torres/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /patient/i })).toHaveValue('Ana Torres');
+
+    fireEvent.change(screen.getByTestId('booking-starts-at'), {
+      target: { value: '2026-10-05T09:00' },
+    });
+    await chooseFrom(user, 'booking-dentist', /Dra\. Rivera/);
+    await user.click(screen.getByTestId('booking-submit'));
+
+    await waitFor(() => expect(postedBodies(fetchImplementation)).toHaveLength(1));
+    expect(postedBodies(fetchImplementation)[0]).toMatchObject({ patientId: PATIENT_ID });
   });
 
   it('asks for the active clinicians and chairs only', async () => {

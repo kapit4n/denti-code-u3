@@ -75,9 +75,8 @@ from the domain; no hard-coded mockup values; widgets are reusable primitives.
 **Status: complete.** Every metric is API-computed, and 9 committed e2e specs
 assert them against a fixture-backed API — including that a genuinely unknown
 figure renders as unknown rather than as `0%`. `pnpm run build` and
-`pnpm run test:e2e` are green. "New Visit" / "New Patient" remain disabled
-placeholders because the forms arrive with Milestone 5; they are tracked under
-Milestone 4 rather than counted as dashboard work. See
+`pnpm run test:e2e` are green. "New Visit" now opens the booking dialog (session
+21); "New Patient" has been a working link since registration shipped. See
 `docs/progress/STATE.md`.
 
 ---
@@ -142,17 +141,20 @@ write is non-optimistic — the grid redraws from the API's answer and a refused
 is reverted. Conflicts are reported as the hour that is taken, in the clinic's timezone
 rather than the visitor's.
 
-Creating an appointment is a click on an empty slot. **The grid is the time picker**:
-the click is the decision of when, and the dialog asks only who, for how long and in
-which chair — patient by search, clinician and chair from
+Creating an appointment starts on the grid. **The grid is the time picker**: the click
+on an empty slot is the decision of when, and the dialog shows that time read-only
+rather than offering a second control for a decision already made. The other two doors
+into the same dialog — the profile's "Book appointment" and the dashboard's "New
+Visit" — have no grid behind them, so there the field is the person's to fill, and
+what they fill is the **clinic's** wall clock converted with the zone on the clinic
+record. Who, for how long and in which chair is asked in all three: patient by search
+(or already known, from the profile), clinician and chair from
 `GET /api/v1/dentists?onlyActive=true` and `GET /api/v1/chairs?onlyActive=true`, with
 the API still enforcing the rule behind them (ADR 0020). The dialog decides nothing
 about whether the booking is allowed: every slot opens it, and a refusal from the
 domain is what is displayed.
 
-Not started: dentist and chair filters above the grid, and the "New Visit" and
-next-appointment actions on the patient profile — which open this same dialog from a
-different screen.
+Not started: dentist and chair filters above the grid.
 
 ---
 

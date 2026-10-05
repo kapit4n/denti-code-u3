@@ -68,25 +68,77 @@ function blankIsAbsent<TField extends z.ZodType>(field: TField) {
 }
 
 /**
+ * A clinic wall clock, as a form receives it: `YYYY-MM-DDTHH:mm`, no offset.
+ *
+ * **Not `isoDateTimeSchema`, and the difference is the point.** That one insists on an
+ * offset, which is right for a request and wrong for a question a person asked: nobody
+ * books an appointment at "2026-09-30T14:00Z", they book it at "the 30th, at two in
+ * the afternoon", and which instant that is depends entirely on the clinic's zone.
+ *
+ * The form therefore carries the wall clock and the app converts it with the zone the
+ * clinic record reported — see `zoned-wall-clock.ts` in the app, which is the only
+ * place that conversion happens. An instant built from the *machine's* zone is the bug
+ * this field exists to make impossible.
+ */
+export const zonedWallClockSchema = z.string().superRefine((value, ctx) => {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+
+  // One check rather than a regex plus a refine, so one bad value produces one message:
+  // two errors on one field means the dialog has to choose which one a person reads.
+  if (!parts) {
+    ctx.addIssue({ code: 'custom', message: 'Choose a date and time' });
+    return;
+  }
+
+  // The defaults are unreachable - the pattern has exactly five groups - and harmless
+  // if they ever were reached: a zero fails the round trip below and is reported as a
+  // date that does not exist, rather than throwing inside a validator.
+  const [year = 0, month = 0, day = 0, hour = 0, minute = 0] = parts.slice(1).map(Number);
+
+  // A regex cannot tell 2026-02-30 from 2026-03-02, and `Date.parse` will not either:
+  // it reads the first as the second without complaint. So the parts are checked
+  // against a date that claims to be them, and a claim that comes back different is
+  // not a date. `Date.UTC` inverts cleanly because no real calendar is involved —
+  // there is no zone here to shift an answer into a different day.
+  const at = new Date(Date.UTC(year, month - 1, day, hour, minute));
+
+  const calendarHasThisDate =
+    at.getUTCFullYear() === year &&
+    at.getUTCMonth() === month - 1 &&
+    at.getUTCDate() === day &&
+    at.getUTCHours() === hour &&
+    at.getUTCMinutes() === minute;
+
+  if (!calendarHasThisDate) {
+    ctx.addIssue({ code: 'custom', message: 'That date does not exist' });
+  }
+});
+
+/**
  * The booking form's view of `createAppointmentSchema`.
  *
  * Same construction as the patient forms: every field is taken from
  * `createAppointmentSchema.shape`, so the form accepts exactly what the API accepts
- * and `appointments.test.ts` asserts the two still have the same keys. A booking
- * dialog that sent a field the API refuses would be a form whose only symptom is a
- * 422 the user cannot act on.
+ * and `appointments.test.ts` asserts the correspondence still holds. A booking dialog
+ * that sent a field the API refuses would be a form whose only symptom is a 422 the
+ * user cannot act on.
  *
- * Two differences from the API schema, both about a form rather than a request:
+ * Three differences from the API schema, all about a form rather than a request:
  *
- *  - **`startsAt` is a default, not an input.** The grid is the time picker — the
- *    user clicks the slot and the dialog opens for it — so the instant arrives as a
- *    value and is never typed. It stays in the schema so that the whole request is
- *    validated by one resolver, including the field the user cannot see.
+ *  - **`localStartsAt` instead of `startsAt`.** The form holds the wall clock the
+ *    person can read, and the app turns it into the instant the API stores using the
+ *    clinic's zone. The instant is therefore *not a field at all*: there is nothing
+ *    hidden from the user for this schema to validate on their behalf, and no way for
+ *    a default and a typed value to disagree about what was asked for. The agenda
+ *    opens this same dialog with the clicked slot already in the field, read-only, so
+ *    the grid is still where the time is chosen.
  *  - **Blanks mean absent.** A dialog submits `''` for a chair nobody chose and a
  *    notes field nobody typed, and the API rejects `''` for the same `min`-style
  *    reason it rejects an empty name. Without this, booking without a chair would
  *    be impossible.
+ *  - **The two required pickers say what to do.** See the messages below.
  */
+
 export const createAppointmentFormSchema = z.object({
   // Both ids are the same `uuid` the API checks; only the message differs, and it
   // differs because of who is looking at it. Zod's default for a bad uuid is "Invalid
@@ -96,7 +148,7 @@ export const createAppointmentFormSchema = z.object({
   patientId: z.uuid('Choose a patient'),
   dentistId: z.uuid('Choose a clinician'),
   chairId: blankIsAbsent(createAppointmentSchema.shape.chairId),
-  startsAt: createAppointmentSchema.shape.startsAt,
+  localStartsAt: zonedWallClockSchema,
   durationMinutes: createAppointmentSchema.shape.durationMinutes,
   notes: blankIsAbsent(createAppointmentSchema.shape.notes),
 });
@@ -150,9 +202,21 @@ export const agendaRangeQuerySchema = z
   });
 
 export type CreateAppointmentInput = z.infer<typeof createAppointmentSchema>;
-/** What the booking dialog holds while it is open. */
+/**
+ * What the booking dialog holds while it is open.
+ *
+ * A wall clock rather than an instant: see `createAppointmentFormSchema`.
+ */
 export type CreateAppointmentFormValues = z.input<typeof createAppointmentFormSchema>;
-/** What the dialog hands to the mutation: blanks already resolved to absent. */
+/**
+ * What the dialog holds after validation: blanks resolved to absent.
+ *
+ * This is *not* the shape of the request. `startsAt` is missing, because the instant
+ * only exists once the clinic's zone has been applied, and that conversion belongs to
+ * the app rather than to this package — a schema cannot know the clinic's zone. The
+ * mutation takes `CreateAppointmentInput`, the API's own type, so the body it sends is
+ * typed as the request rather than as a form that is nearly the same thing.
+ */
 export type CreateAppointmentFormOutput = z.output<typeof createAppointmentFormSchema>;
 export type RescheduleAppointmentInput = z.infer<typeof rescheduleAppointmentSchema>;
 export type TransitionAppointmentInput = z.infer<typeof transitionAppointmentSchema>;

@@ -270,6 +270,19 @@ export function allDashboardFixtures(): MockedResponses {
   );
 }
 
+/**
+ * The clinic's settings, for any spec that renders a patient profile.
+ *
+ * **The profile asks for it now, so every such spec has to mock it.** The profile draws
+ * its times in the clinic's zone and can open the booking dialog, and both need the
+ * clinic row. A spec that forgets gets a 501 from the mock and a console error — which
+ * is the mock working: this helper exists so the omission is a missing import rather
+ * than a test that fails for a reason three files away from the change.
+ */
+export function clinicFixture(): MockedResponses {
+  return { '/api/v1/clinic': { body: clinicSettings } };
+}
+
 /** Unpaginated list response for the three seeded patients. */
 export const PATIENT_LIST_RESPONSE = {
   items: patientSummaries,

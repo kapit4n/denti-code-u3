@@ -1,12 +1,24 @@
 /**
  * The booking dialog: a slot, and who is coming to it.
  *
- * Opened by clicking an empty slot on the grid. **The grid is the time picker**: the
- * click is the choice of when, and this dialog asks only who, for how long and in
- * which chair. There is deliberately no time input here — a second control for the
- * same decision is a second opinion about it, and the grid already answers it by
- * direct manipulation. To move an appointment later, drag it; to book a different
- * hour, close this and click that one.
+ * Two doors, one dialog. Opened from the **grid**, it arrives with a slot: the click
+ * was the choice of when, and the field below shows it read-only, because a second
+ * control for a decision the grid already made by direct manipulation is a second
+ * opinion about it. To move an appointment later, drag it; to book a different hour,
+ * close this and click that one. Opened from a **patient's profile** or the
+ * **dashboard** there is no slot behind it and nothing else on the screen can answer
+ * "when", so the same field is editable and the person types the time.
+ *
+ * **The time is always the clinic's clock, whatever the machine says.** The field holds
+ * a wall clock (`2026-10-06T09:00`) and the dialog turns it into the instant the API
+ * stores using the zone on the clinic record, via `zonedWallClock.ts`. That is the same
+ * reason the grid renders in `clinic.timeZone`: a receptionist in another country
+ * booking 09:00 means 09:00 *here*.
+ *
+ * **A time the zone skipped is refused here rather than shifted.** Twice a year the
+ * clocks jump an hour forward and some wall clocks never arrive; the conversion says so
+ * and the dialog puts the sentence under the field, because the alternative is booking
+ * a patient for an hour they did not choose and mentioning it nowhere.
  *
  * **It decides nothing about whether the booking is allowed.** The slot is not checked
  * for opening hours, the clinician is not checked for a clash, and the duration is
@@ -69,6 +81,7 @@ import { useChairs, useDentists } from '../queries/bookable-resources-query.js';
 import { describeAppointmentFailure } from '../describe-appointment-failure.js';
 import { PatientPicker, type SelectedPatient } from '../../patients/components/patient-picker.js';
 import { formatClinicDayTime, formatClinicTimeRange } from '../../clinic/format-clinic-time.js';
+import { instantToZonedWallClock, zonedWallClockToInstant } from '../../clinic/zoned-wall-clock.js';
 
 /**
  * The lengths a booking is offered at, in minutes.
@@ -102,9 +115,25 @@ const DEFAULT_DURATION_MINUTES = BOOKABLE_DURATIONS.includes(30) ? 30 : BOOKABLE
 const NO_CHAIR = 'none';
 
 export interface AppointmentBookingDialogProps {
-  /** The clicked slot, as an ISO instant. Never a local date-time. */
-  readonly startsAt: string;
+  /**
+   * The clicked slot, as an ISO instant, when the grid opened this dialog.
+   *
+   * Optional, and its absence is what makes the time editable. Passing an instant is
+   * the only way to fix the hour; there is no `readOnly` flag, because a caller that
+   * wants the grid's answer and a caller that wants to type it are the same question
+   * with two answers, and a flag invites the caller to pass one that contradicts the
+   * other.
+   */
+  readonly startsAt?: string;
   readonly clinic: Clinic;
+  /**
+   * The patient this booking is for, when it was opened from someone's profile.
+   *
+   * Prefilled rather than locked: the dialog was reached by saying who it is for, but
+   * a person who opened it by accident can pick someone else instead of closing it,
+   * and locking the box turns that into two extra steps to undo a misclick.
+   */
+  readonly patient?: SelectedPatient;
   readonly onClose: () => void;
   /** Called after the API agrees, with the row the booking became. */
   readonly onBooked?: (entry: { readonly id: string }) => void;
@@ -113,6 +142,7 @@ export interface AppointmentBookingDialogProps {
 export function AppointmentBookingDialog({
   startsAt,
   clinic,
+  patient,
   onClose,
   onBooked,
 }: AppointmentBookingDialogProps) {
@@ -121,23 +151,37 @@ export function AppointmentBookingDialog({
   const chairs = useChairs();
 
   /**
+   * The clicked slot as the field's value, and whether that value can be changed.
+   *
+   * `undefined` means the grid did not open this dialog, so the person types the time.
+   * The conversion can also come back empty if the instant was not an instant, and that
+   * falls into the same branch: an editable field with an empty value is a form
+   * somebody can finish, where a locked field holding `Invalid DateTime` is not.
+   */
+  const slotWallClock =
+    startsAt === undefined ? undefined : instantToZonedWallClock(startsAt, clinic.timeZone);
+  const timeIsFixed = slotWallClock !== undefined;
+
+  /**
    * The chosen patient's name, held beside the id in the form.
    *
    * Not a field of the form because it is not sent to the API — a booking names a
    * patient by id, and a label travelling in the body would be a second thing the
-   * server would have to ignore.
+   * server would have to ignore. Seeded from `patient` so opening from a profile shows
+   * the name rather than an empty box that has to be searched to find the person the
+   * dialog was just opened for.
    */
-  const [patientLabel, setPatientLabel] = useState<string | undefined>(undefined);
+  const [patientLabel, setPatientLabel] = useState<string | undefined>(patient?.label);
 
   const form = useForm<CreateAppointmentFormValues, unknown, CreateAppointmentFormOutput>({
     resolver: zodResolver(createAppointmentFormSchema),
     defaultValues: {
-      patientId: '',
+      patientId: patient?.id ?? '',
       dentistId: '',
       // Pre-filled strings rather than `undefined`, for the reason the patient form
       // gives: a controlled input starting as `undefined` flickers on first render.
       chairId: '',
-      startsAt,
+      localStartsAt: slotWallClock ?? '',
       durationMinutes: DEFAULT_DURATION_MINUTES,
       notes: '',
     },
@@ -145,28 +189,57 @@ export function AppointmentBookingDialog({
 
   const durationMinutes = form.watch('durationMinutes');
   const patientId = form.watch('patientId');
+  const localStartsAt = form.watch('localStartsAt');
 
   /**
    * When this booking would be, in the clinic's own words.
    *
-   * Recomputed as the duration changes, so the dialog shows the span that is about to
-   * be booked rather than the slot that was clicked — which, after a 90-minute
-   * choice, is not the same hour. `formatClinicTimeRange` takes instants, so the end
-   * is computed the same way the domain computes it (ADR 0012) rather than by adding
-   * minutes to a formatted string.
+   * Recomputed as the time and the duration change, so the dialog shows the span that
+   * is about to be booked rather than the slot that was clicked — which, after a
+   * 90-minute choice, is not the same hour. `formatClinicTimeRange` takes instants, so
+   * the end is computed the same way the domain computes it (ADR 0012) rather than by
+   * adding minutes to a formatted string.
+   *
+   * Empty until there is a time to describe, which is the normal state of the dialog
+   * when it was opened without a slot: the summary says what to do instead of
+   * formatting nothing.
    */
-  const span = formatBookedSpan(startsAt, durationMinutes, clinic.timeZone);
+  const span = formatChosenSpan(localStartsAt, durationMinutes, clinic.timeZone);
 
   const onSubmit = form.handleSubmit((values) => {
-    // The values as they are: the chair is absent here because the dropdown mapped
-    // "no chair" to an empty string, which the schema turns into an absent field.
-    // Nothing is converted again on the way out.
-    create.mutate(values, {
-      onSuccess: (entry) => {
-        onBooked?.(entry);
-        onClose();
+    // The one field that cannot be settled by the schema alone. The form schema knows
+    // the wall clock is shaped like a date and time; only the clinic's zone can say
+    // whether that clock ever showed it, and a daylight-saving gap is the case where
+    // they disagree. Refusing here is the honest answer — the other one is 03:30.
+    const startsAtInstant = zonedWallClockToInstant(values.localStartsAt, clinic.timeZone);
+
+    if (startsAtInstant === undefined) {
+      form.setError('localStartsAt', {
+        type: 'value',
+        message: `That time does not exist on that date in ${clinic.timeZone} — the clocks change then. Choose another time.`,
+      });
+      return;
+    }
+
+    // Spelled out field by field rather than spread, because this object is the
+    // request: it is the last place a field can be named on purpose instead of by
+    // accident, and `localStartsAt` — a form field — must not ride along in it.
+    create.mutate(
+      {
+        patientId: values.patientId,
+        dentistId: values.dentistId,
+        chairId: values.chairId,
+        startsAt: startsAtInstant,
+        durationMinutes: values.durationMinutes,
+        notes: values.notes,
       },
-    });
+      {
+        onSuccess: (entry) => {
+          onBooked?.(entry);
+          onClose();
+        },
+      },
+    );
   });
 
   const failure = describeAppointmentFailure(create.error, {
@@ -190,8 +263,17 @@ export function AppointmentBookingDialog({
         data-testid="appointment-booking-dialog"
       >
         <DialogHeader>
-          <DialogTitle id="booking-dialog-title">New appointment</DialogTitle>
-          <DialogDescription>{span}</DialogDescription>
+          <DialogTitle id="booking-dialog-title">
+            {patient ? `New appointment for ${patient.label}` : 'New appointment'}
+          </DialogTitle>
+          <DialogDescription>
+            {/* The span, once there is a time to describe it from. Before that it says
+                what to do — the alternative is a header reading "New appointment ·
+                Invalid DateTime" for the normal state of a dialog opened without a
+                slot. The zone itself is not repeated here; it says so once, under the
+                field that needs it. */}
+            {span ?? 'Choose the date and time the patient is coming.'}
+          </DialogDescription>
         </DialogHeader>
 
         {failure ? (
@@ -206,6 +288,32 @@ export function AppointmentBookingDialog({
         ) : null}
 
         <form onSubmit={onSubmit} noValidate className="space-y-4">
+          <div className="space-y-1">
+            <Label htmlFor="booking-starts-at">Date and time</Label>
+            <input
+              id="booking-starts-at"
+              type="datetime-local"
+              // Locked when the grid opened this dialog: the click was the answer, and
+              // an editable copy of it invites the question "does changing this move
+              // the appointment?" — it does not, and a field that lies about its own
+              // effect is worse than no field.
+              readOnly={timeIsFixed}
+              disabled={create.isPending}
+              aria-describedby="booking-starts-at-hint"
+              className="w-full rounded-md border bg-background p-2 text-sm"
+              data-testid="booking-starts-at"
+              {...form.register('localStartsAt')}
+            />
+            {/* Says whose clock, because a wall clock with no zone is ambiguous and
+                the person filling this in may be a thousand miles from the clinic. */}
+            <p id="booking-starts-at-hint" className="text-xs text-muted-foreground">
+              {timeIsFixed
+                ? 'From the slot you clicked on the agenda.'
+                : `The clinic's own time, ${clinic.timeZone}.`}
+            </p>
+            <FieldError error={form.formState.errors.localStartsAt} />
+          </div>
+
           <PatientPicker
             id="booking-patient"
             disabled={create.isPending}
@@ -383,6 +491,14 @@ function FieldError({
 /**
  * The span a booking would cover, in the clinic's zone.
  *
+ * Takes the wall clock the field holds rather than an instant, because that is what
+ * the form has, and converts it here — the summary and the request are then derived
+ * from one value, so the sentence in the header cannot describe a different hour than
+ * the one that gets booked.
+ *
+ * `undefined` when there is no time yet, or when the clock the field holds is one the
+ * zone skipped; both mean the same thing to a reader, which is "not a booking yet".
+ *
  * The end is derived by adding the duration to the instant and formatting the pair,
  * rather than formatting the start and appending minutes to a string — a formatted
  * "09:00 plus 90 minutes" is a string operation that has to re-implement the
@@ -390,7 +506,16 @@ function FieldError({
  * daylight-saving change are both correct here for free, because the arithmetic
  * happens on instants.
  */
-function formatBookedSpan(startsAt: string, durationMinutes: number, timeZone: string): string {
+function formatChosenSpan(
+  localStartsAt: string,
+  durationMinutes: number,
+  timeZone: string,
+): string | undefined {
+  const startsAt = zonedWallClockToInstant(localStartsAt, timeZone);
+  if (startsAt === undefined) {
+    return undefined;
+  }
+
   const endsAt = new Date(new Date(startsAt).getTime() + durationMinutes * 60_000).toISOString();
 
   return `${formatClinicDayTime(startsAt, timeZone)} · ${formatClinicTimeRange(startsAt, endsAt, timeZone)}`;
