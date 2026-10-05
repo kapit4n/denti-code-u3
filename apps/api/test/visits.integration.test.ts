@@ -36,8 +36,14 @@ import { fileURLToPath } from 'node:url';
 import * as schema from '@denti-code-u3/database/schema';
 import { DrizzleUnitOfWork } from '../src/infrastructure/persistence/postgres/unit-of-work.js';
 import { DrizzleAppointmentRepository } from '../src/infrastructure/persistence/repositories/appointment-repository.js';
+import { DrizzleVisitRepository } from '../src/infrastructure/persistence/repositories/visit-repository.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
-import { startVisit, type AppointmentRepository } from '@denti-code-u3/domain';
+import {
+  completeVisitRecord,
+  reopenVisitRecord,
+  startVisit,
+  type AppointmentRepository,
+} from '@denti-code-u3/domain';
 import {
   asAppointmentId,
   asChairId,
@@ -60,6 +66,15 @@ describeIntegration('starting a visit (PostgreSQL)', () => {
   const db = drizzle(sql, { casing: 'snake_case', schema }) as unknown as DentiDatabase;
   const unitOfWork = new DrizzleUnitOfWork(db);
   const appointments = new DrizzleAppointmentRepository(db);
+  const visitsRepository = new DrizzleVisitRepository(db);
+
+  /**
+   * The end time the two closing use cases are given.
+   *
+   * A fixed instant that is deliberately *not* "now", so the row can be checked for
+   * having taken the domain's decision rather than the repository's own clock reading.
+   */
+  const CLOSED_AT = '2026-04-09T14:47:12.000Z' as IsoDateTime;
 
   const clinicId = asClinicId('1a1a1111-1111-4111-8111-111111111111');
   const otherClinicId = asClinicId('2b2b1111-1111-4111-8111-111111111111');
@@ -154,6 +169,33 @@ describeIntegration('starting a visit (PostgreSQL)', () => {
     const [row] =
       await sql`select count(*)::int as total from visits where clinic_id = ${clinicId}`;
     return (row as { total: number }).total;
+  };
+
+  /**
+   * The row as it is stored, with both timestamps read as instants.
+   *
+   * `postgres` hands a `timestamptz` back as a string here, so the comparison is on
+   * `new Date(value).toISOString()` rather than on a `Date` the cast pretended was
+   * there — the first version of this helper asserted the column was a `Date` and
+   * failed on `toISOString is not a function`, which is the cast being wrong rather
+   * than the column.
+   */
+  const readVisit = async (visitId: string) => {
+    const [row] = await sql`select status, started_at, ended_at from visits where id = ${visitId}`;
+    const stored = row as { status: string; started_at: string | null; ended_at: string | null };
+    const instant = (value: string | null) =>
+      value === null ? null : new Date(value).toISOString();
+
+    return {
+      status: stored.status,
+      startedAt: instant(stored.started_at),
+      endedAt: instant(stored.ended_at),
+    };
+  };
+
+  const closureDependencies = {
+    visits: visitsRepository,
+    clock: { now: () => CLOSED_AT },
   };
 
   const readAppointment = async (appointmentId: AppointmentId) => {
@@ -356,6 +398,131 @@ describeIntegration('starting a visit (PostgreSQL)', () => {
 
     await expect(start(appointmentId, 70)).rejects.toMatchObject({ code: 'DUPLICATED_RECORD' });
     expect(await countVisits(appointmentId)).toBe(1);
+  });
+
+  describe('closing a visit', () => {
+    it("writes the clock's end time into the row, not one of its own", async () => {
+      const appointmentId = await book({ startsAt: at('14:00') });
+      const started = await start(appointmentId, 80);
+
+      const completed = await completeVisitRecord(clinicId, started.visit.id, closureDependencies);
+
+      expect(completed).toMatchObject({ status: 'COMPLETED', endedAt: CLOSED_AT });
+
+      // The row, not the returned entity. Before ADR 0022 the repository stamped its own
+      // `new Date()`, so the answer carried the clock's time while the row carried the
+      // wall clock at the moment the statement ran — two truths about one row, differing
+      // by however long the request took, and a test with a fixed clock passing against
+      // the use case while failing against the table.
+      const row = await readVisit(started.visit.id);
+      expect(row.status).toBe('COMPLETED');
+      expect(row.endedAt).toBe(CLOSED_AT);
+      expect(row.startedAt).toBe(NOW);
+    });
+
+    it('leaves the appointment reading IN_TREATMENT, which is the decision', async () => {
+      const appointmentId = await book({ startsAt: at('14:00') });
+      const started = await start(appointmentId, 81);
+
+      await completeVisitRecord(clinicId, started.visit.id, closureDependencies);
+
+      // ADR 0022, Decision 2, verified against the table rather than asserted in a
+      // comment. The booking is completed through its own endpoint — the quick panel's
+      // "Complete" — and until then the agenda still draws this appointment as in
+      // treatment and the dashboard still counts the patient in its `inTreatment` total.
+      // Coupling the two would need a `COMPLETED → IN_TREATMENT` edge on a table where
+      // `COMPLETED` is terminal, and that edge would surface as a button on every
+      // completed appointment in the clinic.
+      const appointment = await readAppointment(appointmentId);
+      expect(appointment.status).toBe('IN_TREATMENT');
+      expect(appointment.visit_id).toBe(started.visit.id);
+    });
+
+    it('re-opens a closed visit and clears the end time it had', async () => {
+      const appointmentId = await book({ startsAt: at('14:00') });
+      const started = await start(appointmentId, 82);
+      await completeVisitRecord(clinicId, started.visit.id, closureDependencies);
+
+      const reopened = await reopenVisitRecord(clinicId, started.visit.id, closureDependencies);
+
+      expect(reopened).toMatchObject({ status: 'OPEN' });
+      expect(reopened.endedAt).toBeUndefined();
+
+      const row = await readVisit(started.visit.id);
+      expect(row.status).toBe('OPEN');
+      // Null in the row rather than left behind: a visit claiming to be open while still
+      // holding the end of a closing that no longer stands would give the patient
+      // profile two stories about one row.
+      expect(row.endedAt).toBeNull();
+      // The start is untouched by either transition — a re-opened visit did not begin
+      // again.
+      expect(row.startedAt).toBe(NOW);
+    });
+
+    it('refuses to complete a completed visit, and writes nothing', async () => {
+      const appointmentId = await book({ startsAt: at('14:00') });
+      const started = await start(appointmentId, 83);
+      await completeVisitRecord(clinicId, started.visit.id, closureDependencies);
+
+      await expect(
+        completeVisitRecord(clinicId, started.visit.id, closureDependencies),
+      ).rejects.toMatchObject({ code: 'ILLEGAL_TRANSITION' });
+
+      // The end time of the first completion survives the refused second one — the
+      // refusal is a refusal, not a rewrite.
+      const row = await readVisit(started.visit.id);
+      expect(row.endedAt).toBe(CLOSED_AT);
+    });
+
+    it('refuses to re-open a visit that is already open', async () => {
+      const appointmentId = await book({ startsAt: at('14:00') });
+      const started = await start(appointmentId, 84);
+
+      await expect(
+        reopenVisitRecord(clinicId, started.visit.id, closureDependencies),
+      ).rejects.toMatchObject({ code: 'ILLEGAL_TRANSITION' });
+
+      const row = await readVisit(started.visit.id);
+      expect(row.status).toBe('OPEN');
+      expect(row.endedAt).toBeNull();
+    });
+
+    it('answers NOT_FOUND for a visit belonging to another clinic', async () => {
+      const appointmentId = await book({ startsAt: at('14:00') });
+      const started = await start(appointmentId, 85);
+
+      await expect(
+        completeVisitRecord(otherClinicId, started.visit.id, closureDependencies),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      await expect(
+        reopenVisitRecord(otherClinicId, started.visit.id, closureDependencies),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+      // Untouched by both attempts: the same answer as an id that is nowhere (ADR 0014).
+      const row = await readVisit(started.visit.id);
+      expect(row.status).toBe('OPEN');
+      expect(row.endedAt).toBeNull();
+    });
+
+    it('closes the visit once when two requests do it at the same time', async () => {
+      const appointmentId = await book({ startsAt: at('14:00') });
+      const started = await start(appointmentId, 86);
+
+      const outcomes = await Promise.allSettled([
+        completeVisitRecord(clinicId, started.visit.id, closureDependencies),
+        completeVisitRecord(clinicId, started.visit.id, closureDependencies),
+      ]);
+
+      // Both succeed, and that is the honest answer rather than a missing guard:
+      // completing a visit is idempotent — the second request asks for a state the row
+      // is already in. Neither is refused, so there is nothing here to assert beyond the
+      // row being closed once with one end time, and no half-written state between them.
+      expect(outcomes.every((outcome) => outcome.status === 'fulfilled')).toBe(true);
+      const row = await readVisit(started.visit.id);
+      expect(row.status).toBe('COMPLETED');
+      expect(row.endedAt).toBe(CLOSED_AT);
+      expect(await countVisits(appointmentId)).toBe(1);
+    });
   });
 
   describe('the guarantees the schema now holds', () => {

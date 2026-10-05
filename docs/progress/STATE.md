@@ -1,7 +1,7 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 23 (starting a visit: two rows, one transaction, and the
-> foreign keys that make the bridge impossible to leave half-done)
+> Last updated: session 24 (closing a visit, and refusing to pretend that reopening is
+> audited)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -21,6 +21,11 @@ Session 22 delivered the one thing item 5 of the plan below had been waiting for
 agenda's filters. `AgendaFilterBar` chooses clinicians and chairs, and the narrowing is
 **the request's**, not the browser's. Room _columns_ remain, and are blocked rather than
 deferred — they need a `roomId` in the read model, which ADR 0018 deliberately left out.
+
+Session 24 delivered the **second slice**: closing one. `POST /api/v1/visits/:visitId/complete`
+and `.../reopen` are bodyless, and the decision worth its weight is what they _do not_ do
+— they leave the appointment alone (ADR 0022). Reopening is also not audited, because
+nothing here knows who is logged in; that is question 18, not an oversight.
 
 Session 23 delivered the **first slice of Milestone 6**: starting a visit from an
 appointment. `POST /api/v1/visits` takes one field, reads the patient, clinician and chair
@@ -1195,3 +1200,50 @@ warning) · format · build 5/5 · 533 unit/component (17 new) · 158 integratio
 real PostgreSQL 17) · 85/85 e2e unchanged, no UI moved · migration applied to a live
 database and `db:generate` reporting no drift · three mutations checked: the `visit_id`
 projection, the write order, and both links' restrict behaviour.
+
+Session 24: closing a visit. `completeVisitRecord` and `reopenVisitRecord`,
+`POST /api/v1/visits/:visitId/complete` and `.../reopen`, and ADR 0022. Both endpoints
+take no body, both read the clinic from the request scope, and both write one row through
+the repository rather than a unit of work — there is nothing to make atomic.
+
+The rule the session argued rather than discovered: the linked appointment is **not**
+completed alongside the visit. It sounds like a join the other way round, and it is the
+one that would have cost a `COMPLETED → IN_TREATMENT` edge on a table where `COMPLETED`
+is terminal — an edge that would surface as a button on every completed appointment in
+the clinic. The price is stated rather than hidden: the booking keeps reading
+`IN_TREATMENT`, so the agenda still draws the appointment and the dashboard still counts
+the patient in its `inTreatment` total until the front desk completes the booking through
+the appointment's own endpoint. Three tests assert exactly that, against the table.
+
+The second is that `VisitRepository.updateStatus` now takes the end time. It used to
+decide one itself — `status === 'COMPLETED' ? new Date() : null` — which meant the
+endpoint's answer and the row it wrote held two different end times, differing by however
+long the request took. Nothing noticed, because nothing read the row. A test that checks
+`ended_at` against a fixed clock rather than against the entity kills that, and killing it
+is what proved the test was worth having: it failed four times before the repository
+agreed.
+
+The bug worth recording is that the new route helper defaulted its clinic to an empty
+string, so every completion looked for a visit in the empty clinic, `clinic_id = ''` was
+not a uuid, and the `22P02` arrived as a **500** — the exact failure the `uuidSchema`
+guard in the same function exists to prevent, written by the guard's own author. A
+brand that means "a clinic somebody named" and a default of `''` is a hole with a lid on
+it; the parameter is required now and the comment says why. The same mistake appeared in
+two test fixtures of my own, which is how it is worth writing down: an `undefined` that
+means both "no such visit" and "the default visit", and two bookings a minute apart that
+the 45-minute duration made overlap.
+
+Reopening clears `ended_at` rather than leaving it, and takes no timestamp: a visit
+claiming to be open while still holding the end of a closing that no longer stands would
+give the patient profile two stories about one row. What a reopening leaves behind is
+nothing — `updated_at` moves and no actor is recorded, so an amendment and an ordinary
+edit look identical. That is question 18, deferred to the audit-log requirements in
+Milestone 12 rather than faked with a column nothing would read.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
+warning) · format · build 5/5 · 542 unit/component (9 new) · 172 integration (14 new,
+real PostgreSQL 17) · 85/85 e2e unchanged, no UI moved · no migration · three mutations
+checked: the repository's own clock, the transition table widened into idempotence, and
+the empty-clinic default. The appointment-independence assertions could not be mutated
+today — `AppointmentRepository` has no status-change method yet, so there is nothing for
+the domain to couple to; they are tripwires for whoever adds it.

@@ -334,7 +334,26 @@ export interface VisitRepository {
   findById(clinicId: ClinicId, visitId: VisitId): Promise<Visit | undefined>;
   findOpenForPatient(clinicId: ClinicId, patientId: PatientId): Promise<Visit | undefined>;
   findForPatient(clinicId: ClinicId, patientId: PatientId): Promise<readonly Visit[]>;
-  updateStatus(clinicId: ClinicId, visitId: VisitId, status: VisitStatus): Promise<void>;
+  /**
+   * Move a visit to a new status, with the end time the domain decided.
+   *
+   * `endedAt` is a parameter rather than something the repository works out, because
+   * the time a visit ended is a clinical fact and the time the row was written is a
+   * technical one: a visit closed at the end of a long appointment and saved at the
+   * desk afterwards has an end time well before its `updated_at`. A repository that
+   * stamped its own `new Date()` made the endpoint's answer and the row disagree by
+   * however long the request took (ADR 0022).
+   *
+   * `null` means "this visit has no end time" and is written as such — reopening clears
+   * it, and an omitted column would leave the previous end time on a visit whose status
+   * says it is open again.
+   */
+  updateStatus(
+    clinicId: ClinicId,
+    visitId: VisitId,
+    status: VisitStatus,
+    endedAt: IsoDateTime | null,
+  ): Promise<void>;
 
   /**
    * Write a visit that the domain has already built.

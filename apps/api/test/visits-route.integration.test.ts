@@ -39,6 +39,7 @@ import { fileURLToPath } from 'node:url';
 
 import * as schema from '@denti-code-u3/database/schema';
 import { registerVisitsRoutes } from '../src/http/routes/visits.js';
+import { DrizzleVisitRepository } from '../src/infrastructure/persistence/repositories/visit-repository.js';
 import { DrizzleUnitOfWork } from '../src/infrastructure/persistence/postgres/unit-of-work.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
 
@@ -65,6 +66,10 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
   const day = '2026-04-16';
   const NOW = `${day}T14:30:00.000Z`;
 
+  /** An instant on this test's day, for booking a slot that is not already taken. */
+  const at = (hour: number, minute = 0) =>
+    `${day}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00.000Z`;
+
   let app: FastifyInstance;
 
   /**
@@ -90,6 +95,59 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       returning id
     `;
     return (row as { id: string }).id;
+  };
+
+  /**
+   * Start a visit over HTTP and answer its id.
+   *
+   * Going through the endpoint rather than inserting the row is deliberate for the two
+   * closing endpoints' tests: a visit inserted by hand would not prove the route can
+   * find one the API itself wrote, and the clinic scope on `findById` is exactly what
+   * that has to get right.
+   */
+  let bookings = 0;
+
+  const startAndReturnId = async (clinic = clinicId) => {
+    // Each booking gets its own *hour*, because the fixture's 45-minute duration means
+    // two bookings an hour apart still overlap. Two bookings for the same clinician at
+    // overlapping times are refused by `appointments_dentist_no_overlap` — correct, and
+    // not what these tests are about: the first draft of this helper booked a fixed 14:00
+    // every time, so any test starting two visits died on the exclusion constraint before
+    // reaching the assertion it was written for, and the second attempt spaced them by one
+    // *minute* and died the same way.
+    bookings += 1;
+    const appointmentId = await book({ startsAt: at(4 + bookings, 0) });
+    const response = await start({ appointmentId }, clinic);
+    expect(response.statusCode).toBe(201);
+    return (response.json() as { visit: { id: string } }).visit.id;
+  };
+
+  const close = (visitId: string, action: 'complete' | 'reopen', clinic = clinicId) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/${action}`,
+      headers: { 'x-clinic-id': clinic },
+    });
+
+  /**
+   * The row as stored, with the timestamp read as an instant.
+   *
+   * `postgres` answers a `timestamptz` as `2026-04-16 14:30:00+00`, so the comparison is
+   * on `new Date(value).toISOString()` and not on the driver's own formatting — which is
+   * not ISO and is not something a test should be quietly depending on.
+   */
+  const readRow = async (visitId: string) => {
+    const [row] = await sql`select status, ended_at from visits where id = ${visitId}`;
+    const stored = row as { status: string; ended_at: string | null };
+    return {
+      status: stored.status,
+      endedAt: stored.ended_at === null ? null : new Date(stored.ended_at).toISOString(),
+    };
+  };
+
+  const readBooking = async (appointmentId: string) => {
+    const [row] = await sql`select status from appointments where id = ${appointmentId}`;
+    return (row as { status: string }).status;
   };
 
   const start = (payload: unknown, clinic = clinicId) =>
@@ -125,6 +183,10 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
 
     await registerVisitsRoutes(app, {
       unitOfWork: new DrizzleUnitOfWork(db),
+      // The same handle the transaction builds per-transaction repositories from, and
+      // deliberately a *separate* dependency: the two closing endpoints write one row and
+      // are handed the repository directly (ADR 0022).
+      visits: new DrizzleVisitRepository(db),
       clock: { now: () => NOW },
       // The route asks for an id rather than making one, so a test can hand it a fixed
       // generator — but the shape is the real `uuidGenerator`'s.
@@ -327,6 +389,90 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
     const [row] =
       await sql`select count(*)::int as total from visits where appointment_id = ${appointmentId}`;
     expect((row as { total: number }).total).toBe(0);
+  });
+
+  it('completes a visit and answers the end time it wrote', async () => {
+    const visitId = await startAndReturnId();
+
+    const response = await close(visitId, 'complete');
+
+    expect(response.statusCode).toBe(200);
+    // The clock's instant, not a re-read of "now": the route has one clock and passes it
+    // down, so the answer and the row cannot disagree.
+    expect(response.json()).toMatchObject({ status: 'COMPLETED', endedAt: NOW });
+    expect((await readRow(visitId)).endedAt).toBe(new Date(NOW).toISOString());
+  });
+
+  it('re-opens a completed visit and answers without an end time', async () => {
+    const visitId = await startAndReturnId();
+    await close(visitId, 'complete');
+
+    const response = await close(visitId, 'reopen');
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { status: string; endedAt?: string };
+    expect(body.status).toBe('OPEN');
+    expect(body.endedAt).toBeUndefined();
+    expect((await readRow(visitId)).endedAt).toBeNull();
+  });
+
+  it('leaves the appointment alone, which is the decision and not an oversight', async () => {
+    const appointmentId = await book();
+    const started = await start({ appointmentId });
+    const visitId = (started.json() as { visit: { id: string } }).visit.id;
+
+    const response = await close(visitId, 'complete');
+
+    expect(response.statusCode).toBe(200);
+    // ADR 0022, Decision 2: the booking is completed through
+    // `POST /api/v1/appointments/:id/status`. Until then it reads IN_TREATMENT, and the
+    // dashboard keeps counting this patient as in treatment. Coupling them would need a
+    // `COMPLETED → IN_TREATMENT` edge that would appear as a button on every completed
+    // appointment in the clinic.
+    expect(await readBooking(appointmentId)).toBe('IN_TREATMENT');
+  });
+
+  it('answers 409 for a visit that is already closed or already open', async () => {
+    const completedVisitId = await startAndReturnId();
+    await close(completedVisitId, 'complete');
+
+    const again = await close(completedVisitId, 'complete');
+    const openVisitId = await startAndReturnId();
+    const reopenedTwice = await close(openVisitId, 'reopen');
+
+    // One code for both, because the envelope collapses every rule refusal to
+    // `DOMAIN_RULE_VIOLATION` on purpose (see `problem.ts`). The status is the part a
+    // client acts on.
+    expect(again.statusCode).toBe(409);
+    expect(again.json()).toMatchObject({ error: { code: 'DOMAIN_RULE_VIOLATION' } });
+    expect(reopenedTwice.statusCode).toBe(409);
+  });
+
+  it('answers 404 for a visit id that is nowhere', async () => {
+    const response = await close(missingId, 'complete');
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+  });
+
+  it('answers 404 for a visit belonging to another clinic', async () => {
+    const visitId = await startAndReturnId();
+
+    const response = await close(visitId, 'complete', otherClinicId);
+
+    // The same answer as the id that is nowhere: `findById` cannot tell an absent id
+    // from another clinic's and must not (ADR 0014).
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+    expect((await readRow(visitId)).status).toBe('OPEN');
+  });
+
+  it('answers 422 for a path id that is not a uuid, without reaching the database', async () => {
+    const response = await close('not-a-uuid', 'complete');
+
+    // A hand-typed id would otherwise arrive as PostgreSQL's `22P02`, which is a 500.
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
   });
 
   it('takes the clinic from the request scope, not from the booking', async () => {

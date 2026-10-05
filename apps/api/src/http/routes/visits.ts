@@ -22,12 +22,17 @@
  * the booking while the clinician starts the visit — and answering with only one of
  * them would leave the other to be guessed at.
  */
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { Clock, IdGenerator, UnitOfWork } from '@denti-code-u3/domain';
-import { startVisit } from '@denti-code-u3/domain';
-import { startVisitSchema } from '@denti-code-u3/validation';
-import { asAppointmentId, asVisitId, type ClinicId } from '@denti-code-u3/types';
+import {
+  completeVisitRecord,
+  reopenVisitRecord,
+  startVisit,
+  type VisitRepository,
+} from '@denti-code-u3/domain';
+import { startVisitSchema, uuidSchema } from '@denti-code-u3/validation';
+import { asAppointmentId, asVisitId, type ClinicId, type VisitId } from '@denti-code-u3/types';
 
 import { sendProblem } from '../problem.js';
 
@@ -40,13 +45,25 @@ export interface VisitsDependencies {
    * be one refactor away from writing them separately (ADR 0021).
    */
   readonly unitOfWork: UnitOfWork;
+
+  /**
+   * The plain repository the two closing endpoints use.
+   *
+   * A repository here and a transaction there is not an inconsistency: `startVisit`
+   * writes a visit *and* an appointment, and each of these writes one row whose status
+   * and end time travel in the same statement. Giving all three the same shape would
+   * mean either wrapping one statement in a transaction nobody needs or, worse, handing
+   * the two-row operation a plain repository and losing the guarantee that made it
+   * atomic in the first place (ADR 0022).
+   */
+  readonly visits: VisitRepository;
   readonly clock: Clock;
   readonly ids: IdGenerator;
 }
 
 export async function registerVisitsRoutes(
   app: FastifyInstance,
-  { unitOfWork, clock, ids }: VisitsDependencies,
+  { unitOfWork, visits, clock, ids }: VisitsDependencies,
 ): Promise<void> {
   /**
    * `POST /api/v1/visits` — start a visit from an appointment.
@@ -85,5 +102,110 @@ export async function registerVisitsRoutes(
     } catch (error) {
       return sendProblem(reply, request, error);
     }
+  });
+
+  /**
+   * `POST /api/v1/visits/:visitId/complete` — the clinician finished with the patient.
+   *
+   * 200 with the visit as it now stands, including the end time the clock produced. The
+   * body is empty in both directions: nothing about the visit is the caller's to say,
+   * and the end time is a fact the server is the only party that can know.
+   *
+   * **A second endpoint rather than a status body**, because completing and reopening
+   * are not two values of one field — completing sets `endedAt` and reopening clears it
+   * — and because a single `POST /visits/:id/status` would also accept `CANCELLED`, whose
+   * rule exists in the transition table with no use case and no door behind it
+   * (ADR 0022).
+   *
+   * **The appointment is not touched.** The booking is completed through its own
+   * endpoint, and until the front desk does that the agenda still reads `IN_TREATMENT`.
+   * That is a decision with a price, and the test in `visits.integration.test.ts` says
+   * so beside the assertion.
+   */
+  app.post('/api/v1/visits/:visitId/complete', async (request, reply) => {
+    const path = readVisitId(request.params, request.clinicId as ClinicId);
+
+    if (!path.valid) {
+      return sendInvalidVisitId(reply, request);
+    }
+
+    try {
+      const completed = await completeVisitRecord(path.clinicId, path.visitId, {
+        visits,
+        clock,
+      });
+
+      return reply.status(200).send(completed);
+    } catch (error) {
+      return sendProblem(reply, request, error);
+    }
+  });
+
+  /**
+   * `POST /api/v1/visits/:visitId/reopen` — amend a closed visit.
+   *
+   * 200 with the visit as it now stands: open again, and with no end time, because a
+   * status and an end time that disagree would tell the patient profile two stories
+   * about the same row.
+   *
+   * **Nothing records that this happened** beyond the row's `updated_at`, and that is
+   * deliberate rather than an omission to be fixed quietly: an audit trail records who,
+   * and there is no user model to record. The roadmap's "(audited)" is deferred with the
+   * open question that says what would be needed (ADR 0022).
+   */
+  app.post('/api/v1/visits/:visitId/reopen', async (request, reply) => {
+    const path = readVisitId(request.params, request.clinicId as ClinicId);
+
+    if (!path.valid) {
+      return sendInvalidVisitId(reply, request);
+    }
+
+    try {
+      const reopened = await reopenVisitRecord(path.clinicId, path.visitId, { visits, clock });
+
+      return reply.status(200).send(reopened);
+    } catch (error) {
+      return sendProblem(reply, request, error);
+    }
+  });
+}
+
+type ParsedVisitPath =
+  | { readonly valid: true; readonly visitId: VisitId; readonly clinicId: ClinicId }
+  | { readonly valid: false };
+
+/**
+ * The clinic comes from the request scope and never from the path or the body, so it is
+ * read here and handed on branded: a path that has not been through this guard cannot
+ * reach a query (ADR 0014).
+ *
+ * The id is validated with the same `uuidSchema` the appointments route uses, so a
+ * hand-typed id in the URL is a 422 rather than PostgreSQL's `22P02` arriving as a 500.
+ *
+ * **`clinicId` is a required parameter, and the first version of this helper defaulted it
+ * to an empty string.** Both handlers called it with the path alone, so every completion
+ * looked for a visit in the empty clinic: `clinic_id = ''` is not a uuid, and the
+ * `22P02` arrived as a **500** — the precise failure the `uuidSchema` guard one line
+ * above exists to prevent, written by the guard's own author. An empty-string default for
+ * a brand that means "a clinic somebody named" is a hole with a lid on it.
+ */
+function readVisitId(params: unknown, clinicId: ClinicId): ParsedVisitPath {
+  const candidate = (params as { visitId?: unknown } | undefined)?.visitId;
+
+  if (typeof candidate !== 'string' || !uuidSchema.safeParse(candidate).success) {
+    return { valid: false };
+  }
+  return { valid: true, visitId: asVisitId(candidate), clinicId };
+}
+
+/** 422 for an unreadable path id, matching the body-validation shape. */
+function sendInvalidVisitId(reply: FastifyReply, request: FastifyRequest): FastifyReply {
+  return reply.status(422).send({
+    error: {
+      code: 'VALIDATION_ERROR',
+      message: 'The visit id in the path is not a uuid',
+      details: { issues: [{ path: ['visitId'], code: 'invalid_uuid' }] },
+      requestId: request.id,
+    },
   });
 }

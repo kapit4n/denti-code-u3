@@ -186,10 +186,19 @@ same reason — nothing can put an appointment in a room yet.
 - Charges per visit
 - Files/attachments (platform capability)
 - Payments recorded against the visit's charges
-- Visit completion / reopening (audited)
+- Visit completion / reopening
+  - **Done (session 24), minus the audit.** `POST /api/v1/visits/:visitId/complete` and
+    `.../reopen`, both bodyless, both scoped to the request's clinic. The end time is the
+    clock the domain was given, and reopening clears it (ADR 0022). The linked
+    appointment is deliberately left alone — see the ADR for why coupling it would cost a
+    `COMPLETED → IN_TREATMENT` edge and a button on every completed appointment.
+  - **Not done: the audit trail.** There is no authenticated user to attribute a reopening
+    to, so nothing records _that_ it happened beyond `updated_at`. Question 18.
 
-**Exit criteria:** a clinician can complete a visit without leaving the visit
-context.
+**Exit criteria:** not met. A clinician can complete a visit, but not _from_ the visit
+context — there is no visit workspace yet, so both endpoints have no UI. That exit
+criterion is about where the action happens, and it stays open until the workspace
+exists.
 
 ---
 

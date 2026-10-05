@@ -121,12 +121,23 @@ export class DrizzleVisitRepository implements VisitRepository {
    * statement as the status. Two statements would leave a completed visit with no end
    * time visible to anything reading between them.
    */
-  async updateStatus(clinicId: ClinicId, visitId: VisitId, status: VisitStatus): Promise<void> {
+  async updateStatus(
+    clinicId: ClinicId,
+    visitId: VisitId,
+    status: VisitStatus,
+    endedAt: IsoDateTime | null,
+  ): Promise<void> {
     const written = await this.db
       .update(visits)
       .set({
         status,
-        endedAt: status === 'COMPLETED' ? new Date() : null,
+        // The domain's time, not this process's. This line used to be
+        // `status === 'COMPLETED' ? new Date() : null`, which decided a clinical fact
+        // from the wall clock at the moment the statement ran — so the endpoint's answer
+        // and the row it wrote held two different end times, differing by however long
+        // the request took, and a fixed-clock test passed against the use case while
+        // failing against the table (ADR 0022).
+        endedAt: endedAt ? new Date(endedAt) : null,
         updatedAt: new Date(),
       })
       .where(and(eq(visits.id, visitId), eq(visits.clinicId, clinicId)))

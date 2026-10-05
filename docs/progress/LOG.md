@@ -1559,3 +1559,48 @@ the delete tests).
 visit, the visit workspace UI, notes, treatments, charges and payments. No UI exists for
 this slice, so the e2e count is unchanged — the endpoint is reachable but nothing calls
 it yet.
+
+---
+
+## Session 24 — Completing and reopening a visit
+
+**Done.** `completeVisitRecord` and `reopenVisitRecord`; `POST /api/v1/visits/:visitId/complete`
+and `POST /api/v1/visits/:visitId/reopen`, both bodyless; `CompletedVisit`, so a finished
+visit cannot be represented without an end time; `VisitRepository.updateStatus` taking the
+end time as a parameter instead of reading the wall clock; `reopenVisit` losing a timestamp
+parameter it accepted and discarded; ADR 0022; 9 unit tests and 14 integration tests.
+
+**Decided.** The linked appointment is not completed alongside the visit, and reopening
+does not re-open a completed booking. Completing it would need a `COMPLETED → IN_TREATMENT`
+edge and would put a button on every completed appointment in the clinic. The stated
+price — the booking reads `IN_TREATMENT` until the front desk completes it through
+`POST /api/v1/appointments/:id/status` — is asserted by three tests against the table
+rather than left in a comment.
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             542 unit/component (9 new)
+pnpm run test:integration 172 integration (13 files, 14 new, real PostgreSQL 17)
+pnpm run test:e2e         85/85 passed (unchanged — no UI exists for this slice)
+pnpm run db:generate      no schema changes, nothing to migrate
+```
+
+Mutations checked: the repository stamping its own `new Date()` (caught by 4 tests), the
+transition table widened so completion and reopening became idempotent (caught by 3 unit
+and 3 integration tests), and the route helper's empty-string clinic default (caught by 6).
+The appointment-independence assertions could not be mutated today, because
+`AppointmentRepository` has no status-change method for the domain to couple to.
+
+**Defects found and fixed while testing.** The route helper defaulted its clinic to
+`''`, which turned every completion into a `22P02` reported as a 500 — the failure the
+`uuidSchema` guard beside it exists to prevent. Two fixtures repeated the shape of that
+mistake: an `undefined` meaning both "no such visit" and "the default visit", and two
+bookings spaced by a minute that a 45-minute duration made overlap.
+
+**Not done, and deliberately.** The audit trail on reopening (question 18 — there is no
+authenticated actor to record, and the requirements arrive in Milestone 12), walk-ins,
+the visit read side, the visit workspace UI, notes, treatments, charges and payments.
+No UI calls either endpoint, so the e2e count is unchanged.

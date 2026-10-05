@@ -138,10 +138,26 @@ export function startVisitFromAppointment(
 }
 
 /**
- * Close a visit. A visit may only be completed once it has started; reopening a
- * completed visit is allowed (clinicians amend records) and is auditable.
+ * Close a visit. A visit may only be completed once it has started.
+ *
+ * `endedAt` is the time the clinician finished, which is not the same as the time the
+ * row was written — a visit closed at the end of a long appointment and saved at the
+ * desk afterwards has an end time long before its `updated_at`.
  */
-export function completeVisit(visit: Visit, endedAt: IsoDateTime): Visit {
+/**
+ * A completed visit, which by definition has an end time.
+ *
+ * `Visit.endedAt` is optional because a visit that has not finished has none, so the
+ * base type cannot promise it. This intersection can, and it earns its place: the
+ * caller that persists the result writes `ended_at` from it, and without the refinement
+ * that call needs a `??` that would quietly write null for a visit the domain has just
+ * declared finished.
+ */
+export interface CompletedVisit extends Visit {
+  readonly endedAt: IsoDateTime;
+}
+
+export function completeVisit(visit: Visit, endedAt: IsoDateTime): CompletedVisit {
   assertVisitTransition(visit.status, 'COMPLETED');
   if (!visit.startedAt) {
     throw new DomainError('INVALID_INPUT', 'A visit must have started before it can be completed', {
@@ -151,7 +167,19 @@ export function completeVisit(visit: Visit, endedAt: IsoDateTime): Visit {
   return { ...visit, status: 'COMPLETED', endedAt };
 }
 
-export function reopenVisit(visit: Visit, reopenedAt: IsoDateTime): Visit {
+/**
+ * Re-open a closed visit, because clinicians amend records.
+ *
+ * **No timestamp argument, and that is the correction.** This function used to take
+ * `reopenedAt` and return an entity that never mentioned it — the parameter was
+ * accepted and discarded, and the unit test that passed it a literal was asserting that
+ * the discard still happened. There is no column that could hold "when this was
+ * re-opened", and adding one nothing reads is the fault ADR 0018 removed `treatmentId`
+ * for. `updated_at` moves with the write and is the whole trace, until reopening
+ * becomes auditable — which needs a person to attribute it to, and there is no user
+ * model yet (ADR 0022).
+ */
+export function reopenVisit(visit: Visit): Visit {
   assertVisitTransition(visit.status, 'OPEN');
-  return { ...visit, status: 'OPEN', endedAt: undefined, ...(reopenedAt ? {} : {}) };
+  return { ...visit, status: 'OPEN', endedAt: undefined };
 }

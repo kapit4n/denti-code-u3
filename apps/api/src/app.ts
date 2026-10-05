@@ -29,6 +29,7 @@ import { DrizzleAppointmentRepository } from './infrastructure/persistence/repos
 import { DrizzleClinicRepository } from './infrastructure/persistence/repositories/clinic-repository.js';
 import { DrizzleDentistRepository } from './infrastructure/persistence/repositories/dentist-repository.js';
 import { DrizzleChairRepository } from './infrastructure/persistence/repositories/chair-repository.js';
+import { DrizzleVisitRepository } from './infrastructure/persistence/repositories/visit-repository.js';
 import { DrizzleUnitOfWork } from './infrastructure/persistence/postgres/unit-of-work.js';
 import { systemClock } from './infrastructure/clock/system-clock.js';
 import { uuidGenerator } from './infrastructure/id/uuid-generator.js';
@@ -142,6 +143,9 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   // its repositories per transaction, so none of them can write outside it.
   await registerVisitsRoutes(app, {
     unitOfWork: new DrizzleUnitOfWork(connection.db),
+    // A plain repository alongside the transaction, because completing and reopening a
+    // visit write one row each (ADR 0022).
+    visits: new DrizzleVisitRepository(connection.db),
     clock: systemClock,
     ids: uuidGenerator,
   });

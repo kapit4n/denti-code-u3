@@ -146,6 +146,9 @@ describe('completeVisit', () => {
 });
 
 describe('reopenVisit', () => {
+  // The second argument this used to take has been removed: it was accepted and
+  // discarded, and the test that passed a literal timestamp was asserting that the
+  // discard still happened (ADR 0022).
   it('reopens a completed visit for amendment', () => {
     const completed: Visit = {
       id: VISIT,
@@ -157,9 +160,12 @@ describe('reopenVisit', () => {
       status: 'COMPLETED',
     };
 
-    const reopened = reopenVisit(completed, '2026-09-30T15:30:00.000Z');
+    const reopened = reopenVisit(completed);
 
     expect(reopened.status).toBe('OPEN');
+    // Cleared rather than left behind: a row that says it is open again while still
+    // holding the end time of a closing that no longer stands would tell the patient
+    // profile two different stories about the same visit.
     expect(reopened.endedAt).toBeUndefined();
   });
 });
