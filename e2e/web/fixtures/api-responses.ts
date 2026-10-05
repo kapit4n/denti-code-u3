@@ -407,10 +407,109 @@ export const emptyAgenda = { items: [], window: agendaEntries.window } as const;
  * route loads the clinic before it can ask for appointments, so a spec that mocked
  * only `/appointments` would leave `/clinic` unmatched — which the mock answers with
  * 501, by design.
+ *
+ * **Deliberately not the booking endpoints.** This grid does not read dentists or
+ * chairs; only the dialog does, and only once a slot is clicked. Putting them here
+ * would make a read-only spec look like it depends on resources it never asks for.
  */
 export function allAgendaFixtures(): MockedResponses {
   return {
     '/api/v1/clinic': { body: clinicSettings },
     '/api/v1/appointments': { body: agendaEntries },
+  };
+}
+
+export const DENTIST_ID = '11111111-2222-4333-8444-000000000001';
+export const CHAIR_ID = '11111111-5555-4666-8777-000000000001';
+
+/**
+ * `GET /api/v1/dentists?onlyActive=true`, as the booking dialog asks for it.
+ *
+ * Two active clinicians on purpose, because a one-item dropdown cannot tell "the
+ * dialog filtered for active clinicians" from "the dialog happens to have one
+ * clinician". The appointment already on the grid belongs to the first of them, so a
+ * spec booking with the second also proves the choice is not silently reused.
+ */
+export const dentistList = {
+  items: [
+    {
+      id: DENTIST_ID,
+      fullName: 'Dra. Rivera',
+      speciality: 'Endodoncia',
+      color: null,
+      isActive: true,
+    },
+    {
+      id: '11111111-2222-4333-8444-000000000002',
+      fullName: 'Dr. Quispe',
+      speciality: null,
+      color: null,
+      isActive: true,
+    },
+  ],
+} as const;
+
+/**
+ * `GET /api/v1/chairs?onlyActive=true`.
+ *
+ * One chair is in a room and one is not, because the room's name is optional in the
+ * domain (`rooms.room_id` is nullable) and a fixture that always had rooms would let a
+ * client that rendered `null` as a blank pass unnoticed.
+ */
+export const chairList = {
+  items: [
+    {
+      id: CHAIR_ID,
+      roomId: '11111111-6666-4777-8888-000000000001',
+      roomName: 'Sala 1',
+      name: 'Sillón 1',
+      isActive: true,
+    },
+    {
+      id: '11111111-5555-4666-8777-000000000002',
+      roomId: null,
+      roomName: null,
+      name: 'Sillón 4',
+      isActive: true,
+    },
+  ],
+} as const;
+
+/**
+ * Every endpoint the booking dialog needs, on top of the grid's.
+ *
+ * Separate from `allAgendaFixtures` because the dialog is only ever opened by a spec
+ * that clicks a slot, and only then are these four requests made.
+ */
+export function bookingFixtures(): MockedResponses {
+  return {
+    ...allAgendaFixtures(),
+    '/api/v1/dentists': { body: dentistList },
+    '/api/v1/chairs': { body: chairList },
+    '/api/v1/patients': { body: PATIENT_LIST_RESPONSE },
+  };
+}
+
+/**
+ * The row a booking became, as `POST /api/v1/appointments` returns it.
+ *
+ * **The server's version of everything**, including the end time and the names: a
+ * fixture echoing back the request would let a client that worked the times out for
+ * itself pass, which is the mistake this whole path is built to avoid.
+ */
+export const BOOKED_APPOINTMENT_ID = '11111111-7777-4888-8999-000000000001';
+
+export function bookedAppointment(overrides: Record<string, unknown> = {}): Fixture['body'] {
+  return {
+    id: BOOKED_APPOINTMENT_ID,
+    patientId: ANA_ID,
+    patientFirstName: 'Ana',
+    patientLastName: 'García',
+    dentistId: DENTIST_ID,
+    dentistFullName: 'Dra. Rivera',
+    startsAt: '2026-10-05T15:00:00.000Z',
+    endsAt: '2026-10-05T15:30:00.000Z',
+    status: 'SCHEDULED',
+    ...overrides,
   };
 }

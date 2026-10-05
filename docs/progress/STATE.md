@@ -64,22 +64,22 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 18)
+## Verification log (last run, session 20)
 
 | Command                     | Result                                              |
 | --------------------------- | --------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                    |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`               |
 | `pnpm run format`           | applied; `pnpm run format:check` clean              |
-| `pnpm run test`             | 12/12 tasks pass — 442 tests (9 new)                |
+| `pnpm run test`             | 12/12 tasks pass — 465 tests (23 new)               |
 | `pnpm run test:integration` | 11 files, 136 tests pass against real PostgreSQL 17 |
 | `pnpm run build`            | 5/5 tasks pass                                      |
-| `pnpm run test:e2e`         | 60 passed (no UI moved this session)                |
+| `pnpm run test:e2e`         | 69 passed (9 new, all booking)                      |
 | `pnpm run guard:boundaries` | OK                                                  |
 | `pnpm run db:migrate`       | no migration needed — this session adds no column   |
 
-Per-package unit/component tests: domain 154, validation 50, api-client 15, api 58
-(integration skipped here, run separately), app 162, desktop 3.
+Per-package unit/component tests: domain 154, validation 57, api-client 15, api 58
+(integration skipped here, run separately), app 178, desktop 3.
 
 **Two assertions in the new integration test were wrong before the code was, and the
 defect check caught them.** The first version named the clinicians `Dr. Álvaro` and
@@ -98,6 +98,19 @@ assertion, not in the write: the third request is the range being re-read, which
 the behaviour item 6 claims. The stub could not see the request method, so a write
 and the read it triggers were answered by the same fixture; `renderCalendar` now
 passes the request to the reply, which is what let the test tell them apart.
+
+**The booking dialog had a hole, and the test that found it was about something
+else.** A chair id that Zod's `uuid` refuses — the right shape, the wrong variant
+nibble — left the submit button doing nothing at all: the form refused, and because
+`chairId` and `notes` had no message of their own, nothing on screen said why. That
+is the one failure mode a form must not have, so every field now renders its own
+message. The test that caught it was asserting the _body_ of a successful booking;
+the chair id in that fixture was one the mock invented, and Zod checked it. Two
+other test-only defects surfaced in the same run: an empty slot click that had to be
+wrapped in `act` to flush, and a `getByLabel('Patient')` in Playwright that matched
+both the dialog's picker and the header's search — the failure pointed at the
+submission rather than at the mis-scoped locator, which is why the e2e helpers are
+now scoped to the dialog.
 
 **A silent failure found by the need for this session's feature, not by a test.**
 The desktop app could not reach its own API. `API_PORT` moved from 3000 to 3010 in
@@ -204,7 +217,8 @@ both and neither existed yet.
   `AppointmentRepository` port losing its five speculative methods in session 13.
 - **No client query hooks were added.** `useDentists`/`useChairs` would have no
   caller until the booking form exists, and this project's rule is that a hook with
-  no caller is a promise the first consumer has to keep or break loudly.
+  no caller is a promise the first consumer has to keep or break loudly. (Session 20
+  added both, in `agenda/queries/bookable-resources-query.ts` — the caller arrived.)
 - **The seed was extended rather than the endpoint designed around the seed.** An
   endpoint returning an empty list in the only database anyone will open is not a
   working feature, so the seed gained 2 rooms and 4 chairs and the appointments are
@@ -556,11 +570,16 @@ editing. Both sides now go through `PatientRepository`. Remaining:
      appointments they worked. See ADR 0020 for how it is wired, which is the
      part worth reading.
 
-   **Still to do: the booking form** — not started, no longer blocked. The form,
-   the empty-slot click (`selectable`), and the "New Visit" and next-appointment
-   actions it un-disables follow from the two lists above. `api-client` write
-   methods for the three endpoints are called directly by the mutations, as
-   every other feature does.
+   - **The booking form exists (session 20).** Clicking an empty slot opens
+     `AppointmentBookingDialog`; the grid is the time picker, so the dialog asks
+     only who, for how long and in which chair, and never shows a time input.
+     Patient (searchable), clinician, chair, duration and notes, all validated by
+     `createAppointmentFormSchema` — which reuses the API's own field schemas
+     rather than restating them. The click's `Date` is the instant that is sent.
+
+   **Still to do:** the "New Visit" and next-appointment actions on the patient
+   profile, which open the same dialog from a different screen. The booking path
+   itself is complete.
 
 7. [ ] Visits, the clinical timeline, treatments, payments, inventory, reports.
 

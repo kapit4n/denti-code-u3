@@ -46,6 +46,62 @@ export const createAppointmentSchema = z.object({
 });
 
 /**
+ * A field that reads an empty input as "not supplied".
+ *
+ * Copied from the patient schemas rather than imported: `blankIsAbsent` is three
+ * lines of implementation, and sharing it would mean one of the two files importing
+ * from the other, which makes the boundary schemas depend on each other's shape.
+ * The comment on the patient copy explains why this is `z.union` and not
+ * `z.preprocess` — the input type must survive, or React Hook Form cannot derive
+ * its field values.
+ */
+const blankText = z
+  .string()
+  .trim()
+  .refine((value) => value === '');
+
+function blankIsAbsent<TField extends z.ZodType>(field: TField) {
+  return z
+    .union([blankText, field])
+    .transform((value) => (value === '' ? undefined : value))
+    .optional();
+}
+
+/**
+ * The booking form's view of `createAppointmentSchema`.
+ *
+ * Same construction as the patient forms: every field is taken from
+ * `createAppointmentSchema.shape`, so the form accepts exactly what the API accepts
+ * and `appointments.test.ts` asserts the two still have the same keys. A booking
+ * dialog that sent a field the API refuses would be a form whose only symptom is a
+ * 422 the user cannot act on.
+ *
+ * Two differences from the API schema, both about a form rather than a request:
+ *
+ *  - **`startsAt` is a default, not an input.** The grid is the time picker — the
+ *    user clicks the slot and the dialog opens for it — so the instant arrives as a
+ *    value and is never typed. It stays in the schema so that the whole request is
+ *    validated by one resolver, including the field the user cannot see.
+ *  - **Blanks mean absent.** A dialog submits `''` for a chair nobody chose and a
+ *    notes field nobody typed, and the API rejects `''` for the same `min`-style
+ *    reason it rejects an empty name. Without this, booking without a chair would
+ *    be impossible.
+ */
+export const createAppointmentFormSchema = z.object({
+  // Both ids are the same `uuid` the API checks; only the message differs, and it
+  // differs because of who is looking at it. Zod's default for a bad uuid is "Invalid
+  // uuid", which is what a receptionist would read if the dialog forgot to mark the
+  // two required pickers — and "Invalid uuid" cannot be acted on. The field is a
+  // choice, so the message names the choice.
+  patientId: z.uuid('Choose a patient'),
+  dentistId: z.uuid('Choose a clinician'),
+  chairId: blankIsAbsent(createAppointmentSchema.shape.chairId),
+  startsAt: createAppointmentSchema.shape.startsAt,
+  durationMinutes: createAppointmentSchema.shape.durationMinutes,
+  notes: blankIsAbsent(createAppointmentSchema.shape.notes),
+});
+
+/**
  * Moving an appointment's time, dentist or chair.
  *
  * Every field is optional and absent means "leave it": a front desk that only
@@ -94,6 +150,10 @@ export const agendaRangeQuerySchema = z
   });
 
 export type CreateAppointmentInput = z.infer<typeof createAppointmentSchema>;
+/** What the booking dialog holds while it is open. */
+export type CreateAppointmentFormValues = z.input<typeof createAppointmentFormSchema>;
+/** What the dialog hands to the mutation: blanks already resolved to absent. */
+export type CreateAppointmentFormOutput = z.output<typeof createAppointmentFormSchema>;
 export type RescheduleAppointmentInput = z.infer<typeof rescheduleAppointmentSchema>;
 export type TransitionAppointmentInput = z.infer<typeof transitionAppointmentSchema>;
 export type AgendaRangeQuery = z.infer<typeof agendaRangeQuerySchema>;

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   agendaRangeQuerySchema,
   appointmentStatusSchema,
+  createAppointmentFormSchema,
   createAppointmentSchema,
   rescheduleAppointmentSchema,
   scheduleConflictDetailsSchema,
@@ -215,5 +216,79 @@ describe('scheduleConflictDetailsSchema', () => {
 
   it('refuses an envelope with no conflict list', () => {
     expect(scheduleConflictDetailsSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('createAppointmentFormSchema', () => {
+  const complete = {
+    patientId: PATIENT_ID,
+    dentistId: DENTIST_ID,
+    chairId: '55555555-5555-4555-8555-555555555555',
+    startsAt: '2026-09-30T14:00:00.000Z',
+    durationMinutes: 30,
+    notes: 'First visit',
+  };
+
+  it('covers exactly the fields the API accepts, so the form cannot send one it refuses', () => {
+    // The patient schemas make the same assertion for the same reason: a form field
+    // with no counterpart in the request schema is a field whose only symptom is a
+    // 422 the user cannot act on.
+    expect(Object.keys(createAppointmentFormSchema.shape).sort()).toEqual(
+      Object.keys(createAppointmentSchema.shape).sort(),
+    );
+  });
+
+  it('reads an empty chair and an empty note as absent, because a form submits them', () => {
+    // Without this, booking without a chair is impossible: the API's `optional`
+    // accepts `undefined` and refuses `''`.
+    const result = createAppointmentFormSchema.parse({
+      ...complete,
+      chairId: '',
+      notes: '',
+    });
+
+    expect(result.chairId).toBeUndefined();
+    expect(result.notes).toBeUndefined();
+  });
+
+  it('reads whitespace as absent too, since that is what an untouched box holds', () => {
+    const result = createAppointmentFormSchema.parse({ ...complete, notes: '   ' });
+
+    expect(result.notes).toBeUndefined();
+  });
+
+  it('keeps a chair and a note the user did fill in', () => {
+    const result = createAppointmentFormSchema.parse(complete);
+
+    expect(result.chairId).toBe(complete.chairId);
+    expect(result.notes).toBe('First visit');
+  });
+
+  it('says what to do about the two required pickers, because "Invalid uuid" is not actionable', () => {
+    const result = createAppointmentFormSchema.safeParse({
+      ...complete,
+      patientId: '',
+      dentistId: '',
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const messages = result.error.issues.map((issue) => issue.message);
+    expect(messages).toContain('Choose a patient');
+    expect(messages).toContain('Choose a clinician');
+  });
+
+  it('validates the instant it was given, even though the user never typed one', () => {
+    // The start comes from the clicked slot rather than from an input, which makes it
+    // exactly the field a form forgets to check.
+    const result = createAppointmentFormSchema.safeParse({ ...complete, startsAt: 'tomorrow' });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('refuses a duration the API would refuse', () => {
+    const result = createAppointmentFormSchema.safeParse({ ...complete, durationMinutes: 1 });
+
+    expect(result.success).toBe(false);
   });
 });

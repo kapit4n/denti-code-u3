@@ -18,9 +18,10 @@
  * **Business hours** come from the clinic's opening hours rather than a constant, so
  * the shaded non-working region is the clinic's own.
  *
- * **Writes.** Three gestures, and none of them decides anything about the schedule:
+ * **Writes.** Four gestures, and none of them decides anything about the schedule:
  * a drag and a resize are read by `from-calendar-event.ts` into a domain intent and
- * sent to the API, and a click opens the quick panel. The grid keeps the block where
+ * sent to the API, a click on a block opens the quick panel, and a click on an empty
+ * slot opens the booking dialog. The grid keeps the block where
  * it was dropped while the request is in flight — that is FullCalendar's own
  * feedback, not a second source of truth — and reverts it if the server refuses,
  * which is what happens when two receptionists take the same slot. There is no
@@ -38,7 +39,10 @@ import luxonPlugin from '@fullcalendar/luxon3';
 // the time-grid plugin draws the grid and knows nothing about gestures. `editable`,
 // `eventDrop` and `eventResize` are its options, so without it the grid renders and
 // every one of those props is rejected by the type checker rather than quietly ignored.
-import interactionPlugin from '@fullcalendar/interaction';
+// `DateClickArg` comes from the interaction plugin rather than from core: the plugin
+// owns the gesture, and the type came with it. Importing it from core would be a guess
+// that happens to work until the plugin moves it.
+import interactionPlugin, { type DateClickArg } from '@fullcalendar/interaction';
 import type { DatesSetArg, EventClickArg } from '@fullcalendar/core';
 import type { AgendaEntry, Clinic } from '@denti-code-u3/domain';
 import { AlertCircle, CalendarDays } from 'lucide-react';
@@ -50,6 +54,7 @@ import { agendaEntryFromEvent, toCalendarEvents } from '../adapters/to-calendar-
 import { toBusinessHours, toScrollTime } from '../adapters/to-business-hours.js';
 import { describeAppointmentFailure } from '../describe-appointment-failure.js';
 import { AppointmentQuickPanel } from './appointment-quick-panel.js';
+import { AppointmentBookingDialog } from './appointment-booking-dialog.js';
 
 export interface AgendaCalendarProps {
   readonly clinic: Clinic;
@@ -70,6 +75,14 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
 
   /** The appointment the quick panel is showing, or none. */
   const [selected, setSelected] = useState<AgendaEntry | undefined>(undefined);
+
+  /**
+   * The slot a booking is being made against, or none.
+   *
+   * The instant the user clicked, and nothing else. The grid is the time picker, so
+   * the dialog is not asked when — see `appointment-booking-dialog.tsx`.
+   */
+  const [bookingSlot, setBookingSlot] = useState<string | undefined>(undefined);
 
   /**
    * The last refused write, in a sentence.
@@ -137,6 +150,22 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
     setSelected(agendaEntryFromEvent(click.event));
   }, []);
 
+  /**
+   * An empty slot was clicked: open the booking dialog for it.
+   *
+   * `arg.date` is a `Date`, i.e. an instant — which is what the API wants. Converting
+   * here rather than letting the dialog format it keeps the one representation of "the
+   * time the user picked" an ISO string, the same one every query and every event on
+   * this grid uses.
+   *
+   * No rule is applied to the slot. A click at 03:00 opens the dialog and the domain
+   * refuses the booking with the clinic's actual hours, which is a more useful answer
+   * than a click that silently does nothing.
+   */
+  const handleSlotClick = useCallback((click: DateClickArg) => {
+    setBookingSlot(click.date.toISOString());
+  }, []);
+
   return (
     <section aria-label="Agenda" className="flex flex-col gap-3">
       <div
@@ -176,6 +205,11 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
           eventDrop={(arg) => handleScheduleChange(arg, arg.revert)}
           eventResize={(arg) => handleScheduleChange(arg, arg.revert)}
           eventClick={handleEventClick}
+          // Makes an empty slot clickable, and fires `dateClick` for it. Without both
+          // the grid is read-only in the one place a booking can start, and the only
+          // way to create an appointment would be a form on another route.
+          selectable
+          dateClick={handleSlotClick}
           slotMinTime="06:00:00"
           slotMaxTime="21:00:00"
           height="auto"
@@ -238,6 +272,21 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
           entry={selected}
           clinic={clinic}
           onClose={() => setSelected(undefined)}
+        />
+      ) : null}
+
+      {/*
+        Mounted only while a slot is chosen, for the same reason the quick panel is:
+        it opens on the click rather than on the click plus an effect that has to
+        notice. It closes once the API agrees, and the grid redraws from the
+        invalidation — so a block appears on the agenda only because the server said
+        it did.
+      */}
+      {bookingSlot ? (
+        <AppointmentBookingDialog
+          startsAt={bookingSlot}
+          clinic={clinic}
+          onClose={() => setBookingSlot(undefined)}
         />
       ) : null}
     </section>

@@ -1239,3 +1239,87 @@ pnpm run db:migrate       no migration needed — no column added
 **Not done, and deliberately:** the booking form. This is the rule it inherits, and it
 is the server-side half of the answer to question 17 — the browser no longer has to
 decide who may be booked, so it can filter for convenience without being the policy.
+
+---
+
+## Session 20 — the booking form: a slot, and who is coming to it
+
+The empty-slot gesture the grid has been missing since it could draw. Clicking a free
+slot opens a dialog; the dialog asks who, for how long and in which chair, and posts to
+`POST /api/v1/appointments`. Nothing else about the grid changed: a click on a block
+still opens the quick panel, and a drag is still a drag.
+
+**Decisions worth stating**
+
+- **The grid is the time picker.** `dateClick` gives a `Date`; that instant is the
+  `startsAt` that is sent. There is deliberately no time input in the dialog: a second
+  control for the same decision is a second opinion about it, and the grid already
+  answers it by direct manipulation. To move a booking later, drag it; to book a
+  different hour, close the dialog and click that one.
+- **The dialog judges nothing.** No opening-hours check, no overlap check, no
+  "inactive" check beyond what the two lists already asked for. Every click opens the
+  dialog, including a slot at 03:00, and the domain's refusal is what is displayed.
+  This is the same argument that keeps the overlap rules out of `agenda-calendar.tsx`:
+  a second implementation of a rule answers differently from the first the day they
+  drift, and the browser is the one that is wrong.
+- **`createAppointmentFormSchema` reuses the API's field schemas**
+  (`createAppointmentSchema.shape.startsAt`, `.shape.durationMinutes`, …) instead of
+  restating them. A field cannot be accepted by the dialog and refused by the endpoint,
+  and the shared strings cannot drift apart.
+- **Required messages say what to do, not what is wrong.** Zod's default for a bad uuid
+  is "Invalid uuid", which is not something a receptionist can act on; the two pickers
+  say `Choose a patient` and `Choose a clinician`.
+- **Durations are a short list, filtered by the domain's own bounds.** "How long" is a
+  clinic convention rather than a number each receptionist invents, and a free field
+  would produce blocks of whatever height the person typed.
+- **The chair dropdown maps "no chair" to the form's empty string.** Radix reserves `''`
+  for "nothing chosen", so an explicit sentinel is needed to go _back_ to no chair — and
+  the sentinel is mapped at the dropdown boundary, because the schema that validates
+  this form is also the schema the API validates with and must not learn about a word
+  that exists only because of a component library.
+- **`PatientPicker` is a combobox over the existing `usePatientList`.** Two characters
+  before querying, eight results, and the highlight moves with `aria-activedescendant`
+  rather than by moving focus — focus would leave the input and lose the text that
+  narrowed the list. The picker is controlled (`{id, label}`), because the form needs
+  the id and the box needs the name.
+- **The write is not optimistic.** The dialog closes when the API agrees and the day is
+  re-read, so the block on the grid is the server's answer rather than a splice of the
+  form's values (ADR 0007).
+
+**What the tests caught**
+
+- **A field with nowhere to report an error.** A chair id Zod's `uuid` refused — right
+  shape, wrong variant nibble — made the submit button do nothing at all, silently,
+  because `chairId` and `notes` had no message. Every field now renders its own. The
+  test that found it was asserting the _body_ of a successful booking; the id in its
+  fixture was one the mock had invented and Zod checked it. Zod's `uuid` validates the
+  version **and** the variant nibble, which is worth knowing before writing fixtures.
+- **A stale test asserting the gap.** `agenda-calendar.test.tsx` had
+  "offers no way to create an appointment from an empty slot yet", written on purpose
+  while the read endpoints did not exist. It is now three tests of the behaviour.
+- **Playwright's `getByLabel('Patient')` matched both the dialog's picker and the
+  header's search.** The failure pointed at the submission, not at the mis-scoped
+  locator; the e2e helpers are now scoped to the dialog.
+- **Radix leaves `body { pointer-events: none }` behind in jsdom**, so user-event
+  refuses every later click. The check is turned off in this file with a comment
+  explaining why, rather than scrubbing the attribute between steps.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             465 unit/component (12/12 tasks, 23 new)
+pnpm run test:integration 136 integration (11 files, real PostgreSQL 17)
+pnpm run test:e2e         69/69 passed (9 new, all booking)
+pnpm run db:migrate       no migration needed — no column added
+```
+
+No server code changed: the validation package gained a schema and nothing else, so the
+API's behaviour is untouched by this session.
+
+**Not done, and deliberately:** the "New Visit" and next-appointment actions on the
+patient profile. They open the same dialog from a different screen and are the next
+thing on this milestone.

@@ -10,7 +10,7 @@
 
 import { ApiClient } from '@denti-code-u3/api-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -406,12 +406,53 @@ describe('AgendaCalendar', () => {
     expect(screen.queryByTestId('appointment-quick-panel')).toBeNull();
   });
 
-  it('offers no way to create an appointment from an empty slot yet', () => {
+  it('opens the booking dialog for the slot the user clicked', async () => {
     renderCalendar();
 
-    // Booking is not on this screen because there is no way to choose a dentist: no
-    // read endpoint for them exists yet. A live-looking empty-slot gesture that ended
-    // in a form with a required field it could not fill would be the worst of both.
-    expect(latest().selectable).toBeFalsy();
+    // `selectable` and `dateClick` together: the first makes empty slots clickable at
+    // all, the second reports which one. A grid with only the first would swallow the
+    // gesture. This test replaces one that asserted the opposite on purpose — the two
+    // read endpoints the form needs now exist.
+    expect(latest().selectable).toBeTruthy();
+
+    const dateClick = latest().dateClick as (arg: unknown) => void;
+    await act(async () => {
+      dateClick({ date: new Date('2026-10-05T14:00:00.000Z') });
+    });
+
+    expect(await screen.findByTestId('appointment-booking-dialog')).toBeInTheDocument();
+  });
+
+  it('closes the booking dialog without writing anything when it is dismissed', async () => {
+    const { fetchImplementation } = renderCalendar();
+
+    const dateClick = latest().dateClick as (arg: unknown) => void;
+    await act(async () => {
+      dateClick({ date: new Date('2026-10-05T14:00:00.000Z') });
+    });
+    await screen.findByTestId('appointment-booking-dialog');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(screen.queryByTestId('appointment-booking-dialog')).toBeNull());
+    // Stopping looking at a slot is not a cancellation: no booking was made, so no
+    // POST may have happened. This is the assertion that makes it a dismissal rather
+    // than a silent write.
+    expect(
+      fetchImplementation.mock.calls.filter(([url]) => String(url).endsWith('/appointments')),
+    ).toHaveLength(0);
+  });
+
+  it('does not pre-judge the slot: a click at 03:00 still opens the dialog', async () => {
+    renderCalendar();
+
+    const dateClick = latest().dateClick as (arg: unknown) => void;
+    await act(async () => {
+      dateClick({ date: new Date('2026-10-05T03:00:00.000Z') });
+    });
+
+    // The domain owns opening hours and says what they are. A click that silently did
+    // nothing would answer a different question and explain nothing.
+    expect(await screen.findByTestId('appointment-booking-dialog')).toBeInTheDocument();
   });
 });

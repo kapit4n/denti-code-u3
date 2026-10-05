@@ -122,8 +122,8 @@ natural output of Milestone 5. See `docs/progress/STATE.md`.
 **Exit criteria:** conflicts are detected by the domain/API; the calendar never
 owns business rules; the clinic timezone is respected.
 
-**Status: the grid, the server's write side, and moving/updating an appointment are
-done; creating one is not.** `/agenda` draws day, week and month views of
+**Status: the grid, the server's write side, and every write the agenda offers are
+done — including creating one.** `/agenda` draws day, week and month views of
 `GET /api/v1/appointments` through FullCalendar behind two adapters (ADR 0011), in the
 timezone and opening hours the API reports for the clinic. The grid fetches exactly
 the window it is showing and re-fetches on every navigation. Cancelled and no-show
@@ -140,11 +140,19 @@ The grid now uses them: a drag or a resize becomes a domain intent and a write, 
 click opens a quick panel offering only the transitions the domain allows, and every
 write is non-optimistic — the grid redraws from the API's answer and a refused gesture
 is reverted. Conflicts are reported as the hour that is taken, in the clinic's timezone
-rather than the visitor's. `GET /api/v1/dentists` and `GET /api/v1/chairs` name the
-two things a booking is made against, which is what the booking form was blocked on.
+rather than the visitor's.
 
-Not started: the booking form, the empty-slot click (`selectable`), dentist and chair
-filters, and the `api-client` write methods the form will need.
+Creating an appointment is a click on an empty slot. **The grid is the time picker**:
+the click is the decision of when, and the dialog asks only who, for how long and in
+which chair — patient by search, clinician and chair from
+`GET /api/v1/dentists?onlyActive=true` and `GET /api/v1/chairs?onlyActive=true`, with
+the API still enforcing the rule behind them (ADR 0020). The dialog decides nothing
+about whether the booking is allowed: every slot opens it, and a refusal from the
+domain is what is displayed.
+
+Not started: dentist and chair filters above the grid, and the "New Visit" and
+next-appointment actions on the patient profile — which open this same dialog from a
+different screen.
 
 ---
 
