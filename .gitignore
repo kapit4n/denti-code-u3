@@ -31,6 +31,11 @@ database/**/*.local.json
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
 
+# Kept desktop builds (scripts/desktop-pin.mjs). Tens of megabytes of binary per
+# entry, local to one machine, worthless to anyone else — `pnpm run desktop:pins`
+# lists what is there and `desktop:forget` clears it.
+.desktop-known-good/
+
 # editors / OS
 .DS_Store
 .idea/

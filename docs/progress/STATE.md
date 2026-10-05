@@ -1,8 +1,9 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 15 (the appointment write side: three domain use cases,
-> `POST /api/v1/appointments`, `PUT …/schedule`, `POST …/status`, and the tenant
-> foreign keys that stop a booking naming another clinic's patient)
+> Last updated: session 16 (the desktop app can always be tested:
+> `pnpm run desktop:pin` keeps a build that worked and `pnpm run desktop:run`
+> launches it without the working tree — plus the CSP fix that made the desktop
+> app unable to reach its own API)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -43,7 +44,9 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
       computed and never stored, 0013 shells declare a target and the shared app
       owns everything else, 0014 clinic scoping is explicit and never inferred
       from ambient state, 0015 patient record numbers are allocated by the server,
-      per clinic and atomically
+      per clinic and atomically, 0016 patient name search folds accents, 0017 the
+      agenda filters by overlap and counts only minutes inside the day, 0018 the
+      appointment write side, 0019 keep the last desktop build that worked
 - [x] pnpm + Turborepo workspace that installs cleanly
 - [x] TypeScript strict everywhere (base + per-package configs)
 - [x] ESLint (flat config, ESLint 9) + Prettier + boundary guard wired into
@@ -61,7 +64,7 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 15)
+## Verification log (last run, session 16)
 
 | Command                     | Result                                                      |
 | --------------------------- | ----------------------------------------------------------- |
@@ -77,7 +80,22 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 | `pnpm run guard:boundaries` | OK, with one pre-existing warning (see Open questions)      |
 
 Per-package unit/component tests: domain 145, validation 41, api-client 15, api 53
-(integration skipped here, run separately), app 107.
+(integration skipped here, run separately), app 107, desktop 3.
+
+**A silent failure found by the need for this session's feature, not by a test.**
+The desktop app could not reach its own API. `API_PORT` moved from 3000 to 3010 in
+session 8 and `API_PORT`, `VITE_API_URL` and the Zod defaults all moved with it —
+but the CSP in `apps/desktop/src-tauri/tauri.conf.json` did not, and nothing reads
+that file. The webview therefore blocked every request the desktop app made: a
+shell that rendered correctly over an empty agenda, with nothing in any log and no
+error to follow. No web test could have found it, because the browser deployment
+has no such gate; and the failure looks identical to a bug in the app rather than
+in its host configuration.
+
+`apps/desktop/test/tauri-config.test.ts` now asserts the CSP's `connect-src`
+allows the origin `.env.example` names, and refuses `*` or `unsafe-eval`. The
+assertion was verified the way this project verifies guards: by putting port 3000
+back and watching it fail.
 
 **Three things this session proved rather than assumed.**
 
@@ -129,6 +147,15 @@ is a small pre-existing gap and was left alone rather than widened into.
 both and neither existed yet.
 
 ## Decisions made this session (not yet in ADRs)
+
+- **The native build is a kept artifact, not a rebuild (ADR 0019).** `desktop:pin`
+  runs `tauri build --debug --no-bundle` and keeps the binary in a gitignored
+  directory with a manifest; `desktop:run` executes that file and never compiles.
+  The debug profile is deliberate: the frontend inside is still a production
+  build, and a command that takes minutes is a command nobody runs often enough to
+  keep a fallback current. `tauri dev` cannot be kept at all — it serves the assets
+  from the working tree, so the copy would break exactly when it was needed.
+  Pinning is manual because a build that compiles is not a build that works.
 
 - **A booking is always created `SCHEDULED`, and confirming is a separate call.**
   A create form that could confirm would be recording an agreement the patient
@@ -248,9 +275,16 @@ function`). ESLint 10 buys nothing here.
 See `docs/open-questions.md`. The Phase 1 question about the hidden `ends_at`
 column is **closed** by ADR 0012. Still open:
 
-- **Native Tauri build unverified.** The Rust/Tauri build needs WebKitGTK system
-  libraries on Linux. The frontend half of the desktop shell builds and its output
-  is byte-identical to the web build, but `tauri build` has not been run.
+- **A release build and the installers are unverified.** A native _debug_ build
+  completes and runs on this machine (session 16: ADR 0019), and the webview
+  bundle's output is byte-identical to the web build. `tauri build` in the release
+  profile, and the `deb`/`msi`/`app`/`dmg` bundles, have not been run. Nothing in
+  manual testing depends on them; signing and packaging do.
+- **The desktop app can always be launched, but nothing asserts that it works.**
+  `pnpm run desktop:pin` / `desktop:run` (ADR 0019) means a broken tree never
+  stops a test session. What is missing is coverage of the desktop app's own
+  behaviour: the CSP is guarded by a test, and the next silent failure of that
+  shape would be as invisible as the last one.
 - **`design-mockup/dashboard-design.png` has not been analysed.** The provisional
   brand palette in `packages/app/src/styles/globals.css` needs to be confirmed
   against the supplied reference before any feature work begins.
@@ -651,3 +685,38 @@ dentist instead of attributing a visit to nobody.
 warning) · format · build 5/5 · 360 unit/component (45 new) · 118 integration (25
 new) · 56/56 e2e (unchanged, no UI moved) · migration applied to a live database and
 its two guarantees checked by hand.
+
+Session 16: made the desktop app testable when the working tree is not. `pnpm run
+desktop:pin` builds with `tauri build --debug --no-bundle` — a production frontend
+with its assets embedded in the binary — and keeps the file in a gitignored
+directory beside a manifest naming the commit it came from; `pnpm run desktop:run`
+executes that file and never compiles, so a half-finished refactor can no longer
+take the only way to open a native window away. ADR 0019 records why the obvious
+alternative does not work: `tauri dev` serves its assets from the working tree, so
+a snapshot of it breaks exactly when it is needed.
+
+The need for the feature found a bug that had been sitting in plain sight.
+`API_PORT` moved from 3000 to 3010 in session 8, and `API_PORT`, `VITE_API_URL` and
+the Zod defaults all moved with it; the CSP in `tauri.conf.json` did not, and
+nothing reads that file. The webview had been refusing every API call the desktop
+app made — a shell that rendered correctly over an empty agenda, with no error in
+any log. The browser deployment has no such gate, so no web test could ever have
+found it. `apps/desktop/test/tauri-config.test.ts` now asserts the CSP's
+`connect-src` allows the origin `.env.example` names, verified by putting the old
+port back and watching it fail.
+
+Two smaller corrections: `docs/desktop.md` §6 listed `build:desktop` and
+`tauri:build`, neither of which has ever existed, and §8 still called the native
+build unverified — it completes here, in 38 seconds incrementally. What remains
+unverified is narrower and now says so: the release profile and the
+`deb`/`msi`/`app`/`dmg` bundles.
+
+Building the native app needed 12 GB that the disk did not have (117 GB, 115 MB
+free), so Docker's build cache, the Playwright browsers and the Chrome cache were
+cleared. Playwright chromium was reinstalled immediately and `pnpm run test:e2e`
+is green again.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard · format · build
+5/5 · 364 unit/component (3 new) · 118 integration · 56/56 e2e · `desktop:pin`
+produces a runnable window, `desktop:run 2` and two error paths behave, and the
+captured window is a rendered app rather than a blank one.

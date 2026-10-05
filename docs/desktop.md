@@ -82,19 +82,47 @@ rule 18).
 - No filesystem-wide access; no shell plugin; no arbitrary command execution.
 - The webview loads only local bundled assets in release builds (no remote URL
   loading), with a CSP that disallows remote script execution.
+- `connect-src` in that CSP names the API origin, and it has to be kept in step
+  with `VITE_API_URL`. When `API_PORT` moved to 3010 the CSP was left at 3000 and
+  the desktop app blocked every request it made — a shell that rendered over an
+  empty agenda, with nothing in any log.
+  `apps/desktop/test/tauri-config.test.ts` asserts the two agree, against
+  `.env.example` so a clinic LAN URL in a developer's own `.env` cannot fail it.
 - Clinical data is never written to the desktop app's local store; only UI
   preferences are persisted.
 
 ## 6. Development
 
 ```bash
-pnpm run dev:desktop    # vite dev server (5174) + tauri dev window
-pnpm run build:desktop  # production bundle
-pnpm run tauri:build    # native installers (bundle)
+pnpm run dev:desktop      # vite dev server (5174) + tauri dev window
+pnpm run build            # the webview bundle for every package, including this one
 ```
 
 Tauri dev expects the Vite dev server on the configured port; the config uses
-`beforeDevCommand` to start it automatically.
+`beforeDevCommand` to start it automatically. `tauri dev` is for writing the app.
+It is not a build you can keep, because the webview loads from `devUrl` and the
+assets are served from the working tree at that moment.
+
+### Keeping a build that works
+
+```bash
+pnpm run desktop:pin      # build the tree and keep the binary as the last known good
+pnpm run desktop:run      # run the newest kept build; never compiles
+pnpm run desktop:run 2    # run the one before it
+pnpm run desktop:pins     # what is kept, and what each one was built from
+pnpm run desktop:forget   # delete them
+```
+
+A native window cannot be opened if the tree does not compile, which is the one
+moment you most want to open it. `desktop:pin` builds with
+`tauri build --debug --no-bundle` — the frontend is a production build with its
+assets embedded in the binary, so the result runs on its own — and keeps the file
+in `.desktop-known-good/` (gitignored, three kept, ~200 MB each) with a manifest
+recording the commit it came from and the API URL it was compiled against.
+
+Pin after clicking through a build that works, not after a build that merely
+compiles. The rationale, and the reasoning behind the debug profile, is in
+[ADR 0019](./decisions/0019-keep-the-last-desktop-build.md).
 
 ## 7. Known constraints and limitations
 
@@ -113,9 +141,14 @@ Tauri dev expects the Vite dev server on the configured port; the config uses
 
 ## 8. Verification status on this machine
 
-The Rust toolchain is present (`cargo 1.97`). Whether a full native build
-completes depends on the Linux system webview libraries listed above. If those
-are unavailable in a given environment, that limitation is recorded here (rather
-than worked around), and the web + API targets remain fully verifiable. The
-`src-tauri` configuration and Rust sources are complete and reviewed regardless;
-`pnpm --filter @denti-code-u3/desktop build` (the webview bundle) always builds.
+**A native build completes here.** `cargo 1.97` and the WebKitGTK 4.1
+development libraries are both present, and `pnpm run desktop:pin` produces a
+running window — see ADR 0019 for what was launched and observed. The §7
+prerequisites are therefore documented requirements rather than a live
+limitation, and they stay documented for a machine that does not have them.
+
+What has not been run is a **release** build: `tauri build` in the release profile,
+and the `deb`/`msi`/`app`/`dmg` bundles in `bundle.targets`. Nothing in the
+verification above depends on them, and the profile difference between the debug
+build used for manual testing and a release build is optimisation, not
+behaviour. Signing and packaging remain unverified.

@@ -898,6 +898,11 @@ columns exist, the domain type does not carry them, nothing exposes them yet.
 
 ### Still open
 
+- **The desktop app has a fallback but no coverage of its own.** `desktop:pin` /
+  `desktop:run` (ADR 0019) means a broken tree never stops a test session. Nothing
+  asserts the desktop app _works_, though: the CSP is guarded by a test, and the
+  last silent failure of this shape went unnoticed for a whole milestone. A
+  release build and the `deb`/`msi`/`app`/`dmg` bundles are also still unrun.
 - **The UI for the write side.** The grid is still read-only. `from-calendar-event.ts`
   (ADR 0011), the booking form, the quick panel, drag-and-drop and the conflict-error
   surface all wait on it. The `api-client` has no write methods for the three endpoints.
@@ -925,4 +930,84 @@ pnpm run db:migrate       0002 applied to the live development database
 pnpm run db:seed          completes against the new constraints
 by hand, on a live DB     cross-clinic patient refused, cross-clinic chair refused,
                           deleting a dentist nulls dentist_id and keeps clinic_id
+```
+
+---
+
+## Session 16 — A desktop build that can always be run
+
+**Asked for:** a way to run the last build that worked, so a broken working tree
+never stops manual testing of the desktop app.
+
+**Delivered** four commands in `scripts/desktop-pin.mjs` (ADR 0019):
+
+- `desktop:pin` — `tauri build --debug --no-bundle`, then keep the binary in
+  `.desktop-known-good/<timestamp>/` with a `pin.json` recording the commit, the
+  branch, whether the tree was dirty, the API URL it was compiled against and its
+  size. Newest three kept.
+- `desktop:run [n]` — execute a kept binary. Never compiles, never reads the
+  source tree, and never refuses to start because the tree is broken (it reports
+  the drift instead).
+- `desktop:pins` — what is kept, newest first, with the commit each came from.
+- `desktop:forget` — delete them.
+
+The debug profile is a decision, not a shortcut: the frontend inside is still a
+production build, so what is tested is what a user would load, and pinning stays
+cheap enough to do often. `tauri dev` is not pinnable at all — `devUrl` serves the
+assets from the working tree, so a copy would break exactly when it is needed.
+
+**A real bug fell out of needing it.** The desktop app could not reach its own
+API. `API_PORT` moved from 3000 to 3010 in session 8 and `API_PORT`,
+`VITE_API_URL` and the Zod defaults moved with it; the CSP in `tauri.conf.json`
+did not, and nothing reads that file. The webview refused every request — a shell
+that rendered over an empty agenda, with nothing in any log, indistinguishable
+from an app bug. The browser deployment has no such gate, so no web test could
+have caught it. `apps/desktop/test/tauri-config.test.ts` now asserts the CSP
+allows the origin `.env.example` names, and refuses `*`/`unsafe-eval`; verified by
+reverting the port and watching it fail.
+
+**Documentation corrected rather than added to.** `docs/desktop.md` §6 listed
+`build:desktop` and `tauri:build`, which have never existed. §8 still described
+the native build as unverified; it completes here in 38 s incrementally, so §8 now
+says what is actually unverified (the release profile and the installers) instead.
+
+**Environment note.** The native build failed first with `No space left on
+device` — 117 GB at 115 MB free. With the user's approval: Docker build cache
+(12.26 GB, 0 entries in use), Playwright browsers (1.3 GB) and the Chrome cache
+(1.8 GB) were cleared. Both containers were left running, and Playwright chromium
+was reinstalled straight after, so `test:e2e` is green.
+
+**How far verification actually went.** The window was captured with `xwd` and
+converted to PNG: a rendered app, not a blank one — 1 649 distinct colours, the
+design system's background over 55% of pixels, the dark sidebar over 10%, 16% dark
+pixels consistent with text. **Not** verified: that the window's API calls succeed
+at runtime. The API's stdout is a pipe belonging to another terminal, `ss` cannot
+see connections that live for 2 ms (proved with a `curl` control), and the
+WebKitGTK inspector server here speaks no HTTP. The CSP is provably correct for
+port 3010 and the frontend bundle carries the right URL; the first `desktop:run`
+will show the rest.
+
+### Still open
+
+- Desktop coverage, as above: nothing asserts the desktop app works.
+- Release profile / installers unverified.
+- The UI for the appointment write side (unchanged, still the main M5 item).
+- `pnpm run lint:root` fails on `.pnpmfile.cjs` (`'module' is not defined`) on a
+  clean tree — pre-existing, and not part of `pnpm run lint`.
+
+### Verification
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + boundary guard OK
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             364 unit/component (12/12 tasks, 3 new)
+pnpm run test:integration 118 integration (10 files, real PostgreSQL 17)
+pnpm run test:e2e         56/56 passed
+desktop:pin               two pins, 200 MB each, manifests correct
+desktop:run               window "Denti-Code U3" 1394x834, app rendered
+desktop:run 2             older pin, says it is not the newest
+desktop:run 9 / abc       refuse with a count of what is kept
+tauri-config.test.ts      fails when the CSP is reverted to port 3000
 ```
