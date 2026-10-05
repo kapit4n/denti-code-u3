@@ -23,6 +23,7 @@
  */
 
 import type { AgendaEntry, AppointmentStatus } from '@denti-code-u3/domain';
+import { isScheduleEditable } from '@denti-code-u3/domain';
 import type { EventInput } from '@fullcalendar/core';
 
 /**
@@ -71,6 +72,14 @@ export function toCalendarEvent(entry: AgendaEntry): EventInput {
     // duration is how an event ends up one hour from where the database has it.
     end: entry.endsAt,
     classNames: [...BASE_CLASSES, ...STATUS_CLASSES[entry.status]],
+    // Whether this block may be dragged or stretched, asked of the domain's own
+    // predicate rather than decided here. An appointment whose patient has arrived
+    // is history: the API refuses to reschedule it, so a grid that offered the drag
+    // would be promising a write that is guaranteed to fail. Per-event rather than
+    // per-calendar because the answer differs block by block — one day's
+    // cancellations must not disable the morning.
+    eventStartEditable: isScheduleEditable(entry.status),
+    eventDurationEditable: isScheduleEditable(entry.status),
     extendedProps: { entry },
   };
 }

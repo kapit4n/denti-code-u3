@@ -103,6 +103,34 @@ describe('toCalendarEvent', () => {
     // make the chair look bookable.
     expect(toCalendarEvent(entry({ status: 'CANCELLED' })).classNames).toContain('line-through');
   });
+
+  it('lets a future appointment be dragged and stretched', () => {
+    // The grid is editable, so whether *this* block may move is the only question —
+    // and the answer is the domain's, not a table kept alongside it.
+    for (const status of ['SCHEDULED', 'CONFIRMED'] as const) {
+      const event = toCalendarEvent(entry({ status }));
+
+      expect(event.eventStartEditable).toBe(true);
+      expect(event.eventDurationEditable).toBe(true);
+    }
+  });
+
+  it('refuses to offer a drag for an appointment whose time is history', () => {
+    // Once the patient has arrived the booked time is history, and the API refuses to
+    // reschedule it. Offering the drag would be a gesture guaranteed to fail.
+    for (const status of [
+      'ARRIVED',
+      'IN_TREATMENT',
+      'COMPLETED',
+      'CANCELLED',
+      'NO_SHOW',
+    ] as const) {
+      const event = toCalendarEvent(entry({ status }));
+
+      expect(event.eventStartEditable).toBe(false);
+      expect(event.eventDurationEditable).toBe(false);
+    }
+  });
 });
 
 describe('toCalendarEvents', () => {

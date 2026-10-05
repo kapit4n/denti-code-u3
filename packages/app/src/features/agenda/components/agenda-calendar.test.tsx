@@ -11,6 +11,7 @@
 import { ApiClient } from '@denti-code-u3/api-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Clinic } from '@denti-code-u3/domain';
@@ -55,6 +56,11 @@ const AGENDA_ITEM = {
   status: 'CONFIRMED',
 };
 
+/**
+ * `reply` sees the request, so a test can answer a write differently from the read it
+ * triggers. A single canned answer cannot: the write is followed by a refetch of the
+ * range, which is the point of the invalidation and not an accident.
+ */
 function renderCalendar({
   reply = () =>
     Promise.resolve(
@@ -64,10 +70,10 @@ function renderCalendar({
       }),
     ),
 }: {
-  readonly reply?: () => Promise<Response>;
+  readonly reply?: (init: RequestInit | undefined) => Promise<Response>;
 } = {}) {
   rendered.length = 0;
-  const fetchImplementation = vi.fn<typeof fetch>(reply);
+  const fetchImplementation = vi.fn<typeof fetch>((_url, init) => reply(init));
   const client = new ApiClient({ baseUrl: BASE_URL, fetchImplementation });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -97,6 +103,37 @@ function tellGrid(range: { start: string; end: string }) {
     end: new Date(range.end),
     view: latest(),
   } as unknown as DatesSetArg);
+}
+
+/** A block as the grid would hand it to a gesture handler: Dates, plus the entry. */
+function gridEvent(startIso: string, endIso: string) {
+  return {
+    id: 'appt-1',
+    start: new Date(startIso),
+    end: new Date(endIso),
+    extendedProps: { entry: AGENDA_ITEM },
+  };
+}
+
+/** A drop, driven the way FullCalendar drives it after a drag. */
+function dropBlock({
+  from = ['2026-10-05T14:00:00.000Z', '2026-10-05T15:00:00.000Z'],
+  to = ['2026-10-05T16:00:00.000Z', '2026-10-05T17:00:00.000Z'],
+  revert = vi.fn(),
+}: {
+  readonly from?: [string, string];
+  readonly to?: [string, string];
+  readonly revert?: () => void;
+} = {}) {
+  const eventDrop = latest().eventDrop as (arg: unknown) => void;
+  eventDrop({ event: gridEvent(...to), oldEvent: gridEvent(...from), revert });
+}
+
+/** The JSON body of the nth request. */
+function sentBody(fetchImplementation: ReturnType<typeof vi.fn>, index = 0): unknown {
+  const call = fetchImplementation.mock.calls[index];
+  if (!call) throw new Error(`Expected a request number ${index + 1}`);
+  return JSON.parse(String(call[1]?.body));
 }
 
 describe('AgendaCalendar', () => {
@@ -194,13 +231,187 @@ describe('AgendaCalendar', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('The agenda could not be loaded.');
   });
 
-  it('offers no way to change an appointment yet', () => {
+  it('makes the grid writable, but only where the domain says so', async () => {
     renderCalendar();
 
-    // A draggable or clickable-looking block that does nothing is worse than an
-    // absent one, because it promises a write side that is not there.
-    expect(latest().editable).toBeFalsy();
+    tellGrid({ start: '2026-10-05T00:00:00.000Z', end: '2026-10-06T00:00:00.000Z' });
+    await waitFor(() => expect(latest().events).toHaveLength(1));
+
+    // The switch is on for the grid as a whole, and the per-event flags decide block
+    // by block. A calendar-level refusal would disable Monday's morning because of a
+    // cancellation on Tuesday.
+    expect(latest().editable).toBe(true);
+    const [event] = latest().events as { eventStartEditable?: boolean }[];
+    expect(event?.eventStartEditable).toBe(true);
+  });
+
+  it('refuses to make an arrived appointment draggable', async () => {
+    renderCalendar({
+      reply: () =>
+        Promise.resolve(
+          new Response(JSON.stringify({ items: [{ ...AGENDA_ITEM, status: 'ARRIVED' }] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        ),
+    });
+
+    tellGrid({ start: '2026-10-05T00:00:00.000Z', end: '2026-10-06T00:00:00.000Z' });
+    await waitFor(() => expect(latest().events).toHaveLength(1));
+
+    // The API refuses to reschedule it, so offering the drag would be a gesture
+    // guaranteed to fail.
+    const [event] = latest().events as { eventStartEditable?: boolean }[];
+    expect(event?.eventStartEditable).toBe(false);
+  });
+
+  it('sends a drag as a reschedule, then re-reads the day', async () => {
+    const { fetchImplementation } = renderCalendar();
+
+    tellGrid({ start: '2026-10-05T00:00:00.000Z', end: '2026-10-06T00:00:00.000Z' });
+    await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(1));
+
+    const revert = vi.fn();
+    dropBlock({ revert });
+
+    await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(3));
+    const [url, init] = fetchImplementation.mock.calls[1] ?? [];
+    expect(String(url)).toBe(`${BASE_URL}/appointments/appt-1/schedule`);
+    expect(init?.method).toBe('PUT');
+    // The block was dropped an hour later: 16:00Z, which is 11:00 in Lima. Only the
+    // start travels — a drag does not restate the length, so the chair cannot be
+    // cleared on the way past.
+    expect(sentBody(fetchImplementation, 1)).toEqual({ startsAt: '2026-10-05T16:00:00.000Z' });
+
+    // The third request is the range being read again: the grid is redrawn from the
+    // server's answer rather than from the gesture. That refetch is the whole point
+    // of not writing the move into the cache.
+    const [refetchUrl, refetchInit] = fetchImplementation.mock.calls[2] ?? [];
+    expect(refetchInit?.method).toBe('GET');
+    expect(String(refetchUrl)).toContain('/appointments?from=');
+
+    // Not reverted: the server agreed. Reverting here would make the block jump back
+    // and then forward while the refetch was in flight.
+    expect(revert).not.toHaveBeenCalled();
+  });
+
+  it('sends the new length when a block is stretched', async () => {
+    const { fetchImplementation } = renderCalendar();
+
+    tellGrid({ start: '2026-10-05T00:00:00.000Z', end: '2026-10-06T00:00:00.000Z' });
+    await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(1));
+
+    // Same start, an end 30 minutes later: the length is the thing that changed.
+    dropBlock({ to: ['2026-10-05T14:00:00.000Z', '2026-10-05T14:30:00.000Z'] });
+
+    await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(3));
+    expect(sentBody(fetchImplementation, 1)).toEqual({
+      startsAt: '2026-10-05T14:00:00.000Z',
+      durationMinutes: 30,
+    });
+  });
+
+  it('asks for nothing when a block is dropped back where it was', async () => {
+    const { fetchImplementation } = renderCalendar();
+
+    tellGrid({ start: '2026-10-05T00:00:00.000Z', end: '2026-10-06T00:00:00.000Z' });
+    await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(1));
+
+    dropBlock({ to: ['2026-10-05T14:00:00.000Z', '2026-10-05T15:00:00.000Z'] });
+
+    // A gesture that changed nothing is not a write. It can fail — an appointment
+    // checked in a moment ago can no longer be rescheduled — and the receptionist
+    // would be told off for a drag that did nothing.
+    await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(1));
+  });
+
+  it('puts the block back and says which hour is taken when the move is refused', async () => {
+    const { fetchImplementation } = renderCalendar({
+      // The range is answered normally; only the write is refused.
+      reply: (init) =>
+        Promise.resolve(
+          init?.method === 'PUT'
+            ? new Response(
+                JSON.stringify({
+                  error: {
+                    code: 'SCHEDULING_CONFLICT',
+                    message: 'The appointment overlaps 1 existing appointment(s)',
+                    details: {
+                      conflicts: [
+                        {
+                          appointmentId: '99999999-9999-4999-8999-999999999999',
+                          patientId: '88888888-8888-4888-8888-888888888888',
+                          dentistId: '77777777-7777-4777-8777-777777777777',
+                          startsAt: '2026-10-05T17:00:00.000Z',
+                          endsAt: '2026-10-05T18:00:00.000Z',
+                        },
+                      ],
+                    },
+                    requestId: 'req-1',
+                  },
+                }),
+                { status: 409, headers: { 'content-type': 'application/json' } },
+              )
+            : new Response(JSON.stringify({ items: [AGENDA_ITEM] }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+              }),
+        ),
+    });
+
+    tellGrid({ start: '2026-10-05T00:00:00.000Z', end: '2026-10-06T00:00:00.000Z' });
+    await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(1));
+
+    const revert = vi.fn();
+    dropBlock({ revert });
+
+    // 18:00Z is 13:00 in Lima — the hour the receptionist has to go and look at, in
+    // the clinic's clock rather than the server's.
+    expect(await screen.findByTestId('schedule-write-failure')).toHaveTextContent('12:00 – 13:00');
+    // The block must go back where it was, or the grid is showing a booking the
+    // database never accepted.
+    expect(revert).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the quick panel on a click, and closes it again', async () => {
+    const user = userEvent.setup();
+    renderCalendar();
+
+    tellGrid({ start: '2026-10-05T00:00:00.000Z', end: '2026-10-06T00:00:00.000Z' });
+    await waitFor(() => expect(latest().events).toHaveLength(1));
+
+    expect(screen.queryByTestId('appointment-quick-panel')).toBeNull();
+
+    const eventClick = latest().eventClick as (arg: unknown) => void;
+    eventClick({ event: gridEvent('2026-10-05T14:00:00.000Z', '2026-10-05T15:00:00.000Z') });
+
+    // The entry travels with the block, so the panel knows the patient without the
+    // title being parsed back into one.
+    expect(await screen.findByTestId('appointment-quick-panel')).toHaveTextContent('Ana Torres');
+
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByTestId('appointment-quick-panel')).toBeNull());
+  });
+
+  it('opens nothing for a block this app did not draw', async () => {
+    renderCalendar();
+
+    tellGrid({ start: '2026-10-05T00:00:00.000Z', end: '2026-10-06T00:00:00.000Z' });
+    await waitFor(() => expect(latest().events).toHaveLength(1));
+
+    const eventClick = latest().eventClick as (arg: unknown) => void;
+    eventClick({ event: { id: 'x', start: new Date(), end: null, extendedProps: {} } });
+
+    // A panel about `undefined` is worse than no panel.
+    expect(screen.queryByTestId('appointment-quick-panel')).toBeNull();
+  });
+
+  it('offers no way to create an appointment from an empty slot yet', () => {
+    renderCalendar();
+
+    // Booking is not on this screen because there is no way to choose a dentist: no
+    // read endpoint for them exists yet. A live-looking empty-slot gesture that ended
+    // in a form with a required field it could not fill would be the worst of both.
     expect(latest().selectable).toBeFalsy();
-    expect(latest().eventClick).toBeUndefined();
   });
 });

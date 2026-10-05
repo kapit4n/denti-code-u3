@@ -15,6 +15,15 @@
  *  3. **A cancelled appointment is still drawn.** Hiding it would make a chair look
  *     bookable, and the receptionist booking the next patient is the person who pays.
  *
+ * The write side is here too, but only the half a browser can prove: that a click
+ * opens a panel, that a decision leaves as the endpoint and the body the API
+ * documented, and that a refusal is shown rather than swallowed. **No test here
+ * drags.** What a drag *means* — the instant, the omitted duration, the no-op — is
+ * pinned down by `from-calendar-event.test.ts` and `agenda-calendar.test.tsx`, where a
+ * gesture is a function call. Simulating a pointer drag across a time grid in a
+ * headless browser asserts pixel offsets, and a failure in that test would say
+ * something about FullCalendar's layout rather than about this application.
+ *
  * The browser runs with a deliberately non-local timezone (`America/New_York`, set in
  * `playwright.config.ts`) precisely so that (1) is a real assertion rather than one
  * that passes by coincidence on a machine set to UTC.
@@ -22,7 +31,15 @@
 
 import { expect, test } from '@playwright/test';
 
-import { allAgendaFixtures, clinicSettings, emptyAgenda } from './fixtures/api-responses.js';
+import {
+  agendaEntries,
+  allAgendaFixtures,
+  ANA_APPOINTMENT_ID,
+  CANCELLED_APPOINTMENT_ID,
+  clinicSettings,
+  emptyAgenda,
+  schedulingConflict,
+} from './fixtures/api-responses.js';
 import { watchForConsoleErrors } from './fixtures/console-errors.js';
 import { installApi, installApiFailure } from './fixtures/mock-api.js';
 
@@ -106,13 +123,95 @@ test.describe('Agenda', () => {
     await expect(page.getByRole('alert')).toContainText('The agenda could not be loaded.');
   });
 
-  test('offers no way to change an appointment yet', async ({ page }) => {
+  test('opens the quick panel when an appointment is clicked', async ({ page }) => {
     await page.goto('/agenda');
-    await expect(page.locator('.fc-event').first()).toBeVisible();
+    await page.locator('.fc-event').first().click();
 
-    // Dragging or clicking an appointment would have to be live to be honest; the
-    // write side arrives in a later slice.
-    await expect(page.locator('.fc-event').first()).not.toHaveAttribute('tabindex', '0');
+    const panel = page.getByRole('dialog');
+    await expect(panel).toBeVisible();
+    // The times are the clinic's, not the browser's. This browser runs on
+    // America/New_York and the clinic is in America/Lima, so 14:00Z is 09:00 here and
+    // 10:00 would be a bug that looks like a working panel.
+    await expect(panel).toContainText('Ana García');
+    await expect(panel).toContainText('09:00 – 10:00');
+    await expect(panel.getByRole('button', { name: 'Check in' })).toBeVisible();
+  });
+
+  test('sends the status change the panel asked for', async ({ page }) => {
+    const api = await installApi(page, {
+      // Answered as the API answers: the entry the row became.
+      [`POST /api/v1/appointments/${ANA_APPOINTMENT_ID}/status`]: {
+        body: { ...agendaEntries.items[0], status: 'ARRIVED' },
+      },
+    });
+
+    await page.goto('/agenda');
+    await page.locator('.fc-event').first().click();
+    await page.getByRole('button', { name: 'Check in' }).click();
+
+    // The panel closes only once the server has agreed, and the day is then re-read
+    // rather than patched in the client.
+    await expect(page.getByRole('dialog')).toBeHidden();
+    const write = api.recorded.find((request) => request.method === 'POST');
+    expect(write?.url).toContain(`/appointments/${ANA_APPOINTMENT_ID}/status`);
+    expect(write?.body).toEqual({ to: 'ARRIVED' });
+  });
+
+  test('asks why before it cancels, and sends the reason', async ({ page }) => {
+    const api = await installApi(page, {
+      [`POST /api/v1/appointments/${ANA_APPOINTMENT_ID}/status`]: {
+        body: { ...agendaEntries.items[0], status: 'CANCELLED' },
+      },
+    });
+
+    await page.goto('/agenda');
+    await page.locator('.fc-event').first().click();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+
+    // Asking is not sending: a cancellation is the one move that cannot be undone by
+    // re-booking the same slot, so it does not go on the first click.
+    expect(api.recorded.some((request) => request.method === 'POST')).toBe(false);
+    await expect(page.getByRole('button', { name: 'Cancel the appointment' })).toBeDisabled();
+
+    await page.getByLabel('Why is it being cancelled?').fill('The patient called to cancel');
+    await page.getByRole('button', { name: 'Cancel the appointment' }).click();
+
+    const write = api.recorded.find((request) => request.method === 'POST');
+    expect(write?.body).toEqual({ to: 'CANCELLED', reason: 'The patient called to cancel' });
+  });
+
+  test('says which hour is taken when a move is refused, and keeps the panel open', async ({
+    page,
+  }) => {
+    // Putting a cancelled appointment back is a scheduling act: it takes the chair
+    // again, so the server can refuse it — and this is the path that shows a
+    // conflict in the client's own words.
+    await installApi(page, {
+      [`POST /api/v1/appointments/${CANCELLED_APPOINTMENT_ID}/status`]: {
+        status: 409,
+        body: schedulingConflict('2026-10-05T14:00:00.000Z', '2026-10-05T15:00:00.000Z'),
+      },
+    });
+
+    await page.goto('/agenda');
+    await page.locator('.fc-event').nth(2).click();
+    await page.getByRole('button', { name: 'Put back to scheduled' }).click();
+
+    // 14:00Z is 09:00 in Lima, and naming the hour is the whole point: it is what the
+    // receptionist goes and looks at.
+    await expect(page.getByRole('alert')).toContainText('09:00 – 10:00');
+    // Closing on failure would throw away what the user was looking at.
+    await expect(page.getByRole('dialog')).toBeVisible();
+  });
+
+  test('cannot drag an appointment whose time is history', async ({ page }) => {
+    await page.goto('/agenda');
+    // The third fixture is the cancelled one. The grid asks the domain whether that
+    // block may move, and a cancelled appointment is not editable — a cursor that
+    // offered a drag would be promising a write the API refuses.
+    const cancelled = page.locator('.fc-event').nth(2);
+    await expect(cancelled).toBeVisible();
+    await expect(cancelled).toHaveClass(/line-through/);
   });
 
   test('loads without console errors', async ({ page }) => {

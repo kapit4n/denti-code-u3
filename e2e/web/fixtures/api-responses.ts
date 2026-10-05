@@ -21,7 +21,7 @@
 export const ANA_ID = '11111111-3333-4444-8555-000000000001';
 export const LUIS_ID = '11111111-3333-4444-8555-000000000002';
 
-import type { MockedResponses } from './mock-api.js';
+import type { Fixture, MockedResponses } from './mock-api.js';
 
 export interface PatientSummaryFixture {
   readonly id: string;
@@ -356,6 +356,46 @@ export const agendaEntries = {
   // The window the app asked for is echoed back, so a spec can compare the two.
   window: { from: '2026-10-05T00:00:00.000Z', to: '2026-10-06T00:00:00.000Z' },
 } as const;
+
+/**
+ * The agenda entry ids, so a spec can register the endpoint a write goes to.
+ *
+ * Exported rather than typed out again in each spec: the write paths carry the
+ * appointment's id (`PUT /appointments/:id/schedule`), and the mock answers by exact
+ * pathname, so a spec that guessed an id would be refused with a 501 and would spend
+ * its time debugging the mock instead of the behaviour.
+ */
+export const ANA_APPOINTMENT_ID = '11111111-4444-4555-8666-000000000011';
+export const CANCELLED_APPOINTMENT_ID = '11111111-4444-4555-8666-000000000013';
+
+/**
+ * A refusal naming the hour it collides at, as the API sends it.
+ *
+ * Ids and instants only, which is the whole point of the fixture: the client's job is
+ * to turn this into a sentence a receptionist can act on, and a fixture carrying a
+ * patient name would let a spec pass against a client that ignored `details` and
+ * invented something plausible.
+ */
+export function schedulingConflict(startsAt: string, endsAt: string): Fixture['body'] {
+  return {
+    error: {
+      code: 'SCHEDULING_CONFLICT',
+      message: 'The appointment overlaps 1 existing appointment(s)',
+      details: {
+        conflicts: [
+          {
+            appointmentId: '11111111-4444-4555-8666-000000000099',
+            patientId: ANA_ID,
+            dentistId: '11111111-2222-4333-8444-000000000001',
+            startsAt,
+            endsAt,
+          },
+        ],
+      },
+      requestId: 'e2e',
+    },
+  };
+}
 
 /** An agenda with nothing in the visible range. */
 export const emptyAgenda = { items: [], window: agendaEntries.window } as const;

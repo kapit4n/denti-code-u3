@@ -40,6 +40,7 @@ import type { AppointmentStatus } from './appointment-status.js';
 import {
   assertAppointmentTransition,
   isScheduleEditable,
+  requiresTransitionReason,
   reservesSchedulingSlot,
 } from './appointment-lifecycle.js';
 import { assertNoSchedulingConflicts } from './scheduling-conflicts.js';
@@ -239,7 +240,7 @@ export async function transitionAppointmentStatus(
 
   assertAppointmentTransition(existing.status, request.to);
 
-  if (request.to === 'CANCELLED' && !request.reason) {
+  if (requiresTransitionReason(request.to) && !request.reason) {
     throw new DomainError('INVALID_INPUT', 'A cancellation must say why', {
       appointmentId,
       status: existing.status,

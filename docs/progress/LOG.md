@@ -1018,3 +1018,75 @@ desktop:run 2             older pin, says it is not the newest
 desktop:run 9 / abc       refuse with a count of what is kept
 tauri-config.test.ts      fails when the CSP is reverted to port 3000
 ```
+
+---
+
+## Session 17 — Appointment write UI: reschedule and status
+
+**Started from:** `a12db3d`. The three appointment write endpoints existed and
+were covered by 25 integration tests; the grid could not use them.
+
+**What was added**
+
+- `packages/app/src/features/agenda/adapters/from-calendar-event.ts` — a drag
+  becomes `{ startsAt }` and nothing else; a resize becomes `{ startsAt,
+durationMinutes }` when the rounded length really changed; an unmoved gesture
+  becomes `undefined`. Instants cross as UTC.
+- Per-event `eventStartEditable` / `eventDurationEditable` from the domain's
+  `isScheduleEditable`, so a confirmed past appointment does not offer a drag.
+- `mutations/use-reschedule-appointment.ts` (`PUT …/schedule`),
+  `mutations/use-transition-appointment-status.ts` (`POST …/status`) and
+  `mutations/invalidate-schedule-queries.ts` (agenda range + dashboard + the
+  affected patient profile). No optimistic write: the grid redraws from the API.
+- `describe-appointment-failure.ts` + `scheduleConflictSchema` in
+  `packages/validation` — one voice for a conflict and a rule refusal, with a
+  conflict stated as the hour that is taken.
+- `components/appointment-quick-panel.tsx` — a clicked appointment, its
+  clinic-time span, and only the transitions the domain allows; cancelling asks
+  for a reason; the panel stays open on a refusal.
+- `features/clinic/format-clinic-time.ts` — the clinic's zone is an input.
+- `packages/domain`: `requiresTransitionReason`, now the single statement of
+  which transitions need a reason (the API already enforced it).
+
+**Decisions worth recording**
+
+- The gesture adapter declares FullCalendar's drop/resize shape structurally and
+  imports no FullCalendar package, so **rule 5 of the boundary guard needed no
+  change**. That is the first real test of ADR 0011's confinement, and the guard
+  confirmed the boundary was already right.
+- Writes invalidate rather than patch the cache, and a refused gesture calls
+  FullCalendar's `revert()`. ADR 0007's argument, applied to a drag.
+- The e2e spec **does not drag.** A headless pointer drag across a time grid
+  asserts pixel offsets; the intent a gesture produces is pinned by unit and
+  component tests where a gesture is a function call.
+
+**Two tests I wrote were wrong before the code was.** The drag spec first
+asserted the drop sent `17:00Z` (the end of the dropped range) and expected two
+requests where the invalidation correctly makes three. Both were assertion bugs —
+and the third request is exactly the redraw item 6 claims, so the suite now
+asserts it: drop → `PUT` → re-read of the range. Fixing them also forced
+`renderCalendar` to pass the request to its reply, so a write and the read it
+triggers can be answered differently.
+
+**Still open**
+
+- **The booking form is blocked, not deferred.** `createAppointmentSchema`
+  requires `dentistId`; no endpoint lists dentists or chairs, so the form would
+  have to ask for a UUID. That read endpoint is the next task, and `selectable`
+  stays unwired until a form exists to open.
+- Lunch enforcement (T7), after-hours policy, desktop behaviour coverage, release
+  profile and installers: unchanged.
+- `pnpm run lint:root` still fails on `.pnpmfile.cjs` — pre-existing, not part of
+  `pnpm run lint`.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (no edit to it)
+pnpm run format:check     clean (10 files formatted)
+pnpm run build            5/5 successful
+pnpm run test             422 unit/component (12/12 tasks, 58 new)
+pnpm run test:integration 118 integration (10 files, real PostgreSQL 17)
+pnpm run test:e2e         60/60 passed (5 new, 1 replaced)
+```

@@ -97,3 +97,34 @@ export type CreateAppointmentInput = z.infer<typeof createAppointmentSchema>;
 export type RescheduleAppointmentInput = z.infer<typeof rescheduleAppointmentSchema>;
 export type TransitionAppointmentInput = z.infer<typeof transitionAppointmentSchema>;
 export type AgendaRangeQuery = z.infer<typeof agendaRangeQuerySchema>;
+
+/**
+ * One appointment that a refused write collided with.
+ *
+ * Mirrors the domain's `ScheduleConflict` as literals, for the same reason the status
+ * list above is mirrored: this package holds no domain dependency, and a client that
+ * has to read a refusal out of an error envelope needs the shape written down in one
+ * place. The API's startup check covers the status list; this one is checked by its
+ * own tests instead, because it is only ever read by whoever is showing the message.
+ *
+ * **No names.** The conflict carries ids and instants, so a client can say *when* the
+ * clash is and not *who* it is with. The panel says the time and sends the user to
+ * the grid, rather than inventing a patient name from a uuid.
+ */
+export const scheduleConflictSchema = z.object({
+  appointmentId: uuidSchema,
+  patientId: uuidSchema,
+  /** Null once that dentist has left the clinic; the column is `on delete set null`. */
+  dentistId: uuidSchema.nullable(),
+  /** Absent when the conflicting appointment has no chair. */
+  chairId: uuidSchema.optional(),
+  startsAt: isoDateTimeSchema,
+  endsAt: isoDateTimeSchema,
+});
+
+/** The `details` of a `SCHEDULING_CONFLICT` problem envelope. */
+export const scheduleConflictDetailsSchema = z.object({
+  conflicts: z.array(scheduleConflictSchema),
+});
+
+export type ScheduleConflictPayload = z.infer<typeof scheduleConflictSchema>;

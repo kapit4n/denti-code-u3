@@ -4,6 +4,7 @@ import {
   appointmentStatusSchema,
   createAppointmentSchema,
   rescheduleAppointmentSchema,
+  scheduleConflictDetailsSchema,
   transitionAppointmentSchema,
 } from './index.js';
 
@@ -175,5 +176,44 @@ describe('agendaRangeQuerySchema', () => {
     });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe('scheduleConflictDetailsSchema', () => {
+  const conflict = {
+    appointmentId: '44444444-4444-4444-8444-444444444444',
+    patientId: PATIENT_ID,
+    dentistId: DENTIST_ID,
+    startsAt: '2026-09-30T14:00:00.000Z',
+    endsAt: '2026-09-30T15:00:00.000Z',
+  };
+
+  it('reads the details of a refusal the way the domain writes them', () => {
+    // The shape this has to survive is the domain's `ScheduleConflict`: an id set, a
+    // chair only when there is one, and a dentist that goes null when that dentist
+    // leaves the clinic.
+    const result = scheduleConflictDetailsSchema.safeParse({
+      conflicts: [
+        conflict,
+        { ...conflict, chairId: '55555555-5555-4555-8555-555555555555' },
+        { ...conflict, dentistId: null },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('refuses details it would have to guess at', () => {
+    // A client that cannot read the conflicts must fall back to a sentence without
+    // times, so a malformed payload has to fail rather than half-parse.
+    const result = scheduleConflictDetailsSchema.safeParse({
+      conflicts: [{ ...conflict, startsAt: 'yesterday' }],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('refuses an envelope with no conflict list', () => {
+    expect(scheduleConflictDetailsSchema.safeParse({}).success).toBe(false);
   });
 });

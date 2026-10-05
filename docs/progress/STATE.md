@@ -64,23 +64,30 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 16)
+## Verification log (last run, session 17)
 
 | Command                     | Result                                                      |
 | --------------------------- | ----------------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                            |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`                       |
 | `pnpm run format`           | applied; `pnpm run format:check` clean                      |
-| `pnpm run test`             | 12/12 tasks pass — 360 tests                                |
+| `pnpm run test`             | 12/12 tasks pass — 422 tests (58 new)                       |
 | `pnpm run test:integration` | 10 files, 118 tests pass against real PostgreSQL 17         |
-| `pnpm run db:migrate`       | `0002_appointment_tenant_foreign_keys` applies to a live DB |
-| `pnpm run db:seed`          | completes against the new constraints                       |
 | `pnpm run build`            | 5/5 tasks pass                                              |
-| `pnpm run test:e2e`         | 56 passed (unchanged — no UI moved this session)            |
-| `pnpm run guard:boundaries` | OK, with one pre-existing warning (see Open questions)      |
+| `pnpm run test:e2e`         | 60 passed (5 new, 1 replaced)                               |
+| `pnpm run guard:boundaries` | OK — and `check-boundaries.mjs` needed no edit this session |
 
-Per-package unit/component tests: domain 145, validation 41, api-client 15, api 53
-(integration skipped here, run separately), app 107, desktop 3.
+Per-package unit/component tests: domain 145, validation 44, api-client 15, api 53
+(integration skipped here, run separately), app 162, desktop 3.
+
+**Two of this session's own tests were wrong before the code was.** The first
+version of the drag spec asserted that the drop sent `17:00Z` — the _end_ of the
+dropped range, read off the fixture instead of the intent — and expected two
+requests where the invalidation correctly makes three. Both failures were in the
+assertion, not in the write: the third request is the range being re-read, which is
+the behaviour item 6 claims. The stub could not see the request method, so a write
+and the read it triggers were answered by the same fixture; `renderCalendar` now
+passes the request to the reply, which is what let the test tell them apart.
 
 **A silent failure found by the need for this session's feature, not by a test.**
 The desktop app could not reach its own API. `API_PORT` moved from 3000 to 3010 in
@@ -366,38 +373,93 @@ editing. Both sides now go through `PatientRepository`. Remaining:
        "today" instead of two. See ADR 0017 for why booked minutes are clipped to
        the window: counting an appointment that began yesterday evening against
        today's capacity would report a day as over 100% booked.
-4. [x] **Calendar UI (read-only).** `/agenda` renders `timeGridDay`,
+4. [x] **Calendar UI (read side).** `/agenda` renders `timeGridDay`,
        `timeGridWeek` and `dayGridMonth` of `GET /api/v1/appointments`.
        FullCalendar is confined to `adapters/to-calendar-event.ts`,
-       `adapters/to-business-hours.ts` and `components/agenda-calendar.tsx`
-       by rule 5 of `scripts/check-boundaries.mjs`, which fails the build on
-       any other `@fullcalendar/*` import in `packages/app/src`. - The **visible window is the fetch window**: FullCalendar's own
-       `datesSet` reports the range, so a month grid asks for a month. There
-       is no second opinion about which days are on screen. - **No `placeholderData`.** Navigating to tomorrow must not paint
-       today's appointments under tomorrow's dates; an empty grid with a
-       loading hint is the honest answer. - **The timezone and opening hours are inputs, not constants.** They
-       come from `GET /api/v1/clinic` (added this session, with
-       `DrizzleClinicRepository`), because one API serves several clinics.
-       Without a clinic the route renders an error instead of a grid in the
-       browser's own zone. - **ISO weekdays are translated.** The domain says `1 = Monday …
-7 = Sunday`; FullCalendar wants `0 = Sunday … 6 = Saturday`. - **Statuses are colour, cancelled and no-show included.** They are
-       drawn struck through and muted, because a slot that is deliberately
-       empty must not look bookable. - Read-only on purpose: `editable`, `selectable` and `eventClick` are
-       not wired. A control that looks live and is not is worse than an
-       absent one.
+       `adapters/to-business-hours.ts`, `adapters/from-calendar-event.ts` and
+       `components/agenda-calendar.tsx` by rule 5 of
+       `scripts/check-boundaries.mjs`, which fails the build on any other
+       `@fullcalendar/*` import in `packages/app/src`.
+
+       - The **visible window is the fetch window**: FullCalendar's own
+         `datesSet` reports the range, so a month grid asks for a month. There
+         is no second opinion about which days are on screen.
+       - **No `placeholderData`.** Navigating to tomorrow must not paint
+         today's appointments under tomorrow's dates; an empty grid with a
+         loading hint is the honest answer.
+       - **The timezone and opening hours are inputs, not constants.** They
+         come from `GET /api/v1/clinic` (added in session 15, with
+         `DrizzleClinicRepository`), because one API serves several clinics.
+         Without a clinic the route renders an error instead of a grid in the
+         browser's own zone.
+       - **ISO weekdays are translated.** The domain says `1 = Monday …
+         7 = Sunday`; FullCalendar wants `0 = Sunday … 6 = Saturday`.
+       - **Statuses are colour, cancelled and no-show included.** They are
+         drawn struck through and muted, because a slot that is deliberately
+         empty must not look bookable.
+       - Read-only **as built in session 15**, deliberately: `editable` and
+         `eventClick` were not wired, because a control that looks live and is
+         not is worse than an absent one. The grid became writable in session
+         17, once the API could answer a write (item 6). `selectable` —
+         clicking an empty slot to book it — is still deliberately unwired, for
+         the reason in item 6: there is no form to open yet.
+
 5. [ ] **Filters.** Dentist and chair filters are in `AgendaWindow` and the API
        accepts them, but nothing in the UI sends them yet. (`AgendaEntry` has
        carried `chairId`/`chairName` since session 13 — an earlier note here said
        otherwise.) Room columns still need a `roomId` the read model does not have,
        and the `room_no_overlap` constraint has no read side at all.
-6. [~] **Appointment write side.** Done in session 15: `createAppointment`,
+6. [~] **Appointment write side.** API done in session 15: `createAppointment`,
    `rescheduleAppointment`, `transitionAppointmentStatus`, the three endpoints,
    the tenant foreign keys, and 25 integration tests including the concurrent-write
-   race. **Still to do:** the UI. `from-calendar-event.ts` (ADR 0011) does not
-   exist, so the grid is still read-only; the booking form, the quick panel,
-   drag-and-drop, the conflict-error surface, and the forms that un-disable
-   "New Visit" and the profile's next-appointment action all wait on it. The
-   `api-client` has no write methods for the three endpoints yet.
+   race. **Reschedule and status UI done in session 17:**
+
+   - **`adapters/from-calendar-event.ts`** — the only place a FullCalendar
+     gesture becomes a domain intent. A drag sends **only** `startsAt`: a
+     gesture has not restated the length, so the chair cannot be cleared on the
+     way past. A resize sends `durationMinutes`, but only when the rounded
+     length actually differs from the original. A gesture that changes nothing
+     sends nothing. Instants cross as UTC. The file imports no FullCalendar
+     package — the drop/resize shape is declared structurally — so
+     `scripts/check-boundaries.mjs` needed **no** widening, which is the
+     visible proof that ADR 0011's boundary holds.
+   - **Per-event editability.** `eventStartEditable` / `eventDurationEditable`
+     come from the domain's `isScheduleEditable`, so a confirmed past
+     appointment does not offer a drag the API would refuse.
+   - **`AppointmentQuickPanel`** — a clicked appointment, its clinic-time span,
+     and only the transitions the domain allows from there, each labelled with
+     that transition's own verb. Cancelling asks for a reason first: the reason
+     is part of the write, and a cancellation is the one move that cannot be
+     undone by re-booking the same slot. The panel closes only after the server
+     agrees; on a refusal it stays open and says what went wrong.
+   - **`describeAppointmentFailure.ts`** — one voice for a conflict and for a
+     rule refusal, plus `scheduleConflictSchema` in `packages/validation` so the
+     client's reading of the API's `details` is checked rather than assumed. A
+     conflict is stated as the hour that is taken, in the clinic's zone: that is
+     what the receptionist goes and looks at.
+   - **Non-optimistic, and it redraws.** No write touches the cache; the
+     mutation invalidates the agenda range, the dashboard and the affected
+     patient profile, then the grid re-renders from the API's answer. A refused
+     gesture calls FullCalendar's `revert()`, because the server is the only
+     authority on what is in that chair. This is ADR 0007 applied to a gesture.
+   - **`format-clinic-time.ts`** — the clinic's zone is an input, from
+     `GET /api/v1/clinic`, so the panel's times are the clinic's and not the
+     browser's. Verified where it bites: the e2e runs in `America/New_York` and
+     asserts `09:00 – 10:00` for a `14:00Z` appointment in Lima.
+   - **Tests: 58 new unit/component, 5 e2e.** The e2e deliberately **does not
+     drag.** What a drag _means_ is pinned down by unit and component tests,
+     where a gesture is a function call; a headless pointer drag across a time
+     grid asserts pixel offsets, so a failure there would be about
+     FullCalendar's layout rather than about this application.
+
+   **Still to do: the booking form** — blocked, not deferred. It cannot be built
+   honestly on what the API has: `createAppointmentSchema` requires `dentistId`,
+   and **no endpoint lists dentists or chairs**, so a form would have to ask the
+   receptionist to type a UUID. That read endpoint comes first; the form, the
+   empty-slot click, and the "New Visit" and next-appointment actions it
+   un-disables follow from it. `api-client` write methods for the three
+   endpoints are called directly by the mutations, as every other feature does.
+
 7. [ ] Visits, the clinical timeline, treatments, payments, inventory, reports.
 
 **Milestone 5 onward** — visits, odontogram, treatments, payments, inventory,
@@ -735,3 +797,37 @@ produces a runnable window, `desktop:run 2` and two error paths behave, and the
 captured window is a rendered app rather than a blank one · `run-desktop.sh` opens
 the same window from `/` under `env -i` (no pnpm, no inherited PATH) and reports
 the kept build's commit against the tree's.
+
+Session 17: the appointment write side's UI — reschedule and status. Everything
+here was decided by the rule that the server is the only authority on what is in a
+chair, so the client asks and redraws rather than deciding and reconciling.
+
+`adapters/from-calendar-event.ts` is the whole translation layer, and it is the part
+worth arguing for: a drag sends only `startsAt`, because a drag has not restated the
+length and a client that restates it can clear a chair by accident; a resize sends
+`durationMinutes` and only when the rounded length really differs, so snapping
+noise does not become a write. The file imports no FullCalendar package, declaring
+the drop/resize shape structurally instead — which meant `check-boundaries.mjs`
+needed no new allowlist entry. ADR 0011 said FullCalendar would be confined to
+adapters; this is the first time the confinement was actually tested by a second
+adapter, and the guard's answer was that the boundary was already right.
+
+The click panel offers only what the domain allows from the status the appointment
+is in, each button carrying the transition's own verb, and a cancellation asks for
+its reason before it will send one. A conflict is shown as the hour that is taken,
+in the clinic's zone, and the panel stays open so the user is not thrown out of
+what they were doing. The e2e proves the zone claim where it bites: the browser
+under test is `America/New_York` and the assertion is `09:00 – 10:00` for a
+`14:00Z` appointment in Lima.
+
+The remaining part of item 6 is not scheduled, it is **blocked**, and the reason is
+a missing endpoint rather than a missing hour: `createAppointmentSchema` demands a
+`dentistId` and nothing lists dentists or chairs, so a booking form built today
+would ask the receptionist to type a UUID. A slot that invites a click must open a
+form that can complete, so `selectable` stays unwired on purpose and the read
+endpoint is the next task.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard · format · build
+5/5 · 422 unit/component (58 new) · 118 integration · 60/60 e2e (5 new, 1
+replaced). No migration, no seed change, no API change: this session added no
+server behaviour, only a client for behaviour that already existed.

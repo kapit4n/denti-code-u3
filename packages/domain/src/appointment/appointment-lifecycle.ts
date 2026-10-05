@@ -34,6 +34,23 @@ export function assertAppointmentTransition(from: AppointmentStatus, to: Appoint
   }
 }
 
+/**
+ * A cancellation has to say why.
+ *
+ * "Cancelled" on its own is a gap in the record: a patient who did not arrive and a
+ * clinic whose compressor failed are both cancellations, and the front desk tells
+ * them apart when someone calls. A no-show is already the explanation, so it needs
+ * nothing added to it.
+ *
+ * A predicate rather than a check left inline in the use case, because the panel that
+ * *asks* for the reason and the use case that *demands* it must not be able to
+ * disagree — a panel that stopped asking would produce a 422 naming a field, which is
+ * a worse answer than being asked for the reason up front.
+ */
+export function requiresTransitionReason(to: AppointmentStatus): boolean {
+  return to === 'CANCELLED';
+}
+
 /** A completed appointment is history; it is never edited again. */
 export function isTerminalAppointmentStatus(status: AppointmentStatus): boolean {
   return ALLOWED_TRANSITIONS[status].length === 0;
