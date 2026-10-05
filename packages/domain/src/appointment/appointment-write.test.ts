@@ -28,17 +28,25 @@ import {
   asDentistId,
   asPatientId,
   type AppointmentId,
+  type ChairId,
+  type DentistId,
   type IsoDateTime,
 } from '@denti-code-u3/types';
 import type { AgendaEntry } from './agenda-read-model.js';
 import type { Appointment } from './appointment.js';
 import type { AppointmentWindow } from './agenda-read-model.js';
 import type { Clinic, ClinicOperatingHours } from '../organization/index.js';
-import type { AppointmentRepository, ClinicRepository } from '../ports/index.js';
+import type {
+  AppointmentRepository,
+  ChairRepository,
+  ClinicRepository,
+  DentistRepository,
+} from '../ports/index.js';
 import {
   createAppointment,
   rescheduleAppointment,
   transitionAppointmentStatus,
+  type AppointmentBookingDependencies,
   type AppointmentWriteDependencies,
 } from './appointment-write.js';
 
@@ -77,6 +85,12 @@ interface Writes {
   readonly statuses: { status: string; reason?: string }[];
 }
 
+/** Mutable so the fakes can record what they were asked for. */
+interface ResourceLookups {
+  readonly dentists: DentistId[];
+  readonly chairs: ChairId[];
+}
+
 /**
  * In-memory ports that record what they were asked to do.
  *
@@ -84,7 +98,15 @@ interface Writes {
  * rather than computed: what a conflict check *does* with the rows is the domain's
  * business, and what the rows are is the repository's.
  */
-function ports(options: { overlapping?: readonly Appointment[] } = {}) {
+function ports(
+  options: {
+    overlapping?: readonly Appointment[];
+    /** Clinicians that are known but `is_active = false`. */
+    inactiveDentists?: readonly DentistId[];
+    /** Chairs that are known but `is_active = false`. */
+    inactiveChairs?: readonly ChairId[];
+  } = {},
+) {
   const writes: Writes = { inserted: [], schedules: [], statuses: [] };
   const stored = new Map<string, Appointment>();
   let sequence = 0;
@@ -135,13 +157,93 @@ function ports(options: { overlapping?: readonly Appointment[] } = {}) {
     findById: async (clinicId) => (clinicId === CLINIC_ID ? CLINIC : undefined),
   } as ClinicRepository;
 
-  const dependencies: AppointmentWriteDependencies = {
+  const lookups: ResourceLookups = { dentists: [], chairs: [] };
+
+  // Two fakes that behave the way the real repositories behave about the one thing
+  // that matters here: an id they do not hold — because it is absent, or because it
+  // belongs to another clinic — comes back as `undefined` rather than as a refusal.
+  // That is what lets the booking rule stay silent about a bad reference and leave
+  // the answer to the tenant foreign keys.
+  const dentists: DentistRepository = {
+    listByClinic: async () => [],
+    findById: async (scope, dentistId) => {
+      lookups.dentists.push(dentistId);
+      if (scope !== CLINIC_ID || ![DENTIST_A, DENTIST_B].includes(dentistId)) {
+        return undefined;
+      }
+      return {
+        id: dentistId,
+        userId: null,
+        fullName: dentistId === DENTIST_A ? 'Dra. Ana Ruiz' : 'Dr. Luis Vega',
+        speciality: 'Odontología general',
+        color: null,
+        isActive: !options.inactiveDentists?.includes(dentistId),
+      };
+    },
+  };
+
+  const chairs: ChairRepository = {
+    listByClinic: async () => [],
+    findById: async (scope, chairId) => {
+      lookups.chairs.push(chairId);
+      if (scope !== CLINIC_ID || ![CHAIR_1, CHAIR_2].includes(chairId)) {
+        return undefined;
+      }
+      return {
+        id: chairId,
+        roomId: 'room-1',
+        roomName: 'Consultorio 1',
+        name: chairId === CHAIR_1 ? 'Sillón 1' : 'Sillón 2',
+        isActive: !options.inactiveChairs?.includes(chairId),
+      };
+    },
+  };
+
+  const writeDependencies: AppointmentWriteDependencies = {
     appointments: repository,
     clinics,
     newId: nextId,
   };
 
-  return { dependencies, writes, stored, repository };
+  const dependencies: AppointmentBookingDependencies = {
+    ...writeDependencies,
+    dentists,
+    chairs,
+  };
+
+  return { dependencies, writeDependencies, writes, stored, repository, lookups };
+}
+
+/**
+ * The same fakes with one clinician marked inactive.
+ *
+ * Written as a helper rather than an option on `ports()` because the deactivate
+ * belongs to the *scenario*, not to the harness: `withBooked` builds the appointment
+ * and the repositories at once, and a clinician who is deactivated afterwards is the
+ * case worth testing.
+ */
+function inactiveDentists(
+  harness: ReturnType<typeof ports>,
+  inactive: DentistId,
+): DentistRepository {
+  return {
+    listByClinic: harness.dependencies.dentists.listByClinic,
+    findById: async (clinicId, dentistId) => {
+      const found = await harness.dependencies.dentists.findById(clinicId, dentistId);
+      return found && dentistId === inactive ? { ...found, isActive: false } : found;
+    },
+  };
+}
+
+/** The same, for a chair. See {@link inactiveDentists}. */
+function inactiveChairs(harness: ReturnType<typeof ports>, inactive: ChairId): ChairRepository {
+  return {
+    listByClinic: harness.dependencies.chairs.listByClinic,
+    findById: async (clinicId, chairId) => {
+      const found = await harness.dependencies.chairs.findById(clinicId, chairId);
+      return found && chairId === inactive ? { ...found, isActive: false } : found;
+    },
+  };
 }
 
 function toEntry(appointment: Appointment): AgendaEntry {
@@ -286,7 +388,7 @@ describe('createAppointment', () => {
       ),
     };
     const harness = ports();
-    const withClosedClinic: AppointmentWriteDependencies = {
+    const withClosedClinic: AppointmentBookingDependencies = {
       ...harness.dependencies,
       clinics: { ...harness.dependencies.clinics, findById: async () => closed },
     };
@@ -385,7 +487,7 @@ describe('createAppointment', () => {
     // are decided first.
     const harness = ports();
     const allocated: AppointmentId[] = [];
-    const dependencies: AppointmentWriteDependencies = {
+    const dependencies: AppointmentBookingDependencies = {
       ...harness.dependencies,
       newId: () => {
         const id = harness.dependencies.newId();
@@ -418,6 +520,73 @@ describe('createAppointment', () => {
       'NOT_FOUND',
     );
     expect(writes.inserted).toHaveLength(0);
+  });
+
+  // Product question 17, decided: who may be booked is the domain's answer, not the
+  // browser's. Everything below used to pass, because nothing read `isActive`.
+  describe('who may be booked', () => {
+    it('refuses a clinician marked inactive, and names them', async () => {
+      const { dependencies, writes } = ports({ inactiveDentists: [DENTIST_A] });
+
+      await expectDomainError(
+        createAppointment(CLINIC_ID, request, dependencies),
+        'UNBOOKABLE_RESOURCE',
+      );
+      expect(writes.inserted).toHaveLength(0);
+    });
+
+    it('says who the clinician is and what to do, because a refusal with no name in it is a dead end', async () => {
+      const { dependencies } = ports({ inactiveDentists: [DENTIST_A] });
+
+      const failure = await createAppointment(CLINIC_ID, request, dependencies).catch(
+        (error: unknown) => error,
+      );
+
+      expect(failure).toMatchObject({
+        code: 'UNBOOKABLE_RESOURCE',
+        message: expect.stringContaining('Dra. Ana Ruiz'),
+      });
+      // Both ways out, because the clinic may well want the clinician back rather
+      // than a different one.
+      expect((failure as Error).message).toMatch(/back in service/);
+    });
+
+    it('refuses a chair marked inactive', async () => {
+      const { dependencies, writes } = ports({ inactiveChairs: [CHAIR_1] });
+
+      await expectDomainError(
+        createAppointment(CLINIC_ID, request, dependencies),
+        'UNBOOKABLE_RESOURCE',
+      );
+      expect(writes.inserted).toHaveLength(0);
+    });
+
+    it('books happily when the clinician is active, even though the chair is inactive and unused', async () => {
+      // A booking with no chair is a booking in a chair that has not been chosen yet,
+      // which is a different state from a booking in a chair that is out of service.
+      const { dependencies, writes, lookups } = ports({ inactiveChairs: [CHAIR_1] });
+
+      const { chairId: _ignored, ...withoutChair } = request;
+
+      await createAppointment(CLINIC_ID, withoutChair, dependencies);
+
+      expect(writes.inserted).toHaveLength(1);
+      expect(writes.inserted[0]?.chairId).toBeUndefined();
+      expect(lookups.chairs).toEqual([]);
+    });
+
+    it('stays silent about a name it cannot find, and leaves the answer to the foreign keys', async () => {
+      // `findById` cannot tell an absent id from another clinic's, and must not: two
+      // answers for one bad reference means one of them is wrong. The tenant FK says
+      // "not in this clinic" as a 422, and a second opinion here would be the second
+      // answer.
+      const stranger = asDentistId('99999999-9999-4999-8999-999999999999');
+      const { dependencies, writes } = ports();
+
+      await createAppointment(CLINIC_ID, { ...request, dentistId: stranger }, dependencies);
+
+      expect(writes.inserted).toHaveLength(1);
+    });
   });
 });
 
@@ -544,6 +713,86 @@ describe('rescheduleAppointment', () => {
     );
 
     expect(writes.schedules).toHaveLength(1);
+  });
+
+  // The awkward case the create rule does not have: a clinician deactivated *after*
+  // the appointment was booked. The names checked are the ones the booking will have
+  // after the move, so moving it is refused until it is reassigned. The alternative —
+  // "you may keep a name you already used" — makes an inactive clinician
+  // permanently bookable to anyone who books once and then only drags, and needs the
+  // existing row in hand to evaluate at all.
+  describe('who may be booked', () => {
+    const movedTo = '2026-09-28T15:00:00.000Z' as IsoDateTime;
+
+    it('refuses to move an appointment whose clinician was deactivated afterwards', async () => {
+      const harness = withBooked(scheduled);
+      const dependencies: AppointmentBookingDependencies = {
+        ...harness.dependencies,
+        dentists: inactiveDentists(harness, DENTIST_A),
+      };
+
+      await expectDomainError(
+        rescheduleAppointment(CLINIC_ID, BOOKED_ID, { startsAt: movedTo }, dependencies),
+        'UNBOOKABLE_RESOURCE',
+      );
+      expect(harness.writes.schedules).toHaveLength(0);
+    });
+
+    it('refuses to move an appointment onto a clinician who is inactive', async () => {
+      const harness = withBooked(scheduled);
+      const dependencies: AppointmentBookingDependencies = {
+        ...harness.dependencies,
+        dentists: inactiveDentists(harness, DENTIST_B),
+      };
+
+      await expectDomainError(
+        rescheduleAppointment(
+          CLINIC_ID,
+          BOOKED_ID,
+          { startsAt: movedTo, dentistId: DENTIST_B },
+          dependencies,
+        ),
+        'UNBOOKABLE_RESOURCE',
+      );
+      expect(harness.writes.schedules).toHaveLength(0);
+    });
+
+    it('moves it when the clinician is reactivated, so the refusal is not a dead end', async () => {
+      const harness = withBooked(scheduled);
+      const dependencies: AppointmentBookingDependencies = {
+        ...harness.dependencies,
+        dentists: inactiveDentists(harness, DENTIST_B),
+      };
+
+      // DENTIST_B stays inactive; DENTIST_A does not, so reassigning unblocks it.
+      await rescheduleAppointment(
+        CLINIC_ID,
+        BOOKED_ID,
+        { startsAt: movedTo, dentistId: DENTIST_A },
+        dependencies,
+      );
+
+      expect(harness.writes.schedules).toHaveLength(1);
+    });
+
+    it('refuses to move an appointment onto a chair that is out of service', async () => {
+      const harness = withBooked(scheduled);
+      const dependencies: AppointmentBookingDependencies = {
+        ...harness.dependencies,
+        chairs: inactiveChairs(harness, CHAIR_2),
+      };
+
+      await expectDomainError(
+        rescheduleAppointment(
+          CLINIC_ID,
+          BOOKED_ID,
+          { startsAt: movedTo, chairId: CHAIR_2 },
+          dependencies,
+        ),
+        'UNBOOKABLE_RESOURCE',
+      );
+      expect(harness.writes.schedules).toHaveLength(0);
+    });
   });
 
   it('answers NOT_FOUND for an appointment in another clinic', async () => {

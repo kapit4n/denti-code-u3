@@ -25,7 +25,7 @@
  * It uses `TEST_DATABASE_URL` so it can never touch development data.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -37,6 +37,8 @@ import * as schema from '@denti-code-u3/database/schema';
 import { registerAppointmentsRoutes } from '../src/http/routes/appointments.js';
 import { DrizzleAppointmentRepository } from '../src/infrastructure/persistence/repositories/appointment-repository.js';
 import { DrizzleClinicRepository } from '../src/infrastructure/persistence/repositories/clinic-repository.js';
+import { DrizzleDentistRepository } from '../src/infrastructure/persistence/repositories/dentist-repository.js';
+import { DrizzleChairRepository } from '../src/infrastructure/persistence/repositories/chair-repository.js';
 import { uuidGenerator } from '../src/infrastructure/id/uuid-generator.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
 
@@ -96,6 +98,11 @@ describeIntegration('appointment writes (PostgreSQL)', () => {
     });
     await registerAppointmentsRoutes(app, {
       appointments: new DrizzleAppointmentRepository(db),
+      // Wired even by the agenda test, which books nothing: the route refuses to be
+      // constructed without them, which is what keeps the booking rule from being
+      // bypassed by forgetting a dependency.
+      dentists: new DrizzleDentistRepository(db),
+      chairs: new DrizzleChairRepository(db),
       clinics: new DrizzleClinicRepository(db),
       ids: uuidGenerator,
     });
@@ -372,6 +379,88 @@ describeIntegration('appointment writes (PostgreSQL)', () => {
       });
 
       expect(response.statusCode).toBe(404);
+    });
+  });
+
+  // Product question 17, decided by the clinic: an inactive clinician or chair cannot
+  // be booked, and the refusal has to come from the API. These are the tests that
+  // would have failed before the rule existed, which is the only honest reason to
+  // write them — the seed's inactive chair and a `curl` are not tests.
+  describe('who may be booked', () => {
+    const reactivate = async (table: 'dentists' | 'chairs', id: string) => {
+      await sql.unsafe(`update ${table} set is_active = true where id = $1`, [id]);
+    };
+
+    afterEach(async () => {
+      await reactivate('dentists', dentist);
+      await reactivate('chairs', chair);
+    });
+
+    it('refuses a clinician marked inactive with 409, and says who', async () => {
+      await sql`update dentists set is_active = false where id = ${dentist}`;
+
+      const response = await book();
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error.code).toBe('DOMAIN_RULE_VIOLATION');
+      // The name is the point: "the clinician is inactive" with nobody named is a
+      // receptionist hunting through the dropdown for the answer.
+      expect(response.json().error.message).toContain('Dr Local');
+    });
+
+    it('refuses a chair marked out of service, and says which one', async () => {
+      await sql`update chairs set is_active = false where id = ${chair}`;
+
+      const response = await book();
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error.message).toContain('Chair 1');
+    });
+
+    it('does not refuse a booking that names no chair at all', async () => {
+      await sql`update chairs set is_active = false where id = ${chair}`;
+
+      const response = await book({ chairId: undefined });
+
+      expect(response.statusCode).toBe(201);
+      expect(response.json().chairId).toBeNull();
+    });
+
+    it('books it once the clinician is back in service, so the refusal is a prompt and not a dead end', async () => {
+      await sql`update dentists set is_active = false where id = ${dentist}`;
+      expect((await book()).statusCode).toBe(409);
+
+      await reactivate('dentists', dentist);
+
+      expect((await book()).statusCode).toBe(201);
+    });
+
+    it('refuses to move an appointment whose clinician was deactivated afterwards', async () => {
+      const created = await book();
+      expect(created.statusCode).toBe(201);
+      await sql`update dentists set is_active = false where id = ${dentist}`;
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/api/v1/appointments/${created.json().id}/schedule`,
+        payload: { startsAt: at(11) },
+      });
+
+      // A drag sends only `startsAt`. The clinician it keeps is still checked, so the
+      // move fails with a name in the message rather than silently keeping a booking
+      // with someone who has left.
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error.message).toContain('Dr Local');
+    });
+
+    it('leaves a reference from another clinic to the foreign keys rather than answering it here', async () => {
+      // 422 "not in this clinic", not a 409 about inactivity: `findById` cannot tell
+      // an absent id from another clinic's and must not, and two answers for one bad
+      // reference means one of them is wrong.
+      const response = await book({ dentistId: otherDentist });
+
+      expect(response.statusCode).toBe(422);
+      expect(response.json().error.code).toBe('VALIDATION_ERROR');
     });
   });
 

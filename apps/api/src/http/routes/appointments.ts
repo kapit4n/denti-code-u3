@@ -24,7 +24,13 @@
 
 import type { FastifyInstance } from 'fastify';
 
-import type { AppointmentRepository, ClinicRepository, IdGenerator } from '@denti-code-u3/domain';
+import type {
+  AppointmentRepository,
+  ChairRepository,
+  ClinicRepository,
+  DentistRepository,
+  IdGenerator,
+} from '@denti-code-u3/domain';
 import {
   createAppointment,
   rescheduleAppointment,
@@ -52,6 +58,17 @@ import { sendProblem } from '../problem.js';
 export interface AppointmentsDependencies {
   readonly appointments: AppointmentRepository;
   /**
+   * For the "who may be booked" rule: a clinician or chair marked inactive cannot
+   * be named by a create or a reschedule (product question 17).
+   *
+   * Required rather than optional because an appointment route that could be wired
+   * without them is a route where that rule silently does not run — which is the bug
+   * the rule was written to remove. Wiring them is one object at the call site, and
+   * forgetting is a type error rather than a policy hole.
+   */
+  readonly dentists: DentistRepository;
+  readonly chairs: ChairRepository;
+  /**
    * For the opening-hours rule: the clinic's own record, not a constant.
    *
    * The hours a booking is checked against are the clinic's data, so they are read
@@ -73,7 +90,7 @@ const MAX_WINDOW_DAYS = 366;
 
 export async function registerAppointmentsRoutes(
   app: FastifyInstance,
-  { appointments, clinics, ids }: AppointmentsDependencies,
+  { appointments, dentists, chairs, clinics, ids }: AppointmentsDependencies,
 ): Promise<void> {
   /**
    * `GET /api/v1/appointments?from=&to=&dentistIds=&chairIds=`
@@ -157,7 +174,7 @@ export async function registerAppointmentsRoutes(
           durationMinutes: parsed.data.durationMinutes,
           ...(parsed.data.notes ? { notes: parsed.data.notes } : {}),
         },
-        writeDependencies(appointments, clinics, ids),
+        bookingDependencies({ appointments, dentists, chairs, clinics, ids }),
       );
 
       return reply.status(201).send(entry);
@@ -210,7 +227,7 @@ export async function registerAppointmentsRoutes(
           ...(parsed.data.dentistId ? { dentistId: asDentistId(parsed.data.dentistId) } : {}),
           ...(parsed.data.chairId ? { chairId: asChairId(parsed.data.chairId) } : {}),
         },
-        writeDependencies(appointments, clinics, ids),
+        bookingDependencies({ appointments, dentists, chairs, clinics, ids }),
       );
 
       return reply.status(200).send(entry);
@@ -259,7 +276,10 @@ export async function registerAppointmentsRoutes(
           to: parsed.data.to,
           ...(parsed.data.reason ? { reason: parsed.data.reason } : {}),
         },
-        writeDependencies(appointments, clinics, ids),
+        // The narrow object on purpose: a status transition names no clinician and no
+        // chair, so it has nothing to ask the bookable-resources rule and must not be
+        // handed the repositories to ask it with.
+        writeDependencies({ appointments, clinics, ids }),
       );
 
       return reply.status(200).send(entry);
@@ -276,11 +296,12 @@ export async function registerAppointmentsRoutes(
  * own, and the id generator is the one the whole API allocates from, so an id minted
  * for an appointment cannot collide with a record number minted for a patient.
  */
-function writeDependencies(
-  appointments: AppointmentRepository,
-  clinics: ClinicRepository,
-  ids: IdGenerator,
-) {
+/** The four every write needs. A status transition names no resource, so it stops here. */
+function writeDependencies({
+  appointments,
+  clinics,
+  ids,
+}: Pick<AppointmentsDependencies, 'appointments' | 'clinics' | 'ids'>) {
   return {
     appointments,
     clinics,
@@ -288,6 +309,17 @@ function writeDependencies(
     // cannot collide with a record number minted for a patient.
     newId: () => asAppointmentId(ids.nextId()),
   };
+}
+
+/** The four, plus the two that answer who may be booked — see ADR 0020. */
+function bookingDependencies({
+  appointments,
+  dentists,
+  chairs,
+  clinics,
+  ids,
+}: AppointmentsDependencies) {
+  return { ...writeDependencies({ appointments, clinics, ids }), dentists, chairs };
 }
 
 /**

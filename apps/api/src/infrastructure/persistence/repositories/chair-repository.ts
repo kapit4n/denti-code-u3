@@ -17,7 +17,7 @@
  */
 
 import type { ChairListRequest, ChairRepository, ChairSummary } from '@denti-code-u3/domain';
-import { asChairId, type ClinicId } from '@denti-code-u3/types';
+import { asChairId, type ChairId, type ClinicId } from '@denti-code-u3/types';
 import { and, asc, eq, type SQL } from 'drizzle-orm';
 import { chairs, rooms } from '@denti-code-u3/database/schema';
 
@@ -51,6 +51,36 @@ export class DrizzleChairRepository implements ChairRepository {
       name: row.name,
       isActive: row.isActive,
     }));
+  }
+
+  async findById(clinicId: ClinicId, chairId: ChairId): Promise<ChairSummary | undefined> {
+    const [row] = await this.db
+      .select({
+        id: chairs.id,
+        roomId: chairs.roomId,
+        roomName: rooms.name,
+        name: chairs.name,
+        isActive: chairs.isActive,
+      })
+      .from(chairs)
+      // The same join as the list, including the `LEFT`: the booking rule only asks
+      // whether the chair can be booked, but a summary is this shape and returning a
+      // narrower one here would be a second shape for the same concept.
+      .leftJoin(rooms, eq(rooms.id, chairs.roomId))
+      .where(and(eq(chairs.clinicId, clinicId), eq(chairs.id, chairId)))
+      .limit(1);
+
+    if (!row) {
+      return undefined;
+    }
+
+    return {
+      id: asChairId(row.id),
+      roomId: row.roomId,
+      roomName: row.roomName,
+      name: row.name,
+      isActive: row.isActive,
+    };
   }
 
   private scope(clinicId: ClinicId, request: ChairListRequest): SQL | undefined {

@@ -112,6 +112,7 @@ Structured JSON via pino (Fastify built-in).
 | Permission denied                                   | 403     | `FORBIDDEN`                                         |
 | Not found                                           | 404     | `NOT_FOUND`                                         |
 | Domain rule violated (illegal transition, conflict) | 409/422 | `DOMAIN_RULE_VIOLATION`                             |
+| Booking names an inactive clinician or chair        | 409     | `DOMAIN_RULE_VIOLATION`                             |
 | Unexpected                                          | 500     | `INTERNAL_ERROR` (generic message + requestId only) |
 
 Database/driver errors are **never** forwarded: the error handler maps them to a

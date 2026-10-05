@@ -1,10 +1,20 @@
 /**
  * The dependencies of the appointment write use cases.
  *
- * Grouped into one interface because every one of the three use cases needs all
- * four, and three interfaces with a different combination each would be three
- * names for the same thing. A caller wires one object; the domain still cannot
- * reach a database, because everything it can reach is named here.
+ * Split in two, because the three use cases do not need the same doors:
+ *
+ *  - `AppointmentWriteDependencies` is what all three need. Grouped into one
+ *    interface because a caller wires one object and three interfaces with a
+ *    different combination each would be three names for the same thing. The domain
+ *    still cannot reach a database, because everything it can reach is named here.
+ *  - `AppointmentBookingDependencies` adds the two repositories that answer *who may
+ *    be booked*, and is required by the two use cases that name a clinician or a
+ *    chair (`bookable-resources.ts`).
+ *
+ * The split is what keeps the status transition honest: it takes the four it uses
+ * and cannot be handed a chair repository it would ignore. The other direction — a
+ * narrower interface per use case — would be six interfaces for three functions, and
+ * the write side would lose the single seam every repository is wired through.
  *
  * `findById` and `findOverlapping` are reads, `write` is the mutation, and the
  * split is deliberate: `findOverlapping` exists *only* to feed the conflict
@@ -26,7 +36,9 @@ import type { Clinic } from '../organization/index.js';
 import type {
   AppointmentRepository,
   AppointmentWriteRepository,
+  ChairRepository,
   ClinicRepository,
+  DentistRepository,
 } from '../ports/index.js';
 import type { AgendaEntry } from './agenda-read-model.js';
 import {
@@ -43,12 +55,25 @@ import {
   requiresTransitionReason,
   reservesSchedulingSlot,
 } from './appointment-lifecycle.js';
+import { assertResourcesAreBookable } from './bookable-resources.js';
 import { assertNoSchedulingConflicts } from './scheduling-conflicts.js';
 
 export interface AppointmentWriteDependencies {
   readonly appointments: AppointmentWriteRepository & AppointmentRepository;
   readonly clinics: ClinicRepository;
   readonly newId: () => AppointmentId;
+}
+
+/**
+ * What a booking needs on top of the four every write needs.
+ *
+ * Required, not optional: a create or a reschedule that could be handed no
+ * `dentists` repository would be a booking path where the "who may be booked" rule
+ * silently does not run, which is the exact bug this rule was written to remove.
+ */
+export interface AppointmentBookingDependencies extends AppointmentWriteDependencies {
+  readonly dentists: DentistRepository;
+  readonly chairs: ChairRepository;
 }
 
 /** What a caller asks to book. Times are instants, never local date-times. */
@@ -86,20 +111,25 @@ export interface AppointmentTransitionRequest {
  *  2. **Opening hours.** Before the conflict check, because "the clinic is shut"
  *     is a truer answer than "that slot is taken" for a 22:00 request, and it is
  *     the one a receptionist can act on without changing the booking.
- *  3. **Conflicts**, for the same dentist or chair.
+ *  3. **Who may be booked.** A clinician or chair marked inactive cannot be named
+ *     (product question 17). Before the conflict check, because a booking for a
+ *     clinician who has left is wrong in a way no amount of free time repairs, and
+ *     because the answer has to come before the question of what else is in the
+ *     way.
+ *  4. **Conflicts**, for the same dentist or chair.
  *
  * A new appointment is always `SCHEDULED`. Confirming means the patient agreed,
- * and a create form that can do that would be recording an agreement nobody had.
+ * and a create form that could do that would be recording an agreement nobody had.
  *
  * The conflict check is a courtesy, not the guarantee: the exclusion constraints
  * are, and the repository translates their refusal into the same
  * `SCHEDULING_CONFLICT` (ADR 0018). Two receptionists pressing "save" on the same
- * slot both get past step 3, and one of them is refused by the database.
+ * slot both get past step 4, and one of them is refused by the database.
  */
 export async function createAppointment(
   clinicId: ClinicId,
   request: NewAppointmentRequest,
-  dependencies: AppointmentWriteDependencies,
+  dependencies: AppointmentBookingDependencies,
 ): Promise<AgendaEntry> {
   assertBookableDuration(request.durationMinutes);
 
@@ -108,6 +138,12 @@ export async function createAppointment(
     clinic,
     new Date(request.startsAt),
     new Date(appointmentEndsAt(request.startsAt, request.durationMinutes)),
+  );
+
+  await assertResourcesAreBookable(
+    clinicId,
+    { dentistId: request.dentistId, ...(request.chairId ? { chairId: request.chairId } : {}) },
+    dependencies,
   );
 
   const appointment: Appointment = {
@@ -155,12 +191,17 @@ export async function createAppointment(
  *
  * The appointment's own row is excluded from the conflict check by `id`, so moving
  * an appointment to a time that touches itself is not a conflict with itself.
+ *
+ * The names checked are the ones the booking will have **after** the move, including
+ * any it kept: a clinician deactivated since the appointment was booked is refused
+ * here rather than quietly carried along. See `bookable-resources.ts` for why that
+ * case is answered rather than allowed through.
  */
 export async function rescheduleAppointment(
   clinicId: ClinicId,
   appointmentId: AppointmentId,
   request: AppointmentRescheduleRequest,
-  dependencies: AppointmentWriteDependencies,
+  dependencies: AppointmentBookingDependencies,
 ): Promise<AgendaEntry> {
   const existing = await dependencies.appointments.findById(clinicId, appointmentId);
   if (!existing) {
@@ -188,6 +229,13 @@ export async function rescheduleAppointment(
 
   const dentistId = request.dentistId ?? existing.dentistId;
   const chairId = request.chairId ?? existing.chairId;
+
+  await assertResourcesAreBookable(
+    clinicId,
+    { ...(dentistId ? { dentistId } : {}), ...(chairId ? { chairId } : {}) },
+    dependencies,
+  );
+
   const moved: Appointment = {
     ...existing,
     dentistId,

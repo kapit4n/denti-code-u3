@@ -66,20 +66,19 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 
 ## Verification log (last run, session 18)
 
-| Command                     | Result                                                 |
-| --------------------------- | ------------------------------------------------------ |
-| `pnpm run typecheck`        | 12/12 tasks pass                                       |
-| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`                  |
-| `pnpm run format`           | applied; `pnpm run format:check` clean                 |
-| `pnpm run test`             | 12/12 tasks pass — 429 tests (7 new)                   |
-| `pnpm run test:integration` | 11 files, 130 tests pass against real PostgreSQL 17    |
-| `pnpm run build`            | 5/5 tasks pass                                         |
-| `pnpm run test:e2e`         | 60 passed (no UI moved this session)                   |
-| `pnpm run guard:boundaries` | OK                                                     |
-| `pnpm run db:migrate`       | no migration needed — this session adds no column      |
-| `pnpm run db:seed`          | adds 2 rooms and 4 chairs; `db:reset` run to seat them |
+| Command                     | Result                                              |
+| --------------------------- | --------------------------------------------------- |
+| `pnpm run typecheck`        | 12/12 tasks pass                                    |
+| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`               |
+| `pnpm run format`           | applied; `pnpm run format:check` clean              |
+| `pnpm run test`             | 12/12 tasks pass — 442 tests (9 new)                |
+| `pnpm run test:integration` | 11 files, 136 tests pass against real PostgreSQL 17 |
+| `pnpm run build`            | 5/5 tasks pass                                      |
+| `pnpm run test:e2e`         | 60 passed (no UI moved this session)                |
+| `pnpm run guard:boundaries` | OK                                                  |
+| `pnpm run db:migrate`       | no migration needed — this session adds no column   |
 
-Per-package unit/component tests: domain 145, validation 50, api-client 15, api 58
+Per-package unit/component tests: domain 154, validation 50, api-client 15, api 58
 (integration skipped here, run separately), app 162, desktop 3.
 
 **Two assertions in the new integration test were wrong before the code was, and the
@@ -166,6 +165,33 @@ both and neither existed yet.
 
 ## Decisions made this session (not yet in ADRs)
 
+- **The booking rule's wiring is ADR 0020, and the reason it needed one is the
+  second-order part.** Adding `dentists` and `chairs` to
+  `AppointmentWriteDependencies` had three possible shapes, and the obvious one —
+  make them optional so the status transition is not handed repositories it does
+  not use — deletes the guarantee quietly: `if (dentists)` becomes "run the rule
+  if somebody remembered to wire it". Instead the dependencies split into
+  `AppointmentWriteDependencies` (four, every write) and
+  `AppointmentBookingDependencies` (adds the two, required, for create and
+  reschedule). The compiler then caught three files that were constructing the
+  appointment routes without them, including two test harnesses that would
+  otherwise have tested a booking path with no rule in it.
+- **A reschedule of an appointment whose clinician was deactivated afterwards is
+  refused.** The clinic was told this and accepted it. The alternative — "you may
+  keep a name you already used, but not introduce a new one" — makes an inactive
+  clinician permanently bookable to anyone who books once and then only drags,
+  needs the existing row in hand to evaluate at all, and cannot be explained to a
+  receptionist in one sentence. So moving an appointment whose clinician has left
+  fails with the clinician's name in the message, and the way forward is
+  reassigning it.
+- **A name the rule cannot find is left to the foreign keys.** `findById` cannot
+  distinguish an absent id from another clinic's and must not (ADR 0014), so the
+  rule stays silent and the tenant FK answers 422 as it always did. Two answers
+  for one bad reference means one of them is wrong; this keeps the existing one.
+- **`UNBOOKABLE_RESOURCE` is its own domain code.** `INVALID_INPUT` for a booking
+  that named a real, existing, deactivated clinician sends whoever reads the log
+  looking for a malformed body. Same reasoning as `OUTSIDE_OPERATING_HOURS`: the
+  domain names the reason precisely and the API folds it into one wire code.
 - **Two endpoints, not one "booking options" endpoint.** Dentists and chairs are
   two resources with two independent lifetimes, and the form's dentist dropdown has
   no reason to be invalidated when a chair is renamed. A single endpoint would make
@@ -521,6 +547,14 @@ editing. Both sides now go through `PatientRepository`. Remaining:
      means a client that hides the inactive ones is currently the only thing
      stopping it. That is a rule in the browser, and it is now recorded as
      product question 17 rather than decided here.
+
+   - **Product question 17 is answered and the rule exists (session 19).** No: an
+     inactive clinician or chair cannot be booked. `bookable-resources.ts` refuses
+     with `UNBOOKABLE_RESOURCE`, which the API folds into `DOMAIN_RULE_VIOLATION`
+     (409), and the message names the resource. `onlyActive` still defaults to _no
+     filter_ on the two lists — a clinician who has left stays visible on the
+     appointments they worked. See ADR 0020 for how it is wired, which is the
+     part worth reading.
 
    **Still to do: the booking form** — not started, no longer blocked. The form,
    the empty-slot click (`selectable`), and the "New Visit" and next-appointment
@@ -936,3 +970,44 @@ nothing but seed rows, so nothing was lost.
 5/5 · 429 unit/component (7 new) · 130 integration (12 new) · 60/60 e2e unchanged ·
 both endpoints answered by a real API against the dev database, including the 422
 for an unreadable `?onlyActive`. No migration: this session adds no column.
+
+Session 19: the booking rule the clinic was asked about instead of assumed. Product
+question 17 asked whether an appointment may name a dentist or chair that is marked
+inactive, and the honest answer was that nothing stopped it — `createAppointment` never
+read `isActive`, the two list endpoints returned it and enforced nothing, and the only
+thing in the way was a client that happened to hide the row. The clinic answered: no.
+
+The rule itself is short. `bookable-resources.ts` looks the named clinician and chair
+up and refuses an inactive one with `UNBOOKABLE_RESOURCE`, which the API folds into
+`DOMAIN_RULE_VIOLATION` at 409, and the message names the resource — "Dr Local is
+marked inactive and cannot be booked" rather than a refusal with nobody in it.
+
+The part worth the ADR is the wiring. `AppointmentWriteDependencies` could have taken
+the two new repositories as optional, and that would have looked like a tidier diff:
+the status transition would not be handed a chair repository it never uses. Instead
+the dependency type split, `AppointmentWriteDependencies` for the four every write
+needs and `AppointmentBookingDependencies` for create and reschedule, which **cannot
+be constructed** without the two. The compiler then found three files that were
+building the appointment routes without them — including two integration harnesses that
+would otherwise have tested a booking path with no rule in it. That is the whole
+argument for the shape: forgetting became a type error instead of a clinic booking a
+clinician who left.
+
+Two cases came out of it that had to be decided rather than defaulted. A **reschedule**
+checks the names the booking will have _after_ the move, so moving an appointment whose
+clinician was deactivated afterwards is refused until it is reassigned. The tempting
+alternative — you may keep a name you already used — makes an inactive clinician
+permanently bookable to anyone who books once and then only drags, and needs the
+existing row in hand to evaluate at all. And a name the rule **cannot find** is left
+alone entirely: `findById` cannot tell an absent id from another clinic's and must not,
+so the tenant foreign keys answer that one as a 422, exactly as they did before. Two
+answers for one bad reference means one of them is wrong.
+
+Both call sites were verified by deleting them: removing the create check fails three
+create tests, removing the reschedule check fails three different ones, and neither
+overlaps the other.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard · format · build 5/5 ·
+442 unit/component (9 new) · 136 integration (6 new, real PostgreSQL) · 60/60 e2e
+unchanged. No migration, no UI change: this is the rule the booking form inherits, and
+ADR 0020 records why it is wired this way.

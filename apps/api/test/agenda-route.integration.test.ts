@@ -30,6 +30,8 @@ import * as schema from '@denti-code-u3/database/schema';
 import { registerAppointmentsRoutes } from '../src/http/routes/appointments.js';
 import { DrizzleAppointmentRepository } from '../src/infrastructure/persistence/repositories/appointment-repository.js';
 import { DrizzleClinicRepository } from '../src/infrastructure/persistence/repositories/clinic-repository.js';
+import { DrizzleDentistRepository } from '../src/infrastructure/persistence/repositories/dentist-repository.js';
+import { DrizzleChairRepository } from '../src/infrastructure/persistence/repositories/chair-repository.js';
 import { uuidGenerator } from '../src/infrastructure/id/uuid-generator.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
 
@@ -83,6 +85,8 @@ describeIntegration('GET /api/v1/appointments (PostgreSQL)', () => {
       // The write routes are registered alongside the read one, so their
       // dependencies have to be here even though this file only reads. They are
       // exercised in `appointment-write-route.integration.test.ts`.
+      dentists: new DrizzleDentistRepository(db),
+      chairs: new DrizzleChairRepository(db),
       clinics: new DrizzleClinicRepository(db),
       ids: uuidGenerator,
     });

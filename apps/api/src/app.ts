@@ -91,6 +91,11 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   // and "the book" each have one implementation.
   const appointments = new DrizzleAppointmentRepository(connection.db);
   const clinics = new DrizzleClinicRepository(connection.db);
+  // Read once and shared: the two read endpoints, the agenda's filters and the
+  // booking rule all read the same rows, and two instances of one repository would
+  // be two answers to one question.
+  const dentists = new DrizzleDentistRepository(connection.db);
+  const chairs = new DrizzleChairRepository(connection.db);
 
   await registerDashboardRoutes(app, {
     db: connection.db,
@@ -111,7 +116,13 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   //
   // The writes need the clinic's own record, for opening hours: a clinic that opens
   // at 07:00 must not need a deployment to say so.
-  await registerAppointmentsRoutes(app, { appointments, clinics, ids: uuidGenerator });
+  await registerAppointmentsRoutes(app, {
+    appointments,
+    dentists,
+    chairs,
+    clinics,
+    ids: uuidGenerator,
+  });
 
   // The clinic's own record, so the browser renders the calendar in the clinic's
   // day rather than the visitor's.
@@ -120,8 +131,8 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   // The two resources a booking is made against. `POST /appointments` requires a
   // `dentistId` and accepts a `chairId`, so until these answered there was no way to
   // name one — the appointment write side had no read side to sit on.
-  await registerDentistsRoutes(app, { dentists: new DrizzleDentistRepository(connection.db) });
-  await registerChairsRoutes(app, { chairs: new DrizzleChairRepository(connection.db) });
+  await registerDentistsRoutes(app, { dentists });
+  await registerChairsRoutes(app, { chairs });
 
   app.get('/', async () => ({
     service: 'denti-code-u3-api',

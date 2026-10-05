@@ -1167,3 +1167,75 @@ pnpm run db:seed          2 rooms, 4 chairs; agenda now names a chair per block
 live API                  /dentists, /chairs, ?onlyActive=true, 422 on ?onlyActive=yes
 defect checks             folding removed -> 1 failure; leftJoin -> innerJoin -> 3
 ```
+
+---
+
+## Session 19 — the booking rule, asked instead of assumed
+
+**Started from:** `5efe567`. Product question 17 was open: may an appointment be
+booked with a dentist or chair that is not active? The code's answer was "yes", and
+the reason it was yes is worth recording — `createAppointment` never read `isActive`,
+the two list endpoints returned it and enforced nothing, and the only thing in the way
+was a client that happened to hide the row.
+
+The clinic was asked. Answer: **no**, refused server-side, for both.
+
+**What was added**
+
+- `packages/domain/src/appointment/bookable-resources.ts` — the rule, with no
+  dependency but the two repositories it reads.
+- `UNBOOKABLE_RESOURCE` as a domain error code, mapped to 409 and folded into
+  `DOMAIN_RULE_VIOLATION` on the wire.
+- `AppointmentBookingDependencies extends AppointmentWriteDependencies`, required by
+  `createAppointment` and `rescheduleAppointment`.
+- `ChairRepository.findById`, and the check wired into both use cases.
+
+**Decisions worth recording**
+
+- **The dependency split is the decision, not the `if`.** Adding the two repositories
+  as optional would have been the tidier diff — the status transition would not be
+  handed a chair repository it never uses — and it deletes the guarantee silently:
+  `if (dentists)` becomes "run the rule when somebody remembered to wire it". Making
+  them required in a wider type means the appointment routes **cannot be constructed**
+  without them, and `tsc` immediately found three files that were: `app.ts` and two
+  integration harnesses that would otherwise have tested a booking path with no rule
+  in it. ADR 0020.
+- **A reschedule checks the names the booking will have after the move**, so moving
+  an appointment whose clinician was deactivated afterwards is refused until it is
+  reassigned. The alternative — "you may keep a name you already used" — makes an
+  inactive clinician permanently bookable to anyone who books once and then only
+  drags, cannot be explained in one sentence, and needs the existing row to evaluate.
+  The clinic was told and accepted it.
+- **A name the rule cannot find is left to the foreign keys.** `findById` cannot tell
+  an absent id from another clinic's and must not (ADR 0014), so the rule stays silent
+  and the tenant FK answers 422 as before. Two answers for one bad reference means one
+  is wrong.
+- **`UNBOOKABLE_RESOURCE` rather than `INVALID_INPUT`**, for the same reason
+  `OUTSIDE_OPERATING_HOURS` exists: a log line saying `INVALID_INPUT` for a booking
+  that named a real, existing, deactivated clinician sends the reader looking for a
+  malformed body.
+- **`onlyActive` still defaults to no filter.** The rule is not a reason to hide rows
+  from the list: a clinician who has left still appears on the appointments they
+  worked.
+
+**Verification**
+
+Both call sites were checked by deleting them, and they do not overlap: removing the
+create check fails three create tests, removing the reschedule check fails three
+different ones. The compiler was the other check — three type errors in three files is
+the argument for the dependency shape.
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             442 unit/component (12/12 tasks, 9 new)
+pnpm run test:integration 136 integration (11 files, 6 new, real PostgreSQL 17)
+pnpm run test:e2e         60/60 passed (no UI moved)
+pnpm run db:migrate       no migration needed — no column added
+```
+
+**Not done, and deliberately:** the booking form. This is the rule it inherits, and it
+is the server-side half of the answer to question 17 — the browser no longer has to
+decide who may be booked, so it can filter for convenience without being the policy.

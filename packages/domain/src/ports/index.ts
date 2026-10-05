@@ -385,6 +385,17 @@ export interface ChairListRequest {
 
 export interface ChairRepository {
   listByClinic(clinicId: ClinicId, request?: ChairListRequest): Promise<readonly ChairSummary[]>;
+  /**
+   * One chair of this clinic, or `undefined`.
+   *
+   * Added for the same reason the dentist port has it: a write that names a chair
+   * has to know whether it can be booked, and `listByClinic` cannot answer that
+   * without asking for the whole clinic's furniture and matching an id by hand.
+   *
+   * A chair in another clinic is `undefined`, not refused — see
+   * `DentistRepository.findById`.
+   */
+  findById(clinicId: ClinicId, chairId: ChairId): Promise<ChairSummary | undefined>;
 }
 
 /**

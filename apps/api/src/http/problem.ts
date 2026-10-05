@@ -32,6 +32,9 @@ const DOMAIN_ERROR_HTTP_STATUS: Record<DomainErrorCode, number> = {
   ILLEGAL_TRANSITION: 409,
   SCHEDULING_CONFLICT: 409,
   OUTSIDE_OPERATING_HOURS: 422,
+  // 409, like the conflict: the request was well formed and the answer is "not with
+  // that resource", which is a "try a different one", not a "correct your syntax".
+  UNBOOKABLE_RESOURCE: 409,
   INSUFFICIENT_STOCK: 409,
   DUPLICATED_RECORD: 409,
   FORBIDDEN: 403,
