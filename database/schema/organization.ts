@@ -15,6 +15,7 @@ import {
   text,
   time,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
@@ -59,26 +60,42 @@ export const clinicOperatingHours = pgTable(
   ],
 );
 
-export const rooms = pgTable('rooms', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  clinicId: uuid('clinic_id')
-    .notNull()
-    .references(() => clinics.id, { onDelete: 'cascade' }),
-  name: text('name').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const rooms = pgTable(
+  'rooms',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clinicId: uuid('clinic_id')
+      .notNull()
+      .references(() => clinics.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Target of the appointments' tenant foreign key: see
+    // `appointments_tenant_foreign_keys` in `database/schema/appointment.ts`.
+    unique('rooms_id_clinic_uq').on(table.id, table.clinicId),
+  ],
+);
 
 /** A treatment unit (sillón). Appointments may point at one. */
-export const chairs = pgTable('chairs', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  clinicId: uuid('clinic_id')
-    .notNull()
-    .references(() => clinics.id, { onDelete: 'cascade' }),
-  roomId: uuid('room_id').references(() => rooms.id, { onDelete: 'set null' }),
-  name: text('name').notNull(),
-  isActive: boolean('is_active').notNull().default(true),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const chairs = pgTable(
+  'chairs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clinicId: uuid('clinic_id')
+      .notNull()
+      .references(() => clinics.id, { onDelete: 'cascade' }),
+    roomId: uuid('room_id').references(() => rooms.id, { onDelete: 'set null' }),
+    name: text('name').notNull(),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Target of the appointments' tenant foreign key: see
+    // `appointments_tenant_foreign_keys` in `database/schema/appointment.ts`.
+    unique('chairs_id_clinic_uq').on(table.id, table.clinicId),
+  ],
+);
 
 export const users = pgTable(
   'users',
@@ -121,7 +138,12 @@ export const dentists = pgTable(
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index('dentists_clinic_active_idx').on(table.clinicId, table.isActive)],
+  (table) => [
+    index('dentists_clinic_active_idx').on(table.clinicId, table.isActive),
+    // Target of the appointments' tenant foreign key: see
+    // `appointments_tenant_foreign_keys` in `database/schema/appointment.ts`.
+    unique('dentists_id_clinic_uq').on(table.id, table.clinicId),
+  ],
 );
 
 /** Which permissions a role grants. Roles are fixed; permissions are explicit. */

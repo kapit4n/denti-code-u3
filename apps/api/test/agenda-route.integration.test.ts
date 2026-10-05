@@ -29,6 +29,8 @@ import { fileURLToPath } from 'node:url';
 import * as schema from '@denti-code-u3/database/schema';
 import { registerAppointmentsRoutes } from '../src/http/routes/appointments.js';
 import { DrizzleAppointmentRepository } from '../src/infrastructure/persistence/repositories/appointment-repository.js';
+import { DrizzleClinicRepository } from '../src/infrastructure/persistence/repositories/clinic-repository.js';
+import { uuidGenerator } from '../src/infrastructure/id/uuid-generator.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -78,6 +80,11 @@ describeIntegration('GET /api/v1/appointments (PostgreSQL)', () => {
     });
     await registerAppointmentsRoutes(app, {
       appointments: new DrizzleAppointmentRepository(db),
+      // The write routes are registered alongside the read one, so their
+      // dependencies have to be here even though this file only reads. They are
+      // exercised in `appointment-write-route.integration.test.ts`.
+      clinics: new DrizzleClinicRepository(db),
+      ids: uuidGenerator,
     });
 
     await sql`

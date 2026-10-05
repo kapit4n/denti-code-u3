@@ -88,6 +88,18 @@ export function startVisitFromAppointment(
     );
   }
 
+  // A visit is attributable to a clinician, and an appointment whose dentist has
+  // left the clinic has none — the column went to null with the row it referenced.
+  // Refusing is the honest answer: inventing a dentist for the record would put a
+  // name on treatment that somebody else may have performed.
+  if (appointment.dentistId === null) {
+    throw new DomainError(
+      'INVALID_INPUT',
+      'This appointment has no dentist, so it cannot start a visit',
+      { appointmentId: appointment.id },
+    );
+  }
+
   if (appointment.visitId) {
     throw new DomainError(
       'DUPLICATED_RECORD',

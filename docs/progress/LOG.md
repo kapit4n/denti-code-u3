@@ -817,12 +817,9 @@ passed — the file, not the snippet, was wrong.
 
 ### Still open
 
-- Appointment write side: `CreateAppointment`, `RescheduleAppointment`,
-  `TransitionAppointment`, conflict errors in the UI, and the forms that un-disable
-  "New Visit" and the profile's next-appointment action. `from-calendar-event.ts`
-  (ADR 0011) arrives with it.
 - Dentist and chair filters. The API accepts them; no UI sends them.
-  `AgendaEntry` has no `chairId`/`chairName` — decide before chair columns.
+  `AgendaEntry` has carried `chairId`/`chairName` since session 13 — an earlier note
+  here said otherwise. Room columns need a `roomId` the read model does not have.
 - `apps/api/src/http/routes/dashboard.ts` still receives `db` for the non-appointment
   aggregates.
 - Patient phone is still returned by the list endpoint while its column comment says
@@ -843,4 +840,89 @@ pnpm run test:e2e         56/56 passed
 guard:boundaries          OK, and verified by leaking @fullcalendar/core into
                            a query and watching it fail
 mutations                 5 adapter mutations, 5 caught
+```
+
+---
+
+## Session 15 — Appointment write side
+
+**Delivered** the three use cases and the three endpoints, and made two scheduling
+guarantees the database's rather than the application's.
+
+**Domain** (`packages/domain/src/appointment/`)
+
+- `createAppointment`, `rescheduleAppointment`, `transitionAppointmentStatus`, each
+  taking injected ports and answering with the `AgendaEntry` the row became.
+- `clinicLocalMoment` / `parseLocalTimeMinutes` in `shared/time.ts`, and
+  `assertWithinOperatingHours` in `organization/clinic.ts`: a booking must fit _inside_
+  one clinic-local day's hours, not merely start on a day the clinic is open.
+- `AppointmentWindow` split out of `AgendaWindow`, because the conflict checker must not
+  filter by the resource it is about to collide with.
+- `AppointmentRepository` gains `findById`, `findEntryById`, `findOverlapping` and
+  extends the new `AppointmentWriteRepository` (`insert`, `replaceSchedule`,
+  `changeStatus`) — the shape `PatientRepository` already had.
+
+**Schema** — `0002_appointment_tenant_foreign_keys.sql`
+
+- `appointments` now references its patient, dentist, chair and room by `(id,
+clinic_id)`, with matching `UNIQUE` constraints on all four tables. A foreign key on
+  the id alone proves a row exists and says nothing about whose it is.
+- Hand-ordered: the constraints must be added before the keys that point at them, and
+  Drizzle emits them the other way round.
+- `ON DELETE SET NULL (column)` on the three nullable ones, so a dentist can still
+  leave a clinic with appointments behind them.
+
+**API** — three routes, `isExclusionViolation` (23P01) and a `23503` translated to a
+422, plus `uuidSchema` on the path parameter.
+
+**Three findings worth keeping**
+
+1. The concurrent-write test is the reason the constraints exist: both requests pass the
+   domain's conflict check, because each is right about what it can see. One 201, one
+   409, one row.
+2. The new tenant constraint refused a fixture in the _existing_ agenda integration
+   test — a booking in the other clinic's book with that clinic's patient and chair but
+   **this** clinic's dentist. A test fixture committing the exact leak the constraint
+   closes is the best evidence the constraint is right.
+3. `AgendaEntry` has carried `chairId`/`chairName` since session 13; two docs claimed
+   otherwise and are corrected.
+4. ADR 0018 claimed no `roomId` on the write side while the create schema accepted one
+   and the repository wrote it — a booking could be given a room it could never be
+   shown or moved from. Removed from the request; the column, the constraint and the
+   entity's field stay, because the entity is a picture of the table. A chair still
+   implies its room, so `room_no_overlap` is not dormant.
+
+**Known gap, recorded not hidden:** a lunch break
+(`clinic_operating_hours.break_starts_at` / `break_ends_at`) is not enforced. The
+columns exist, the domain type does not carry them, nothing exposes them yet.
+
+### Still open
+
+- **The UI for the write side.** The grid is still read-only. `from-calendar-event.ts`
+  (ADR 0011), the booking form, the quick panel, drag-and-drop and the conflict-error
+  surface all wait on it. The `api-client` has no write methods for the three endpoints.
+- Dentist and chair filters: the API accepts them, no UI sends them. Room columns need
+  a `roomId` the read model lacks, and `room_no_overlap` has no read side.
+- `dashboard.ts` still receives `db` for the non-appointment aggregates.
+- Patient phone is still returned by the list endpoint while its column comment says it
+  is encrypted and never returned. Needs a product decision.
+- Dashboard `<h1>` is still a time-of-day greeting rather than the page name.
+- No authentication, so `request.clinicId` still comes from `CLINIC_ID`.
+- `apps/api/src/http/routes/patients.ts` does not validate its path parameter, so a
+  hand-typed id becomes PostgreSQL's `22P02` as a 500. The appointments routes do.
+
+### Verification
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + boundary guard OK
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             361 unit/component (12/12 tasks, 46 new)
+pnpm run test:integration 118 integration (10 files, real PostgreSQL 17, 25 new)
+pnpm run test:e2e         56/56 passed (no UI moved this session)
+pnpm run db:migrate       0002 applied to the live development database
+pnpm run db:seed          completes against the new constraints
+by hand, on a live DB     cross-clinic patient refused, cross-clinic chair refused,
+                          deleting a dentist nulls dentist_id and keeps clinic_id
 ```

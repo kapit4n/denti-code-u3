@@ -61,10 +61,19 @@ export interface AgendaEntry {
  *
  * The window is bounded by the caller: a year is plenty, and a clinic has
  * decades of appointments and no reason to load them.
+ *
+ * This is the bare interval. `AgendaWindow` adds the optional dentist and chair
+ * filters on top of it, because a screen may narrow what it shows while the
+ * conflict check — which is about a specific dentist and chair, and must see
+ * *every* booking to be correct — may not narrow anything. The one thing the
+ * checker must not do is filter by the resources it is about to collide with.
  */
-export interface AgendaWindow {
+export interface AppointmentWindow {
   readonly from: IsoDateTime;
   readonly to: IsoDateTime;
+}
+
+export interface AgendaWindow extends AppointmentWindow {
   /** Restrict to these dentists. Empty or absent means every dentist. */
   readonly dentistIds?: readonly DentistId[];
   /** Restrict to these chairs. Empty or absent means every chair. */

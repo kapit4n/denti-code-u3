@@ -13,6 +13,7 @@ import {
 import {
   asAppointmentId,
   asChairId,
+  asClinicId,
   asDentistId,
   asPatientId,
   asVisitId,
@@ -25,7 +26,7 @@ const VISIT = asVisitId('33333333-3333-4333-8333-333333333333');
 function scheduledAppointment(overrides: Partial<Appointment> = {}): Appointment {
   return {
     id: asAppointmentId('44444444-4444-4444-8444-444444444444'),
-    clinicId: '55555555-5555-4555-8555-555555555555',
+    clinicId: asClinicId('55555555-5555-4555-8555-555555555555'),
     patientId: PATIENT,
     dentistId: DENTIST,
     chairId: asChairId('66666666-6666-4666-8666-666666666666'),
@@ -112,7 +113,7 @@ describe('startVisitFromAppointment', () => {
 describe('completeVisit', () => {
   const openVisit: Visit = {
     id: VISIT,
-    clinicId: '55555555-5555-4555-8555-555555555555',
+    clinicId: asClinicId('55555555-5555-4555-8555-555555555555'),
     patientId: PATIENT,
     dentistId: DENTIST,
     startedAt: '2026-09-30T14:05:00.000Z',
@@ -148,7 +149,7 @@ describe('reopenVisit', () => {
   it('reopens a completed visit for amendment', () => {
     const completed: Visit = {
       id: VISIT,
-      clinicId: '55555555-5555-4555-8555-555555555555',
+      clinicId: asClinicId('55555555-5555-4555-8555-555555555555'),
       patientId: PATIENT,
       dentistId: DENTIST,
       startedAt: '2026-09-30T14:05:00.000Z',
@@ -166,7 +167,7 @@ describe('reopenVisit', () => {
 describe('acceptsClinicalRecords', () => {
   const base: Visit = {
     id: VISIT,
-    clinicId: '55555555-5555-4555-8555-555555555555',
+    clinicId: asClinicId('55555555-5555-4555-8555-555555555555'),
     patientId: PATIENT,
     dentistId: DENTIST,
     startedAt: '2026-09-30T14:05:00.000Z',

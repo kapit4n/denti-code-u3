@@ -15,6 +15,13 @@
       "when": 1790859999725,
       "tag": "0001_appointment_overlap_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791209624159,
+      "tag": "0002_appointment_tenant_foreign_keys",
+      "breakpoints": true
     }
   ]
 }

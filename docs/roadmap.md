@@ -122,14 +122,21 @@ natural output of Milestone 5. See `docs/progress/STATE.md`.
 **Exit criteria:** conflicts are detected by the domain/API; the calendar never
 owns business rules; the clinic timezone is respected.
 
-**Status: the read-only grid is done; every write is not.** `/agenda` draws day,
-week and month views of `GET /api/v1/appointments` through FullCalendar behind
-two adapters (ADR 0011), in the timezone and opening hours the API reports for
-the clinic. The grid fetches exactly the window it is showing and re-fetches on
-every navigation. Not started: appointment creation and editing, drag/drop
-rescheduling, dentist and chair filters, and the click panel. Cancelled and
-no-show appointments are already drawn (struck through) rather than hidden, so a
-slot that is deliberately empty does not look bookable.
+**Status: the grid and the server's write side are done; the UI is not.** `/agenda`
+draws day, week and month views of `GET /api/v1/appointments` through FullCalendar
+behind two adapters (ADR 0011), in the timezone and opening hours the API reports for
+the clinic. The grid fetches exactly the window it is showing and re-fetches on every
+navigation. Cancelled and no-show appointments are already drawn (struck through)
+rather than hidden, so a slot that is deliberately empty does not look bookable.
+
+The API can now book, move and close appointments
+(`POST /api/v1/appointments`, `PUT …/schedule`, `POST …/status`), with the rules in
+the domain and the guarantee in PostgreSQL — the exclusion constraints decide a race
+the domain cannot see, and the tenant foreign keys make a booking's patient belong to
+its own clinic (ADR 0018). Not started: the booking form, drag/drop rescheduling, the
+click panel, dentist and chair filters, and the `api-client` write methods they all
+need. The grid stays read-only until the server can refuse a write, which it now
+can.
 
 ---
 

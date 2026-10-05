@@ -6,7 +6,7 @@
  * the agenda can never show two different answers for one appointment.
  *
  * The overlap constraints in
- * `database/migrations/0002_appointment_overlap_expression_guard.sql` are the
+ * `database/migrations/0001_appointment_overlap_guard.sql` are the
  * real scheduling guard: two appointments for the same dentist (or the same
  * chair, or the same room) cannot overlap no matter which code path created
  * them. PostgreSQL refuses the second write. The application check in
@@ -15,7 +15,16 @@
  */
 
 import { relations, sql } from 'drizzle-orm';
-import { check, index, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  check,
+  foreignKey,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 import { appointmentStatusEnum } from './enums.js';
 import { chairs, clinics, dentists, rooms } from './organization.js';
@@ -46,12 +55,25 @@ export const appointments = pgTable(
     clinicId: uuid('clinic_id')
       .notNull()
       .references(() => clinics.id, { onDelete: 'restrict' }),
-    patientId: uuid('patient_id')
-      .notNull()
-      .references(() => patients.id, { onDelete: 'restrict' }),
-    dentistId: uuid('dentist_id').references(() => dentists.id, { onDelete: 'set null' }),
-    roomId: uuid('room_id').references(() => rooms.id, { onDelete: 'set null' }),
-    chairId: uuid('chair_id').references(() => chairs.id, { onDelete: 'set null' }),
+    /**
+     * Not a column-level reference. The four references below are *composite*,
+     * over `(id, clinic_id)`, and the reason is tenant isolation.
+     *
+     * A foreign key on `patient_id` alone proves the patient exists and nothing
+     * more. Clinic A's book could then hold an appointment for clinic B's
+     * patient — a real id, so the constraint is satisfied — and the agenda's join
+     * would put another clinic's patient name on clinic A's screen. The rule
+     * "a booking belongs to the same clinic as its patient, its dentist, its chair
+     * and its room" is one the database can enforce, so it is enforced here rather
+     * than in a check somebody can forget (ADR 0014, ADR 0018).
+     */
+    patientId: uuid('patient_id').notNull(),
+    /** Null once the dentist leaves the clinic: `on delete set null (dentist_id)`. */
+    dentistId: uuid('dentist_id'),
+    /** Null once the room is removed. */
+    roomId: uuid('room_id'),
+    /** Null once the chair is removed. */
+    chairId: uuid('chair_id'),
     /** Always stored in UTC. The clinic time zone is applied at display time. */
     startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
     durationMinutes: integer('duration_minutes').notNull(),
@@ -72,6 +94,37 @@ export const appointments = pgTable(
     // A duration of zero or a negative one would make every overlap check a
     // no-op, so the database refuses it as well as the domain.
     check('appointments_duration_positive', sql`${table.durationMinutes} > 0`),
+
+    // Tenant foreign keys. Every one pairs the resource with `clinic_id`, so an
+    // appointment can only reference a resource of its own clinic.
+    //
+    // The three nullable ones carry `on delete set null` with an explicit
+    // *column list* in the generated SQL: without the list, deleting a dentist
+    // would try to null `clinic_id` too, and the row would be rejected by its own
+    // NOT NULL — a dentist could never leave a clinic that has appointments
+    // behind it. That form needs PostgreSQL 15 or later, which the compose file
+    // pins; `database/migrations/0001_appointment_overlap_guard.sql` records the
+    // reasoning for the other half of the scheduling guard.
+    foreignKey({
+      columns: [table.patientId, table.clinicId],
+      foreignColumns: [patients.id, patients.clinicId],
+      name: 'appointments_patient_same_clinic_fk',
+    }).onDelete('restrict'),
+    foreignKey({
+      columns: [table.dentistId, table.clinicId],
+      foreignColumns: [dentists.id, dentists.clinicId],
+      name: 'appointments_dentist_same_clinic_fk',
+    }).onDelete('set null'),
+    foreignKey({
+      columns: [table.roomId, table.clinicId],
+      foreignColumns: [rooms.id, rooms.clinicId],
+      name: 'appointments_room_same_clinic_fk',
+    }).onDelete('set null'),
+    foreignKey({
+      columns: [table.chairId, table.clinicId],
+      foreignColumns: [chairs.id, chairs.clinicId],
+      name: 'appointments_chair_same_clinic_fk',
+    }).onDelete('set null'),
   ],
 );
 

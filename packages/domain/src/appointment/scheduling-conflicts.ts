@@ -14,7 +14,8 @@ export interface ScheduleResource {
 export interface ScheduleConflict {
   readonly appointmentId: string;
   readonly patientId: string;
-  readonly dentistId: DentistId;
+  /** Null when the conflicting appointment's dentist has left the clinic. */
+  readonly dentistId: DentistId | null;
   readonly chairId?: ChairId;
   readonly startsAt: IsoDateTime;
   readonly endsAt: IsoDateTime;
@@ -75,9 +76,16 @@ export function assertNoSchedulingConflicts(
   }
 }
 
+/**
+ * The resources an appointment occupies, as comparable strings.
+ *
+ * A null dentist contributes nothing: there is no dentist to be double-booked.
+ * Comparing the two sets by intersection is what makes "same dentist **or** same
+ * chair" one rule rather than two that have to be kept in step.
+ */
 function resourcesOf(appointment: Appointment): string[] {
   return [
-    `dentist:${appointment.dentistId}`,
+    ...(appointment.dentistId ? [`dentist:${appointment.dentistId}`] : []),
     ...(appointment.chairId ? [`chair:${appointment.chairId}`] : []),
   ];
 }

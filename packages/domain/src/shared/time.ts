@@ -119,3 +119,73 @@ export function intervalsOverlap(
     new Date(candidateEnd).getTime() > new Date(existingStart).getTime()
   );
 }
+
+/**
+ * An instant, as the clinic's wall clock reads it.
+ *
+ * The domain needs this to answer "is the clinic open then?", and that question
+ * cannot be answered in UTC. A clinic in `America/Lima` is open at 14:00Z and
+ * shut at 19:00Z; the same instants in `Europe/London` are the other way round,
+ * and the answer changes again twice a year in the zones that observe daylight
+ * saving. Working out the local reading from the instant — rather than trusting a
+ * caller to send local times — is what keeps the rule honest.
+ */
+export interface ClinicLocalMoment {
+  /** 1 = Monday … 7 = Sunday, ISO-8601, matching `ClinicOperatingHours.weekday`. */
+  readonly weekday: number;
+  /** Minutes since local midnight, `0 … 1439`. */
+  readonly minutesSinceMidnight: number;
+  /** `HH:MM`, the shape the operating-hours rows store. */
+  readonly localTime: string;
+  /** `YYYY-MM-DD`, the clinic-local calendar date. */
+  readonly localDate: string;
+}
+
+/**
+ * Reads an instant on the clinic's wall clock.
+ *
+ * Derived by shifting the instant by the zone's offset and then reading UTC
+ * getters, which is the standard trick and needs no library. `weekday` is derived
+ * from the shifted instant too, so it is the clinic's day rather than Greenwich's
+ * — a booking at 02:00Z belongs to the previous day in Buenos Aires and the same
+ * day in London, and opening hours for the wrong one would refuse a legitimate
+ * early appointment.
+ */
+export function clinicLocalMoment(instant: Date, timeZone: TimeZone): ClinicLocalMoment {
+  const offset = timeZoneOffsetMs(instant, timeZone);
+  const local = new Date(instant.getTime() + offset);
+
+  // `getUTCDay()` is 0 = Sunday … 6 = Saturday; the domain is 1 = Monday …
+  // 7 = Sunday, so Sunday is the one value that needs shifting rather than adding.
+  const weekday = local.getUTCDay() === 0 ? 7 : local.getUTCDay();
+  const minutesSinceMidnight = local.getUTCHours() * 60 + local.getUTCMinutes();
+
+  return {
+    weekday,
+    minutesSinceMidnight,
+    localTime: `${String(local.getUTCHours()).padStart(2, '0')}:${String(local.getUTCMinutes()).padStart(2, '0')}`,
+    localDate: local.toISOString().slice(0, 10),
+  };
+}
+
+/**
+ * `HH:MM` as minutes since midnight, or `undefined` when unparseable.
+ *
+ * `undefined` rather than a throw: operating hours come from the clinic's own
+ * record, and a row a human typed wrong should make one appointment fail, not
+ * crash the request that read it.
+ */
+export function parseLocalTimeMinutes(localTime: string): number | undefined {
+  const match = /^([0-9]{2}):([0-9]{2})$/.exec(localTime);
+  if (!match) {
+    return undefined;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) {
+    return undefined;
+  }
+
+  return hours * 60 + minutes;
+}

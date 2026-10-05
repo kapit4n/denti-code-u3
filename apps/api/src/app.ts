@@ -82,9 +82,11 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   // ADR 0014's scoping rule enforceable rather than aspirational.
   await registerClinicScope(app, { config });
 
-  // One appointment repository for every reader: the agenda endpoint and the
-  // dashboard's view of today's book, so "today" has one implementation.
+  // One appointment repository for every reader *and* writer: the agenda endpoint,
+  // the dashboard's view of today's book and the three write endpoints, so "today"
+  // and "the book" each have one implementation.
   const appointments = new DrizzleAppointmentRepository(connection.db);
+  const clinics = new DrizzleClinicRepository(connection.db);
 
   await registerDashboardRoutes(app, {
     db: connection.db,
@@ -102,11 +104,14 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
 
   // The dashboard keeps `db` for the aggregates that have no port yet — counts,
   // revenue, occupancy — and says so on `DashboardDependencies`.
-  await registerAppointmentsRoutes(app, { appointments });
+  //
+  // The writes need the clinic's own record, for opening hours: a clinic that opens
+  // at 07:00 must not need a deployment to say so.
+  await registerAppointmentsRoutes(app, { appointments, clinics, ids: uuidGenerator });
 
   // The clinic's own record, so the browser renders the calendar in the clinic's
   // day rather than the visitor's.
-  await registerClinicRoutes(app, { clinics: new DrizzleClinicRepository(connection.db) });
+  await registerClinicRoutes(app, { clinics });
 
   app.get('/', async () => ({
     service: 'denti-code-u3-api',

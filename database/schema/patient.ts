@@ -15,6 +15,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
@@ -53,6 +54,10 @@ export const patients = pgTable(
     index('patients_clinic_last_name_idx').on(table.clinicId, table.lastName),
     index('patients_clinic_active_idx').on(table.clinicId, table.isActive),
     uniqueIndex('patients_clinic_record_number_uq').on(table.clinicId, table.recordNumber),
+    // Target of the appointments' tenant foreign key. `(id, clinic_id)` is the
+    // pair that makes a patient *belong to* a clinic; `id` alone is only a name,
+    // and a foreign key on it cannot tell clinic B's patient from clinic A's.
+    unique('patients_id_clinic_uq').on(table.id, table.clinicId),
   ],
 );
 

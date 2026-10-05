@@ -10,6 +10,7 @@
  */
 
 import type {
+  AppointmentId,
   ChairId,
   ClinicId,
   DentistId,
@@ -19,7 +20,13 @@ import type {
   TreatmentId,
   VisitId,
 } from '@denti-code-u3/types';
-import type { AgendaEntry, AgendaWindow } from '../appointment/index.js';
+import type {
+  AgendaEntry,
+  AgendaWindow,
+  Appointment,
+  AppointmentStatus,
+  AppointmentWindow,
+} from '../appointment/index.js';
 import type { Visit, VisitStatus } from '../visit/index.js';
 import type {
   EditablePatientDetails,
@@ -172,7 +179,7 @@ export interface PatientRepository extends PatientWriteRepository {
  * actually calls is declared here, and the others arrive with the slice that
  * needs them.
  */
-export interface AppointmentRepository {
+export interface AppointmentRepository extends AppointmentWriteRepository {
   /**
    * Every appointment overlapping `window`, in start order.
    *
@@ -187,6 +194,106 @@ export interface AppointmentRepository {
    * by `reservesSchedulingSlot`, not a listing question.
    */
   findAgenda(clinicId: ClinicId, window: AgendaWindow): Promise<readonly AgendaEntry[]>;
+
+  /**
+   * One appointment as this clinic holds it, or `undefined` when it holds no such
+   * appointment.
+   *
+   * The entity rather than an `AgendaEntry`, because the use cases that need this
+   * are answering questions about an appointment's own record — when it was last
+   * touched, why it was cancelled — not about how to draw it. An appointment that
+   * belongs to another clinic is `undefined`, not a foreign record.
+   */
+  findById(clinicId: ClinicId, appointmentId: AppointmentId): Promise<Appointment | undefined>;
+
+  /**
+   * One appointment as the agenda's own query would return it, or `undefined`.
+   *
+   * It exists so that a write can answer with the row the screen will show. The
+   * difference from `findById` is the join: this one names the patient and the
+   * dentist and computes the end time, which is what a calendar needs, and an
+   * entity is not it. Same query as `findAgenda` and one row, so the two cannot
+   * disagree about a booking (ADR 0011).
+   */
+  findEntryById(clinicId: ClinicId, appointmentId: AppointmentId): Promise<AgendaEntry | undefined>;
+
+  /**
+   * Every appointment overlapping `window`, as entities.
+   *
+   * This exists only to feed the conflict check, and that is why it is half-open
+   * on the same interval `findAgenda` uses: the agenda and the checker must ask
+   * the overlap question the same way, or a slot the agenda calls free is one the
+   * checker calls taken (ADR 0017).
+   *
+   * Cancelled and no-show rows are returned rather than filtered out. They hold
+   * no slot — that is `reservesSchedulingSlot`'s job, and it is a rule about
+   * statuses, not about listing — and a repository that quietly dropped them
+   * would make the two questions look like one.
+   */
+  findOverlapping(clinicId: ClinicId, window: AppointmentWindow): Promise<readonly Appointment[]>;
+}
+
+/**
+ * Writing the clinic's book.
+ *
+ * Separate from the read methods for the same reason `PatientWriteRepository` is
+ * (ADR 0015): the guarantees these three methods have to keep — one statement per
+ * write, the clinic scope in the `WHERE` clause, the exclusion constraint
+ * translated rather than swallowed — are the ones worth stating on their own
+ * interface, where nothing else has to be read past to find them.
+ *
+ * Every method takes a `ClinicId`, and a row outside it is `undefined` or a
+ * no-op: an appointment belonging to another clinic must be indistinguishable
+ * from one that does not exist (ADR 0014).
+ *
+ * **No method here may accept an appointment that already breaks a scheduling
+ * rule.** A conflict is refused by PostgreSQL's exclusion constraints, and these
+ * methods translate that refusal into `SCHEDULING_CONFLICT` rather than letting
+ * it escape as a 500 — but translating it is a courtesy for the race the domain
+ * cannot see, not the mechanism that keeps the book double-book-free. The
+ * constraints are (ADR 0018).
+ */
+export interface AppointmentWriteRepository {
+  /**
+   * Insert a new appointment, or refuse it.
+   *
+   * Rejects with `SCHEDULING_CONFLICT` when the row overlaps another for the same
+   * dentist or chair, and with `INVALID_REFERENCE` when the patient, dentist or
+   * chair is not in this clinic. Both are facts about the write, not faults of
+   * the caller, and they are raised here rather than in the use case so that two
+   * concurrent inserts collide in the database — the only place both of them are
+   * visible at once.
+   */
+  insert(appointment: Appointment): Promise<Appointment>;
+
+  /**
+   * Move an existing appointment's time, dentist and chair, in one statement.
+   *
+   * Returns `undefined` when this clinic holds no such appointment, which is the
+   * same answer as a row that belongs to another clinic. The status is *not*
+   * touched: whether a schedule may change at all is a domain rule
+   * (`isScheduleEditable`), and a repository that could set it would let a
+   * cancelled appointment be quietly rebooked by a write that meant to move it.
+   */
+  replaceSchedule(appointment: Appointment): Promise<Appointment | undefined>;
+
+  /**
+   * Move an existing appointment to a new status, recording why when cancelled.
+   *
+   * `cancelledReason` is part of the signature rather than a field of the
+   * appointment because a cancellation without a reason is a gap in the record:
+   * "patient did not attend" and "clinic cancelled for a broken compressor" are
+   * both cancellations and the front desk needs to tell them apart when someone
+   * calls. Status and reason are written together or not at all.
+   *
+   * Returns `undefined` when this clinic holds no such appointment.
+   */
+  changeStatus(
+    clinicId: ClinicId,
+    appointmentId: AppointmentId,
+    status: AppointmentStatus,
+    cancelledReason?: string,
+  ): Promise<Appointment | undefined>;
 }
 
 export interface VisitRepository {

@@ -1,6 +1,7 @@
 import type {
   AppointmentId,
   ChairId,
+  ClinicId,
   DentistId,
   IsoDateTime,
   PatientId,
@@ -17,9 +18,33 @@ export const MAXIMUM_APPOINTMENT_MINUTES = 8 * 60;
 
 export interface Appointment {
   readonly id: AppointmentId;
-  readonly clinicId: string;
+  /**
+   * The clinic whose book this belongs to. Branded rather than `string`, so an
+   * appointment cannot be written for a clinic that was never named — the
+   * alternative is a plain id that any caller can assemble by accident
+   * (ADR 0014).
+   */
+  readonly clinicId: ClinicId;
   readonly patientId: PatientId;
-  readonly dentistId: DentistId;
+  /**
+   * Null once the dentist leaves the clinic: the column is `on delete set null`.
+   *
+   * Nullability is stated here because a booking really can outlive its dentist,
+   * and the alternative — typing it as always present — forces every reader to
+   * either lie (invent an id) or ignore the column. A `null` dentist holds no
+   * dentist resource, so such an appointment can only ever conflict on its chair.
+   *
+   * A *new* appointment is different: `createAppointment` requires a dentist,
+   * because a booking nobody is going to perform is not a booking.
+   */
+  readonly dentistId: DentistId | null;
+  /**
+   * The column is here because the entity is a picture of the table, not because
+   * anything books into it: `AgendaEntry` does not report a room, so
+   * `createAppointment` does not accept one and `rescheduleAppointment` cannot move
+   * one. A chair belongs to a room, so `room_no_overlap` still bites through the
+   * chair (ADR 0018).
+   */
   readonly roomId?: string;
   readonly chairId?: ChairId;
   /** Instant the appointment begins, stored in UTC. */

@@ -193,6 +193,13 @@ describeIntegration('agenda reads (PostgreSQL)', () => {
       startsAt: at('10:00'),
       durationMinutes: 30,
       patient: patients.otherClinic,
+      // No dentist. The fixture used to keep this clinic's dentist, which the
+      // tenant foreign keys in `0002_appointment_tenant_foreign_keys` refused —
+      // correctly: it is a booking in one clinic's book, for one clinic's patient,
+      // in one clinic's chair, performed by another clinic's dentist. A test
+      // fixture committing the exact bug the constraint exists to prevent is a
+      // good sign about the constraint.
+      dentist: null,
     });
     await insert({ startsAt: at('11:00'), durationMinutes: 30, patient: patients.withdrawn });
   });

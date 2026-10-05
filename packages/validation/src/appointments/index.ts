@@ -21,41 +21,37 @@ export const appointmentStatusSchema = z.enum([
 ]);
 
 /**
- * The appointment row as a response shape.
+ * Booking a new appointment.
  *
- * Not used by any endpoint, and it says `dentistId` is required when the column
- * is `on delete set null`. It was here before the agenda existed, as the shape an
- * agenda endpoint was expected to return; `AgendaEntry` in the domain replaced that
- * role, and this stays only as the entity's validation rules until the write side
- * has a use for it. Delete it then.
+ * `dentistId` is required, and that is a scheduling fact rather than a schema
+ * preference: an appointment nobody is going to perform is not a booking. The
+ * *entity* still allows a null dentist, because a booking outlives the dentist who
+ * was going to perform it and the column is `on delete set null`.
+ *
+ * Two columns are deliberately absent. `treatmentId`: `appointments` has no
+ * `treatment_id` column yet, and a form that sends one and is answered with
+ * silence is worse than a form without the field. `roomId`: the column and its
+ * exclusion constraint exist, but `AgendaEntry` does not carry the room, so a
+ * booking could be assigned a room and then never shown it or moved to another
+ * one. The chair is what the write side accepts, because the read model reports
+ * the chair (ADR 0018).
  */
-export const appointmentSchema = z.object({
-  id: uuidSchema,
-  clinicId: uuidSchema,
-  patientId: uuidSchema,
-  dentistId: uuidSchema,
-  roomId: uuidSchema.nullish(),
-  chairId: uuidSchema.nullish(),
-  startsAt: isoDateTimeSchema,
-  durationMinutes: z.int().min(5).max(480),
-  status: appointmentStatusSchema,
-  treatmentId: uuidSchema.nullish(),
-  visitId: uuidSchema.nullish(),
-  notes: z.string().max(2_000).nullish(),
-  cancelledReason: z.string().max(500).nullish(),
-});
-
 export const createAppointmentSchema = z.object({
   patientId: uuidSchema,
   dentistId: uuidSchema,
   chairId: uuidSchema.optional(),
-  roomId: uuidSchema.optional(),
   startsAt: isoDateTimeSchema,
   durationMinutes: z.int().min(5).max(480),
-  treatmentId: uuidSchema.optional(),
   notes: z.string().max(2_000).optional(),
 });
 
+/**
+ * Moving an appointment's time, dentist or chair.
+ *
+ * Every field is optional and absent means "leave it": a front desk that only
+ * changes the time must not clear the chair as a side effect. Clearing the chair
+ * is not expressible, which is deliberate — see `rescheduleAppointment`.
+ */
 export const rescheduleAppointmentSchema = z.object({
   startsAt: isoDateTimeSchema,
   durationMinutes: z.int().min(5).max(480).optional(),
@@ -63,6 +59,10 @@ export const rescheduleAppointmentSchema = z.object({
   chairId: uuidSchema.optional(),
 });
 
+/**
+ * A status change. `reason` is required by the domain for a cancellation, and is
+ * not required here so that the 422 names the business rule rather than the shape.
+ */
 export const transitionAppointmentSchema = z.object({
   to: appointmentStatusSchema,
   reason: z.string().max(500).optional(),
@@ -93,7 +93,6 @@ export const agendaRangeQuerySchema = z
     path: ['to'],
   });
 
-export type AppointmentDto = z.infer<typeof appointmentSchema>;
 export type CreateAppointmentInput = z.infer<typeof createAppointmentSchema>;
 export type RescheduleAppointmentInput = z.infer<typeof rescheduleAppointmentSchema>;
 export type TransitionAppointmentInput = z.infer<typeof transitionAppointmentSchema>;

@@ -3,7 +3,13 @@ import type { Appointment } from './appointment.js';
 import { computeAppointmentEnd, isValidAppointmentDuration } from './appointment.js';
 import { assertNoSchedulingConflicts, findSchedulingConflicts } from './scheduling-conflicts.js';
 import { DomainError } from '../shared/errors.js';
-import { asAppointmentId, asChairId, asDentistId, asPatientId } from '@denti-code-u3/types';
+import {
+  asAppointmentId,
+  asChairId,
+  asDentistId,
+  asPatientId,
+  asClinicId,
+} from '@denti-code-u3/types';
 
 const DENTIST_A = asDentistId('11111111-1111-4111-8111-111111111111');
 const DENTIST_B = asDentistId('22222222-2222-4222-8222-222222222222');
@@ -24,7 +30,7 @@ function appointment(
 ): Appointment {
   return {
     id: nextAppointmentId(),
-    clinicId: '66666666-6666-4666-8666-666666666666',
+    clinicId: asClinicId('66666666-6666-4666-8666-666666666666'),
     patientId: PATIENT_1,
     dentistId: DENTIST_A,
     chairId: CHAIR_1,

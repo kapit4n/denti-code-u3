@@ -1,8 +1,8 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 14 (the agenda grid: `/agenda` in day/week/month,
-> FullCalendar behind two adapters, clinic timezone and opening hours from
-> `GET /api/v1/clinic`, the ADR 0011 boundary now enforced by a script)
+> Last updated: session 15 (the appointment write side: three domain use cases,
+> `POST /api/v1/appointments`, `PUT …/schedule`, `POST …/status`, and the tenant
+> foreign keys that stop a booking naming another clinic's patient)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -16,8 +16,13 @@ today's book through the same repository. Session 14 delivered the grid that
 consumes it: `/agenda` with day, week and month views, FullCalendar confined to
 two adapters and one component by an enforced guard, the clinic's timezone and
 opening hours read from the API rather than assumed, and 10 e2e tests that pin
-the timezone down. The appointment **write** side is not started, so the grid is
-deliberately read-only.
+the timezone down. Session 15 delivered the **write side** the grid was waiting
+for: `createAppointment`, `rescheduleAppointment` and `transitionAppointmentStatus`
+as domain use cases, the three endpoints, and the tenant foreign keys that make
+"an appointment's patient belongs to its clinic" a database guarantee rather than
+a check somebody can forget (ADR 0018). The grid is still read-only — nothing
+calls the endpoints yet — but the server can now refuse a write, which is what a
+drag needs before it is allowed to exist.
 
 ## Task origin
 
@@ -56,65 +61,105 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 14)
+## Verification log (last run, session 15)
 
-| Command                     | Result                                                     |
-| --------------------------- | ---------------------------------------------------------- |
-| `pnpm run typecheck`        | 12/12 tasks pass                                           |
-| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`                      |
-| `pnpm run format`           | applied; `pnpm run format:check` clean                     |
-| `pnpm run test`             | 12/12 tasks pass — 315 tests                               |
-| `pnpm run test:integration` | 9 files, 93 tests pass against real PostgreSQL 17          |
-| `pnpm run build`            | 5/5 tasks pass; the agenda chunk is 300 kB (90 kB gzipped) |
-| `pnpm run test:e2e`         | 56 passed (46 before, +10 agenda)                          |
-| `pnpm run guard:boundaries` | OK, with one pre-existing warning (see Open questions)     |
+| Command                     | Result                                                      |
+| --------------------------- | ----------------------------------------------------------- |
+| `pnpm run typecheck`        | 12/12 tasks pass                                            |
+| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`                       |
+| `pnpm run format`           | applied; `pnpm run format:check` clean                      |
+| `pnpm run test`             | 12/12 tasks pass — 360 tests                                |
+| `pnpm run test:integration` | 10 files, 118 tests pass against real PostgreSQL 17         |
+| `pnpm run db:migrate`       | `0002_appointment_tenant_foreign_keys` applies to a live DB |
+| `pnpm run db:seed`          | completes against the new constraints                       |
+| `pnpm run build`            | 5/5 tasks pass                                              |
+| `pnpm run test:e2e`         | 56 passed (unchanged — no UI moved this session)            |
+| `pnpm run guard:boundaries` | OK, with one pre-existing warning (see Open questions)      |
 
-Per-package unit/component tests: domain 115, validation 36, api-client 15, api
-42 (integration skipped here, run separately), app 107.
+Per-package unit/component tests: domain 145, validation 41, api-client 15, api 53
+(integration skipped here, run separately), app 107.
 
-**Two defects this session's tests caught, both invisible on screen.**
+**Three things this session proved rather than assumed.**
 
-1. The first cut of `to-business-hours.ts` spread an empty object for a weekday it
-   could not translate, which FullCalendar reads as "every day" — the exact
-   opposite of the comment written above it. It now drops the row, and a test
-   asserts no `EventInput` ever comes out without `daysOfWeek`.
-2. The e2e timezone spec asserted only that an event was _visible_, which is what
-   its own docstring claimed to check and was not: it would have passed with the
-   grid in the browser's zone. It now asserts the rendered hour, and pointing the
-   component at `America/New_York` makes it fail with `Received string:
-"10:00 - 11:00"`.
+1. **The race the domain cannot see.** Two `POST /api/v1/appointments` for the same
+   slot are launched at once in
+   `apps/api/test/appointment-write-route.integration.test.ts`. Each asks the
+   repository what is in the window, each is told "nothing", and each proceeds —
+   both are correct. The exclusion constraint is the only thing that sees both, and
+   the test asserts the result is one 201, one 409 `SCHEDULING_CONFLICT` and one row.
+   Without the `23P01` translation the loser would have been a 500, which is what
+   `isExclusionViolation`'s unit test exists to prevent.
+2. **Tenant isolation is now a database fact.** `0002_appointment_tenant_foreign_keys`
+   makes the patient, dentist, chair and room references composite over
+   `(id, clinic_id)`. Proven by hand against the running database: an insert naming
+   clinic B's patient from clinic A's book is refused by
+   `appointments_patient_same_clinic_fk`, and so is clinic B's chair. The API's
+   clinic scoping (ADR 0014) could not have caught this — it is a rule about which
+   rows may be combined, and the combination happens in a table.
+3. **The constraint caught a real fixture.** The agenda integration test had been
+   inserting a booking in the other clinic's book, with that clinic's patient and
+   that clinic's chair, but with _this_ clinic's dentist — permitted by the old
+   single-column foreign key, and the exact leak the new one closes. It now passes
+   `dentist: null` with a comment saying so.
 
-The ADR 0011 boundary was also verified by breaking it: importing `@fullcalendar/core`
-from `agenda-range-query.ts` fails `guard:boundaries`.
+**Three corrections to earlier claims in this file.** `AgendaEntry` has carried
+`chairId` and `chairName` since session 13; the pending item below said otherwise.
+A booking that consumes no identifier is now true only for the two rules decided
+before the id is allocated (duration, opening hours) — a conflict check needs the
+candidate's own id to exclude itself, and the use case says so. And ADR 0018 was
+written claiming no `roomId` on the write side while the create schema accepted one
+and the repository wrote it: a booking could be given a room it could then never be
+shown and never moved from, which is the "answered with silence" fault the same ADR
+removes `treatmentId` for. The input is gone, the column and the constraint stay, and
+the chair is the resource the write side accepts because it is the one the read model
+reports.
 
-**Defects found by running the app that no unit test could have caught.** Each
-one produced plausible-looking output rather than an error, which is why review
-missed all of them:
+**One known gap, recorded rather than hidden.** A lunch break
+(`clinic_operating_hours.break_starts_at` / `break_ends_at`) is not enforced: the
+columns exist, the domain's `ClinicOperatingHours` does not carry them, and nothing
+in the product exposes them yet. A booking may span a configured break.
 
-1. Treatments were scoped by clinic but not by patient — one patient saw the
-   whole clinic's outstanding plans. A data-privacy bug.
-2. `const [[row], [rows]] = await Promise.all([...])` binds collections to their
-   _first row_, not the array, and an empty result destructures to `undefined`
-   rather than `[]`. `recentVisits` and `outstandingTreatments` arrived as single
-   objects and then vanished entirely when empty.
-3. The dashboard drew "today" at UTC midnight, so a clinic at UTC-6 saw the wrong
-   day's book for six hours every evening.
-4. `VITE_API_URL` omitted `/api/v1`, so every API call 404ed while the app still
-   rendered its shell.
-5. `/patients/:id` rendered the patient list: `patients.tsx` had no `<Outlet />`.
-6. The header's search box was dead UI bound to local state, and the working
-   `GlobalPatientSearch` component was never mounted.
+**Also fixed in passing.** `apps/api/src/http/routes/appointments.ts` validates its
+path parameter with `uuidSchema`; a hand-typed id in the URL is a 422 rather than
+PostgreSQL's `22P02` arriving as a 500. The patients route still does not, which
+is a small pre-existing gap and was left alone rather than widened into.
 
-Regression coverage now exists for (1) and (2) in
-`apps/api/test/patient-profile-scope.integration.test.ts`, which drives the real
-route through `inject` — a test that re-implemented the query would have kept
-passing while the route leaked data. (3) is covered by 9 unit tests in
-`apps/api/src/application/clinic-time-window.test.ts`, including both
-daylight-saving directions.
+**The emergency-booking question is now written down** as #16 in
+`docs/open-questions.md`, with the lunch break as T7, because ADR 0018 points at
+both and neither existed yet.
 
 ## Decisions made this session (not yet in ADRs)
 
-- **API port is 3010, not 3000.** Port 3000 is occupied on this machine by an
+- **A booking is always created `SCHEDULED`, and confirming is a separate call.**
+  A create form that could confirm would be recording an agreement the patient
+  never made. Same reasoning as the server-allocated record number (ADR 0015): the
+  fact belongs to the only party that knows it.
+- **`Appointment.dentistId` is `DentistId | null`, and `Appointment.clinicId` is
+  `ClinicId`.** The column is `on delete set null`, so a booking outlives its
+  dentist; a reader that had to invent an id would put a fiction in the middle of a
+  calculation, and a null dentist holds no dentist resource. `clinicId` moves the
+  other way so an appointment cannot be written for a clinic nobody named.
+  `startVisitFromAppointment` now refuses an appointment with no dentist rather than
+  attributing a visit to nobody.
+- **The tenant foreign keys are composite, and the migration is hand-ordered.**
+  Drizzle emits the foreign keys before the `UNIQUE` constraints they point at, and
+  PostgreSQL validates a key's target when adding it, so the statements were
+  reordered. The three nullable references use `ON DELETE SET NULL (column)` rather
+  than plain `SET NULL`: without the column list, deleting a dentist would try to
+  null `clinic_id` too and the row would be refused by its own `NOT NULL`, so a
+  dentist could never leave a clinic with appointments behind them. That form needs
+  PostgreSQL 15+; `docker-compose.yml` pins 17. Verified on a live database both
+  ways.
+- **The write endpoints answer with the `AgendaEntry` the row became**, not with the
+  values that were sent, so a client splices the server's row into its cache instead
+  of reconstructing one. Same reasoning as ADR 0011's server answer for the read.
+- **`treatmentId` and `roomId` are not accepted on a booking.** `appointments` has no
+  `treatment_id` column, and the read model does not report a room. A field the API
+  stores but never returns is a form answered with silence, which is worse than a
+  form without the field — so the booking request declines both, the schema drops
+  them, and the columns stay as the table has them. The chair is the test: the write
+  side accepts exactly the resources `AgendaEntry` reports.
+- **The API port is 3010, not 3000.** Port 3000 is occupied on this machine by an
   unrelated local Next.js app. `API_PORT`, `VITE_API_URL` and the Zod defaults
   were all changed together so nothing silently points at the wrong service.
 - **The appointment end time is computed by an IMMUTABLE SQL function, not
@@ -301,13 +346,18 @@ editing. Both sides now go through `PatientRepository`. Remaining:
        not wired. A control that looks live and is not is worse than an
        absent one.
 5. [ ] **Filters.** Dentist and chair filters are in `AgendaWindow` and the API
-       accepts them, but nothing in the UI sends them yet. `AgendaEntry` has no
-       `chairId`/`chairName`, so chair columns need that field first.
-6. [ ] **Appointment write side**: `CreateAppointment`, `RescheduleAppointment`,
-       `TransitionAppointment`, conflict errors surfaced to the UI, and the forms
-       that un-disable "New Visit" and the profile's next-appointment action. This
-       is also what makes the grid writable: `from-calendar-event.ts` (ADR 0011)
-       does not exist yet.
+       accepts them, but nothing in the UI sends them yet. (`AgendaEntry` has
+       carried `chairId`/`chairName` since session 13 — an earlier note here said
+       otherwise.) Room columns still need a `roomId` the read model does not have,
+       and the `room_no_overlap` constraint has no read side at all.
+6. [~] **Appointment write side.** Done in session 15: `createAppointment`,
+   `rescheduleAppointment`, `transitionAppointmentStatus`, the three endpoints,
+   the tenant foreign keys, and 25 integration tests including the concurrent-write
+   race. **Still to do:** the UI. `from-calendar-event.ts` (ADR 0011) does not
+   exist, so the grid is still read-only; the booking form, the quick panel,
+   drag-and-drop, the conflict-error surface, and the forms that un-disable
+   "New Visit" and the profile's next-appointment action all wait on it. The
+   `api-client` has no write methods for the three endpoints yet.
 7. [ ] Visits, the clinical timeline, treatments, payments, inventory, reports.
 
 **Milestone 5 onward** — visits, odontogram, treatments, payments, inventory,
@@ -570,3 +620,34 @@ time, and pointing the component at the browser's zone fails it with
 **Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
 warning) · format · build 5/5 · 315 unit/component (50 new) · 93 integration
 (8 new) · 56/56 e2e (10 new) · 5 adapter mutations all caught.
+
+Session 15: the appointment write side. Three use cases in `packages/domain` —
+`createAppointment`, `rescheduleAppointment`, `transitionAppointmentStatus` — behind
+`POST /api/v1/appointments`, `PUT /api/v1/appointments/:id/schedule` and
+`POST /api/v1/appointments/:id/status`. The rules that took the most thought: a booking
+must fit _inside_ opening hours rather than merely start inside them; the schedule
+freezes once the patient has arrived; and un-cancelling re-takes the chair, so a
+transition back into a slot-reserving status goes through the same conflict check as a
+reschedule. ADR 0018 records why each of those is a rule and not a convention.
+
+The database did the two jobs the application cannot. `23P01` is translated into
+`SCHEDULING_CONFLICT`, so the race between two receptionists pressing save on one slot
+is a 409 rather than a 500 — asserted with two concurrent inserts, one 201 and one 409.
+And `0002_appointment_tenant_foreign_keys` made the patient, dentist, chair and room
+references composite over `(id, clinic_id)`, because a foreign key on the id alone
+proves a row exists and says nothing about whose it is: clinic A's book could hold
+clinic B's patient, and the agenda's join would show that patient's name on clinic A's
+screen. Proven by hand against the running database, and the new constraint immediately
+refused a fixture in the existing agenda test that had been committing exactly that
+leak.
+
+Two type changes fell out of it honestly rather than conveniently. `Appointment.dentistId`
+is nullable because the column is `on delete set null` and a booking outlives its
+dentist; `Appointment.clinicId` is branded because an appointment must be written for a
+clinic somebody named. `startVisitFromAppointment` now refuses an appointment with no
+dentist instead of attributing a visit to nobody.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
+warning) · format · build 5/5 · 360 unit/component (45 new) · 118 integration (25
+new) · 56/56 e2e (unchanged, no UI moved) · migration applied to a live database and
+its two guarantees checked by hand.
