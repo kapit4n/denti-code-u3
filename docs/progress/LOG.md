@@ -977,6 +977,13 @@ device` — 117 GB at 115 MB free. With the user's approval: Docker build cache
 (1.8 GB) were cleared. Both containers were left running, and Playwright chromium
 was reinstalled straight after, so `test:e2e` is green.
 
+**Then a `.sh` entry point for it.** `scripts/run-desktop.sh`, the counterpart to
+`dev-desktop.sh`: run the newest kept build, or a numbered one, with no pnpm and no
+inherited PATH required. It adds a default argument and nothing else — the logic is
+the same `desktop-pin.mjs` the npm command runs, so the two cannot drift. Written
+because the useful moment for a fallback is the moment everything else is broken,
+and a command you have to reconstruct is not one you will reach for then.
+
 **How far verification actually went.** The window was captured with `xwd` and
 converted to PNG: a rendered app, not a blank one — 1 649 distinct colours, the
 design system's background over 55% of pixels, the dark sidebar over 10%, 16% dark

@@ -106,12 +106,26 @@ assets are served from the working tree at that moment.
 ### Keeping a build that works
 
 ```bash
-pnpm run desktop:pin      # build the tree and keep the binary as the last known good
-pnpm run desktop:run      # run the newest kept build; never compiles
-pnpm run desktop:run 2    # run the one before it
-pnpm run desktop:pins     # what is kept, and what each one was built from
-pnpm run desktop:forget   # delete them
+./scripts/run-desktop.sh        # the shortest way in: run the newest kept build
+./scripts/run-desktop.sh 2      # the one before it
+./scripts/run-desktop.sh pins   # what is kept, and what each came from
+
+pnpm run desktop:pin            # build the tree and keep the binary
+pnpm run desktop:run            # the same thing the script does
+pnpm run desktop:run 2
+pnpm run desktop:pins
+pnpm run desktop:forget         # delete them
 ```
+
+`run-desktop.sh` is the counterpart to `dev-desktop.sh`: that one starts a window
+from the working tree, which is what you want while writing and useless the moment
+the tree does not compile. This one opens a window from a build that was already
+pinned. It resolves the repository from its own location, so it works from any
+directory and through a symlink on the desktop, and it calls `node` directly rather
+than `pnpm` — launching a fallback should not depend on the package manager that
+built the tree. All it adds is a default argument; the logic is the same
+`scripts/desktop-pin.mjs` that `pnpm run desktop:run` runs, so the two cannot
+drift.
 
 A native window cannot be opened if the tree does not compile, which is the one
 moment you most want to open it. `desktop:pin` builds with

@@ -148,6 +148,12 @@ both and neither existed yet.
 
 ## Decisions made this session (not yet in ADRs)
 
+- **A `.sh` entry point for the fallback, not a second implementation of it.**
+  `scripts/run-desktop.sh` runs the newest kept build (or a numbered one) and
+  delegates to `scripts/desktop-pin.mjs`, so the shell script and
+  `pnpm run desktop:run` cannot drift. It calls `node` directly rather than
+  `pnpm`, and resolves the repository from its own location, because the useful
+  moment for a fallback is the moment the toolchain is not cooperating.
 - **The native build is a kept artifact, not a rebuild (ADR 0019).** `desktop:pin`
   runs `tauri build --debug --no-bundle` and keeps the binary in a gitignored
   directory with a manifest; `desktop:run` executes that file and never compiles.
@@ -716,7 +722,16 @@ free), so Docker's build cache, the Playwright browsers and the Chrome cache wer
 cleared. Playwright chromium was reinstalled immediately and `pnpm run test:e2e`
 is green again.
 
+`scripts/run-desktop.sh` is the short way in — the counterpart to
+`dev-desktop.sh`. It runs the newest kept build, or a numbered one, and does
+nothing but supply a default argument: the logic is the same `desktop-pin.mjs` that
+`pnpm run desktop:run` runs, so the two cannot drift. It calls `node` directly
+rather than `pnpm` and resolves the repository from its own location, because the
+moment a fallback is worth having is the moment the toolchain is not cooperating.
+
 **Verification:** typecheck 12/12 · lint 12/12 + boundary guard · format · build
 5/5 · 364 unit/component (3 new) · 118 integration · 56/56 e2e · `desktop:pin`
 produces a runnable window, `desktop:run 2` and two error paths behave, and the
-captured window is a rendered app rather than a blank one.
+captured window is a rendered app rather than a blank one · `run-desktop.sh` opens
+the same window from `/` under `env -i` (no pnpm, no inherited PATH) and reports
+the kept build's commit against the tree's.
