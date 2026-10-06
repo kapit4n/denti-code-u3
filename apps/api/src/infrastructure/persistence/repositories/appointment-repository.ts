@@ -47,8 +47,8 @@ import { appointments, chairs, dentists, patients } from '@denti-code-u3/databas
 import type { DentiDatabase } from '../postgres/connection.js';
 import {
   PG_FOREIGN_KEY_VIOLATION,
-  hasPostgresCode,
   isExclusionViolation,
+  isForeignKeyViolation,
 } from '../postgres-error.js';
 
 export { isExclusionViolation } from '../postgres-error.js';
@@ -453,7 +453,7 @@ function toEntity(row: {
  * are a bad reference rather than a broken server.
  */
 function rethrowAsReferenceError(error: unknown): unknown {
-  if (hasPostgresCode(error, PG_FOREIGN_KEY_VIOLATION)) {
+  if (isForeignKeyViolation(error)) {
     return new DomainError(
       'INVALID_INPUT',
       'That patient, dentist, chair or room is not in this clinic',

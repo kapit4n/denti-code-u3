@@ -40,6 +40,8 @@ import { fileURLToPath } from 'node:url';
 import * as schema from '@denti-code-u3/database/schema';
 import { registerVisitsRoutes } from '../src/http/routes/visits.js';
 import { DrizzleVisitRepository } from '../src/infrastructure/persistence/repositories/visit-repository.js';
+import { DrizzleChairRepository } from '../src/infrastructure/persistence/repositories/chair-repository.js';
+import { DrizzleDentistRepository } from '../src/infrastructure/persistence/repositories/dentist-repository.js';
 import { DrizzleUnitOfWork } from '../src/infrastructure/persistence/postgres/unit-of-work.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
 
@@ -68,6 +70,17 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
   const otherPatient = '7b7b2222-2222-4222-8222-222222222222';
   const dentist = '7c7c1111-1111-4111-8111-111111111111';
   const otherDentist = '7c7c2222-2222-4222-8222-222222222222';
+  /**
+   * An inactive clinician and chair in *this* clinic, for the walk-in's rule.
+   *
+   * The booking rule (question 17) is exercised by its own suite against these same
+   * rows; here they exist so the walk-in door can be shown refusing the same thing,
+   * with the same `UNBOOKABLE_RESOURCE` turned into the same 409. Two fixtures, and
+   * both are in the teardown — session 25's lesson is that a fixture that is not
+   * deleted leaks into the next suite three files over.
+   */
+  const inactiveDentist = '7c7c3333-3333-4333-8333-333333333333';
+  const inactiveChair = '7d7d3333-3333-4333-8333-333333333333';
   const chair = '7d7d1111-1111-4111-8111-111111111111';
   const otherChair = '7d7d2222-2222-4222-8222-222222222222';
   const missingId = '7e7e9999-9999-4999-8999-999999999999';
@@ -230,6 +243,14 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       payload: payload as object,
     });
 
+  const walkIn = (payload: unknown, clinic = clinicId) =>
+    app.inject({
+      method: 'POST',
+      url: '/api/v1/visits/walk-in',
+      headers: { 'x-clinic-id': clinic },
+      payload: payload as object,
+    });
+
   /** The two statements that make the fixture removable, given both links are restrict. */
   const clearFixtures = async () => {
     await sql`update appointments set visit_id = null where clinic_id in (${clinicId}, ${otherClinicId})`;
@@ -256,9 +277,14 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
     await registerVisitsRoutes(app, {
       unitOfWork: new DrizzleUnitOfWork(db),
       // The same handle the transaction builds per-transaction repositories from, and
-      // deliberately a *separate* dependency: the two closing endpoints write one row and
-      // are handed the repository directly (ADR 0022).
+      // deliberately a *separate* dependency: the walk-in and the two closing endpoints
+      // write one row and are handed the repository directly (ADR 0022, ADR 0024).
       visits: new DrizzleVisitRepository(db),
+      // The two resources a walk-in names, for the same "who may be named" rule the
+      // booking uses. The appointment door reads its names from the booking and never
+      // calls these (ADR 0024).
+      dentists: new DrizzleDentistRepository(db),
+      chairs: new DrizzleChairRepository(db),
       clock: { now: () => NOW },
       // The route asks for an id rather than making one, so a test can hand it a fixed
       // generator — but the shape is the real `uuidGenerator`'s.
@@ -285,15 +311,23 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       insert into dentists (id, clinic_id, full_name)
       values
         (${dentist}, ${clinicId}, 'Dr Local'),
-        (${otherDentist}, ${otherClinicId}, 'Dr Other')
+        (${otherDentist}, ${otherClinicId}, 'Dr Other'),
+        (${inactiveDentist}, ${clinicId}, 'Dr Gone')
       on conflict (id) do nothing
     `;
     await sql`
       insert into chairs (id, clinic_id, name)
       values
         (${chair}, ${clinicId}, 'Chair 1'),
-        (${otherChair}, ${otherClinicId}, 'Chair 9')
+        (${otherChair}, ${otherClinicId}, 'Chair 9'),
+        (${inactiveChair}, ${clinicId}, 'Chair Off')
       on conflict (id) do nothing
+    `;
+    await sql`
+      update dentists set is_active = false where id = ${inactiveDentist}
+    `;
+    await sql`
+      update chairs set is_active = false where id = ${inactiveChair}
     `;
   });
 
@@ -308,8 +342,8 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       delete from patients
       where id in (${patient}, ${secondPatient}, ${untouchedPatient}, ${otherPatient})
     `;
-    await sql`delete from dentists where id in (${dentist}, ${otherDentist})`;
-    await sql`delete from chairs where id in (${chair}, ${otherChair})`;
+    await sql`delete from dentists where id in (${dentist}, ${otherDentist}, ${inactiveDentist})`;
+    await sql`delete from chairs where id in (${chair}, ${otherChair}, ${inactiveChair})`;
     await sql`delete from clinics where id in (${clinicId}, ${otherClinicId})`;
     await sql.end({ timeout: 5 });
   });
@@ -554,6 +588,158 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
     // A hand-typed id would otherwise arrive as PostgreSQL's `22P02`, which is a 500.
     expect(response.statusCode).toBe(422);
     expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+  });
+
+  describe('POST /api/v1/visits/walk-in', () => {
+    it('writes an OPEN visit with no appointment behind it', async () => {
+      const response = await walkIn({ patientId: patient, dentistId: dentist, chairId: chair });
+
+      expect(response.statusCode).toBe(201);
+      const body = response.json() as {
+        id: string;
+        clinicId: string;
+        patientId: string;
+        dentistId: string;
+        chairId: string;
+        status: string;
+        startedAt: string;
+      };
+      expect(body).toMatchObject({
+        clinicId,
+        patientId: patient,
+        dentistId: dentist,
+        chairId: chair,
+        status: 'OPEN',
+        startedAt: NOW,
+      });
+      // Absent, not null: a walk-in has no booking, and the key is the whole of what
+      // distinguishes this row from one the bridge wrote.
+      expect('appointmentId' in body).toBe(false);
+
+      const [row] = await sql`select status, appointment_id from visits where id = ${body.id}`;
+      expect((row as { status: string }).status).toBe('OPEN');
+      expect((row as { appointment_id: string | null }).appointment_id).toBeNull();
+
+      // And one row's worth of nothing written into the book: a walk-in is not an
+      // appointment, so the agenda has nothing new to draw.
+      const [book] =
+        await sql`select count(*)::int as total from appointments where clinic_id = ${clinicId}`;
+      expect((book as { total: number }).total).toBe(0);
+    });
+
+    it('accepts a walk-in with no chair', async () => {
+      const response = await walkIn({ patientId: patient, dentistId: dentist });
+
+      expect(response.statusCode).toBe(201);
+      const body = response.json() as { chairId?: string };
+      expect(body.chairId).toBeUndefined();
+
+      const [row] = await sql`select chair_id from visits where clinic_id = ${clinicId}`;
+      expect((row as { chair_id: string | null }).chair_id).toBeNull();
+    });
+
+    it('answers 422 for a body it cannot read, including one without a clinician', async () => {
+      const withoutClinician = await walkIn({ patientId: patient });
+      const malformed = await walkIn({ patientId: 'not-a-uuid', dentistId: dentist });
+
+      // The clinician is a required field, the whole of this schema's argument: a
+      // door that could skip it would make "who treated this patient" depend on which
+      // button was pressed (ADR 0024).
+      expect(withoutClinician.statusCode).toBe(422);
+      expect(withoutClinician.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+      expect(malformed.statusCode).toBe(422);
+    });
+
+    it('answers 409 for a clinician marked inactive, naming the clinician', async () => {
+      const response = await walkIn({ patientId: patient, dentistId: inactiveDentist });
+
+      // The same rule and the same envelope as a booking that names someone who left:
+      // product question 17 applies to whoever is named for care about to happen.
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({
+        error: {
+          code: 'DOMAIN_RULE_VIOLATION',
+          message: expect.stringContaining('Dr Gone'),
+        },
+      });
+      const [row] =
+        await sql`select count(*)::int as total from visits where clinic_id = ${clinicId}`;
+      expect((row as { total: number }).total).toBe(0);
+    });
+
+    it('answers 409 for a chair marked inactive', async () => {
+      const response = await walkIn({
+        patientId: patient,
+        dentistId: dentist,
+        chairId: inactiveChair,
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({
+        error: { code: 'DOMAIN_RULE_VIOLATION', message: expect.stringContaining('Chair Off') },
+      });
+    });
+
+    it('answers 422 for a patient this clinic does not hold, not a 500', async () => {
+      const response = await walkIn({ patientId: otherPatient, dentistId: dentist });
+
+      // The walk-in does not read the patient first, exactly as a booking does not: the
+      // composite tenant foreign key is the answer, and this is where the repository
+      // translates its refusal into `INVALID_INPUT` (422) rather than letting it escape
+      // as a 500. That translation is the reason this test exists.
+      expect(response.statusCode).toBe(422);
+      expect(response.json()).toMatchObject({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'That patient, dentist or chair is not in this clinic',
+        },
+      });
+      const [row] =
+        await sql`select count(*)::int as total from visits where clinic_id = ${clinicId}`;
+      expect((row as { total: number }).total).toBe(0);
+    });
+
+    it('answers 422, identically, for a clinician this clinic does not hold', async () => {
+      const foreignClinician = await walkIn({ patientId: patient, dentistId: otherDentist });
+      const foreignPatient = await walkIn({ patientId: otherPatient, dentistId: dentist });
+
+      // Same code and same shape for the clinician and the patient halves of the same
+      // refusal; the patient's is asserted in full above, and the pair is the point
+      // (ADR 0014).
+      expect(foreignClinician.statusCode).toBe(422);
+      expect(foreignClinician.json()).toMatchObject({
+        error: { code: 'VALIDATION_ERROR' },
+      });
+      expect(foreignPatient.statusCode).toBe(422);
+    });
+
+    it('takes the clinic from the request scope, so a walk-in cannot cross clinics', async () => {
+      const response = await walkIn({ patientId: patient, dentistId: dentist }, otherClinicId);
+
+      // This clinic's patient and clinician under the other clinic's header: the visit
+      // would belong to the other clinic, which holds neither, so the tenant keys
+      // refuse it — the same answer as an unreadable reference, because "this clinic
+      // does not hold the patient" is exactly what it is.
+      expect(response.statusCode).toBe(422);
+      const [row] =
+        await sql`select count(*)::int as total from visits where clinic_id = ${otherClinicId}`;
+      expect((row as { total: number }).total).toBe(0);
+    });
+
+    it('appears on the clinical timeline, as a visit with no booking', async () => {
+      const created = await walkIn({ patientId: patient, dentistId: dentist });
+      const visitId = (created.json() as { id: string }).id;
+
+      const response = await getTimeline(patient);
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as { visits: { id: string; appointmentId?: string }[] };
+      expect(body.visits.map((entry) => entry.id)).toContain(visitId);
+      const entry = body.visits.find((row) => row.id === visitId);
+      // A walk-in is a first-class visit on the timeline — the clinical record is
+      // where it lives — but it carries no booking link to point back at.
+      expect(entry?.appointmentId).toBeUndefined();
+    });
   });
 
   describe('GET /api/v1/visits/:visitId', () => {

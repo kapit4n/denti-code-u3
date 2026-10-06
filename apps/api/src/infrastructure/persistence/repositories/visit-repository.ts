@@ -7,8 +7,10 @@
  *    `clinic_id`, because a patient's clinical record is not public information
  *    (ADR 0014). A visit belonging to another clinic is `undefined`, the same answer
  *    as one that does not exist — saying otherwise would leak that the id is real.
- *  - **The write is two rows, so it arrives inside a transaction** and not as two
- *    calls a caller might not make together (ADR 0021).
+ *  - **The two creation doors are handled differently.** A visit started from a
+ *    booking writes two rows, so it arrives inside a transaction (ADR 0021); a
+ *    walk-in writes one, so it comes through `save` directly, like the two closing
+ *    endpoints (ADR 0024).
  *
  * The tenant guarantees the read side relies on are the database's, added in migration
  * 0003: a visit's patient, dentist and chair are composite foreign keys over
@@ -38,7 +40,11 @@ import { and, desc, eq } from 'drizzle-orm';
 import { visits } from '@denti-code-u3/database/schema';
 
 import type { DentiDatabase } from '../postgres/connection.js';
-import { isUniqueViolation } from '../postgres-error.js';
+import {
+  PG_FOREIGN_KEY_VIOLATION,
+  isForeignKeyViolation,
+  isUniqueViolation,
+} from '../postgres-error.js';
 
 /**
  * The visit's own columns, named once.
@@ -151,16 +157,20 @@ export class DrizzleVisitRepository implements VisitRepository {
   /**
    * Write a visit the domain has already built.
    *
-   * The `visits_appointment_uq` refusal is translated here rather than left as a 500,
-   * because it is the one race the domain cannot see on its own: `startVisit` reads the
-   * appointment, finds no `visit_id` on it, and builds a visit — while a second
-   * request does the same for the same booking. Both are correct until the index says
-   * otherwise, and the index is the only place they were ever both visible.
+   * Two refusals are translated here rather than left as 500s, and they belong to the
+   * two doors that write one row:
    *
-   * The error is `DUPLICATED_RECORD` rather than a conflict, which is what the domain
-   * already throws when it finds the appointment already has a visit: the second
-   * writer deserves the same answer as the first, from the only place that can tell
-   * them apart.
+   *  - **The `visits_appointment_uq` refusal** is the race the appointment door cannot
+   *    see on its own: `startVisit` reads the appointment, finds no `visit_id` on it,
+   *    and builds a visit — while a second request does the same for the same booking.
+   *    Both are correct until the index says otherwise (ADR 0021). It is reported as
+   *    `DUPLICATED_RECORD`, same as the domain's own refusal; a walk-in can never hit
+   *    it, because its `appointment_id` is null and the index puts no weight on nulls.
+   *  - **A tenant foreign key** answers a walk-in that names a patient, clinician or
+   *    chair this clinic does not hold — including one that exists in another clinic.
+   *    The walk-in does not read the patient first, exactly as the booking does not
+   *    (ADR 0014), so this is where that refusal becomes a 422 rather than the 500 it
+   *    would otherwise arrive as.
    */
   async save(visit: Visit): Promise<void> {
     try {
@@ -185,6 +195,13 @@ export class DrizzleVisitRepository implements VisitRepository {
           'DUPLICATED_RECORD',
           'This appointment already has a visit; an appointment becomes a visit exactly once',
           { appointmentId: visit.appointmentId ?? visit.id },
+        );
+      }
+      if (isForeignKeyViolation(error)) {
+        throw new DomainError(
+          'INVALID_INPUT',
+          'That patient, dentist or chair is not in this clinic',
+          { postgresCode: PG_FOREIGN_KEY_VIOLATION },
         );
       }
       throw error;

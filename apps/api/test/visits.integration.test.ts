@@ -36,6 +36,8 @@ import { fileURLToPath } from 'node:url';
 import * as schema from '@denti-code-u3/database/schema';
 import { DrizzleUnitOfWork } from '../src/infrastructure/persistence/postgres/unit-of-work.js';
 import { DrizzleAppointmentRepository } from '../src/infrastructure/persistence/repositories/appointment-repository.js';
+import { DrizzleChairRepository } from '../src/infrastructure/persistence/repositories/chair-repository.js';
+import { DrizzleDentistRepository } from '../src/infrastructure/persistence/repositories/dentist-repository.js';
 import { DrizzleVisitRepository } from '../src/infrastructure/persistence/repositories/visit-repository.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
 import {
@@ -44,6 +46,7 @@ import {
   listVisitsForPatient,
   reopenVisitRecord,
   startVisit,
+  startWalkInVisit,
   type AppointmentRepository,
 } from '@denti-code-u3/domain';
 import {
@@ -446,6 +449,97 @@ describeIntegration('starting a visit (PostgreSQL)', () => {
 
     await expect(start(appointmentId, 70)).rejects.toMatchObject({ code: 'DUPLICATED_RECORD' });
     expect(await countVisits(appointmentId)).toBe(1);
+  });
+
+  describe('starting a walk-in', () => {
+    /**
+     * The second door, straight at the repositories — the same mixture ADR 0024
+     * resolves: the bridge is handed a transaction, the walk-in is not, because a
+     * walk-in writes one row and there is nothing to make atomic.
+     */
+    const walkIn = (
+      request: {
+        readonly patientId: string;
+        readonly dentistId: string;
+        readonly chairId?: string;
+      },
+      clinic: ClinicId = clinicId,
+    ) =>
+      startWalkInVisit(
+        clinic,
+        {
+          patientId: asPatientId(request.patientId),
+          dentistId: asDentistId(request.dentistId),
+          ...(request.chairId ? { chairId: asChairId(request.chairId) } : {}),
+        },
+        {
+          visits: visitsRepository,
+          dentists: new DrizzleDentistRepository(db),
+          chairs: new DrizzleChairRepository(db),
+          clock: { now: () => NOW },
+          newId: idsFrom(200),
+        },
+      );
+
+    it('writes an OPEN visit with no appointment behind it', async () => {
+      const visit = await walkIn({
+        patientId: patients.ana,
+        dentistId: dentists.alice,
+        chairId: chairs.one,
+      });
+
+      expect(visit).toMatchObject({
+        clinicId,
+        patientId: asPatientId(patients.ana),
+        dentistId: asDentistId(dentists.alice),
+        chairId: asChairId(chairs.one),
+        status: 'OPEN',
+        startedAt: NOW,
+      });
+      // Absent, not null: a walk-in is not a booking that lost its link — it never had
+      // one, and the entity says so by leaving the key out (ADR 0024).
+      expect('appointmentId' in visit).toBe(false);
+
+      const row = await readVisit(visit.id);
+      expect(row.status).toBe('OPEN');
+      expect(row.startedAt).toBe(NOW);
+      const [stored] = await sql`select appointment_id from visits where id = ${visit.id}`;
+      expect((stored as { appointment_id: string | null }).appointment_id).toBeNull();
+    });
+
+    it('translates a tenant foreign key into INVALID_INPUT, for either half of the pair', async () => {
+      // A patient who exists, in the other clinic; and a clinician in the other clinic.
+      // Both are the same refusal: "this clinic does not hold that reference". Without
+      // the repository's translation they would arrive as a `23503` and become a 500.
+      await expect(
+        walkIn({ patientId: patients.foreign, dentistId: dentists.alice }),
+      ).rejects.toMatchObject({
+        code: 'INVALID_INPUT',
+        message: 'That patient, dentist or chair is not in this clinic',
+      });
+      await expect(
+        walkIn({ patientId: patients.ana, dentistId: dentists.other }),
+      ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+
+      expect(await countVisitsInClinic()).toBe(0);
+    });
+
+    it('refuses a clinician marked inactive with the booking rule, before anything is written', async () => {
+      const departing = '3c3c4444-4444-4444-8444-444444444444';
+      await sql`
+        insert into dentists (id, clinic_id, full_name, is_active)
+        values (${departing}, ${clinicId}, 'Dr Walk-In Gone', false)
+        on conflict (id) do nothing
+      `;
+
+      await expect(walkIn({ patientId: patients.ana, dentistId: departing })).rejects.toMatchObject(
+        { code: 'UNBOOKABLE_RESOURCE' },
+      );
+
+      expect(await countVisitsInClinic()).toBe(0);
+
+      await sql`delete from dentists where id = ${departing}`;
+    });
   });
 
   describe('closing a visit', () => {

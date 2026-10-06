@@ -137,15 +137,21 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   await registerDentistsRoutes(app, { dentists });
   await registerChairsRoutes(app, { chairs });
 
-  // The bridge from scheduling to clinical. It is given a transaction rather than the
-  // two repositories, because starting a visit writes both rows and a route wired with
-  // repositories could be handed them separately (ADR 0021). The `UnitOfWork` builds
-  // its repositories per transaction, so none of them can write outside it.
+  // The bridge from scheduling to clinical, and the walk-in that has no bridge. It is
+  // given a transaction rather than the two repositories, because starting a visit from
+  // a booking writes both rows and a route wired with repositories could be handed them
+  // separately (ADR 0021). The `UnitOfWork` builds its repositories per transaction, so
+  // none of them can write outside it.
   await registerVisitsRoutes(app, {
     unitOfWork: new DrizzleUnitOfWork(connection.db),
-    // A plain repository alongside the transaction, because completing and reopening a
-    // visit write one row each (ADR 0022).
+    // A plain repository alongside the transaction, because the walk-in and the two
+    // closing endpoints write one row each (ADR 0022, ADR 0024).
     visits: new DrizzleVisitRepository(connection.db),
+    // The two resources a walk-in names, because it has no booking to read them from.
+    // The same instances the agenda's filters and the booking rule use: one question,
+    // one implementation.
+    dentists,
+    chairs,
     clock: systemClock,
     ids: uuidGenerator,
   });

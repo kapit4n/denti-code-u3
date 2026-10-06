@@ -1653,3 +1653,52 @@ on purpose, permanently, broke the four tests after it until the fixture was res
 **Not done, and deliberately.** Walk-ins, the visit workspace UI, clinical notes,
 treatment records, prescriptions, charges, files and payments. Consolidating the patient
 profile's visit query. No UI calls these endpoints, so the e2e count is unchanged.
+
+## Session 26 — The walk-in
+
+**Done.** `startWalkInVisit` (`packages/domain/src/visit/walk-in-visit.ts`),
+`startWalkInVisitSchema` (`packages/validation/src/visits/index.ts`), and
+`POST /api/v1/visits/walk-in` (ADR 0024). 7 domain unit tests, 5 validation tests, and
+12 integration tests. The second creation door ADR 0021 held back now exists.
+
+**Decided.** A walk-in is its own endpoint, not `POST /api/v1/visits` with a sparse
+body — the bridge takes one field and reads the names off the booking, a walk-in has
+no booking, and folding them together would give the schema a rule for every mix it
+can express. The clinician is required (attributing a treatment to nobody is not a
+record), the chair optional, `startedAt` is the clock and never the request, and there
+is no `appointmentId` key at all. The walk-in runs the same bookable-resource rule as
+a booking (inactive clinician/chair → 409 `UNBOOKABLE_RESOURCE`); the bridge does not,
+because a booking already ran it at booking time.
+
+**Decided.** The walk-in does not read the patient first — the composite tenant foreign
+keys answer for it, and `DrizzleVisitRepository.save` now translates `23503` into
+`INVALID_INPUT` ("That patient, dentist or chair is not in this clinic", 422). Detection
+is one helper, `isForeignKeyViolation`, shared with the appointment repository's private
+rethrow. A walk-in writes one row and creates no appointment — it is not on the agenda
+and not in the dashboard's `inTreatment` count; it lives on the clinical timeline with
+no booking link.
+
+**Refused to decide.** No second-open-visit rule: it applies to *both* doors, the
+appointment door shipped without it, and adding it here alone would make the two doors
+disagree. Product question 19; `findOpenForPatient` is waiting for the rule or its
+caller.
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean (fixed via pnpm run format)
+pnpm run build            5/5 successful
+pnpm run test             561 unit/component (12 new)
+pnpm run test:integration 201 integration (13 files, 12 new, real PostgreSQL 17)
+pnpm run test:e2e         not re-run — no web/app/ui file changed in this slice (API + domain only)
+pnpm run db:generate      no schema changes, nothing to migrate
+```
+
+No mutation-hunt this session; the FK translation is proven directly (foreign patient
+and foreign clinician refused at the boundary, plus the schema's own violations).
+Fixture hygiene followed the session 25 lesson: the inactive clinician and chair a route
+test inserts are added to the suite's teardown.
+
+**Not done, and deliberately.** The visit workspace UI, clinical notes, treatment
+records, prescriptions, charges, files and payments. Consolidating the patient profile's
+visit query.

@@ -176,9 +176,12 @@ same reason — nothing can put an appointment in a room yet.
 - Visit creation from an appointment (and walk-in)
   - **Done (session 23): from an appointment.** `POST /api/v1/visits`, one field in the
     body, one transaction writing two rows, both links `on delete restrict` (ADR 0021).
-  - **Not done: walk-in.** A patient who arrives with no booking is a different request
-    — it names a patient and a clinician instead of an appointment — and the rules about
-    what it may omit deserve their own argument before they become a schema.
+  - **Done (session 26): walk-in.** `POST /api/v1/visits/walk-in` names a patient, a
+    clinician (required) and an optional chair instead of an appointment; it writes one
+    row with no `appointment_id`, refuses inactive clinicians/chairs with the same 409
+    as a booking, and lets the tenant foreign keys answer a reference this clinic does
+    not hold as a 422 rather than a 500 (ADR 0024). Open product question:
+    whether the _same_ patient may hold two open visits at once (Q19).
 - Visit read side
   - **Done (session 25).** `GET /api/v1/visits/:visitId` and
     `GET /api/v1/patients/:patientId/visits` (ADR 0023). No filterable collection, and

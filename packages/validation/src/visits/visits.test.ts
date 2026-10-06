@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { startVisitSchema } from './index.js';
+import { startVisitSchema, startWalkInVisitSchema } from './index.js';
 
 const APPOINTMENT_ID = '44444444-4444-4444-8444-444444444444';
+const PATIENT_ID = '11111111-1111-4111-8111-111111111111';
+const DENTIST_ID = '33333333-3333-4333-8333-333333333333';
+const CHAIR_ID = '77777777-7777-4777-8777-777777777777';
 
 describe('startVisitSchema', () => {
   it('accepts an appointment id and nothing else', () => {
@@ -47,5 +50,72 @@ describe('startVisitSchema', () => {
 
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ appointmentId: APPOINTMENT_ID });
+  });
+});
+
+describe('startWalkInVisitSchema', () => {
+  it('accepts a patient and a clinician, with or without a chair', () => {
+    expect(
+      startWalkInVisitSchema.safeParse({ patientId: PATIENT_ID, dentistId: DENTIST_ID }),
+    ).toEqual({
+      success: true,
+      data: { patientId: PATIENT_ID, dentistId: DENTIST_ID },
+    });
+    expect(
+      startWalkInVisitSchema.safeParse({
+        patientId: PATIENT_ID,
+        dentistId: DENTIST_ID,
+        chairId: CHAIR_ID,
+      }),
+    ).toEqual({
+      success: true,
+      data: { patientId: PATIENT_ID, dentistId: DENTIST_ID, chairId: CHAIR_ID },
+    });
+  });
+
+  it('refuses a walk-in with no clinician, which is the rule the other door keeps', () => {
+    // The clinician is the one field this schema argues about. A walk-in that could
+    // name nobody would make "who treated this patient" depend on which button was
+    // pressed (ADR 0024).
+    const result = startWalkInVisitSchema.safeParse({ patientId: PATIENT_ID });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(['dentistId']);
+  });
+
+  it('refuses a walk-in with no patient', () => {
+    const result = startWalkInVisitSchema.safeParse({ dentistId: DENTIST_ID });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(['patientId']);
+  });
+
+  it('refuses an id that is not a uuid, on either field', () => {
+    for (const body of [
+      { patientId: '1', dentistId: DENTIST_ID },
+      { patientId: PATIENT_ID, dentistId: '' },
+      { patientId: null, dentistId: DENTIST_ID },
+      { patientId: PATIENT_ID, dentistId: null },
+    ]) {
+      expect(startWalkInVisitSchema.safeParse(body).success).toBe(false);
+    }
+  });
+
+  it('drops the fields this door was decided not to accept', () => {
+    // An `appointmentId` in a walk-in body is stripped, not honoured: the two doors
+    // do not read each other's fields, so a client that mixed the two shapes up gets
+    // a walk-in for whatever patient it named — or a 422 when it named none — and
+    // never a visit quietly attached to a booking nobody meant to start.
+    const result = startWalkInVisitSchema.safeParse({
+      patientId: PATIENT_ID,
+      dentistId: DENTIST_ID,
+      appointmentId: APPOINTMENT_ID,
+      startedAt: '2020-01-01T00:00:00.000Z',
+      status: 'CLOSED',
+      clinicId: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ patientId: PATIENT_ID, dentistId: DENTIST_ID });
   });
 });

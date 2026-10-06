@@ -63,6 +63,24 @@ export function isExclusionViolation(error: unknown): boolean {
 }
 
 /**
+ * `true` when the database refused a write because a row named something that is not
+ * there, or not here.
+ *
+ * The tenant foreign keys make this one refusal for two situations — an id that does
+ * not exist, and an id that exists in another clinic — and they are the same answer on
+ * purpose: a request scoped to one clinic is told nothing about another clinic's rows
+ * (ADR 0014). Each repository turns it into `INVALID_INPUT` with a message naming the
+ * references *its* table has, so the message never names a field the request could not
+ * have sent.
+ *
+ * Without this the same refusal arrives as a 500 with a request id, which is how a
+ * clinic's most common mistake becomes a server fault.
+ */
+export function isForeignKeyViolation(error: unknown): boolean {
+  return hasPostgresCode(error, PG_FOREIGN_KEY_VIOLATION);
+}
+
+/**
  * `true` when the database refused a write because a unique index already holds that
  * key.
  *

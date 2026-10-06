@@ -1,7 +1,7 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 25 (the visit read side: two questions, and refusing to answer a
-> third nobody has asked)
+> Last updated: session 26 (the walk-in: a second door, no appointment, one row, and the
+> tenant foreign keys answering for it)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -26,6 +26,15 @@ Session 25 delivered the **third slice**, and the smallest yet: reading one. Unt
 every visit route was a `POST`, so a visit closed by the API could not be seen closed
 anywhere. `GET /api/v1/visits/:visitId` and `GET /api/v1/patients/:patientId/visits`
 (ADR 0023) give the three dormant repository methods callers at last.
+
+Session 26 delivered the **walk-in**: the second creation door ADR 0021 held back.
+`POST /api/v1/visits/walk-in` names a patient, a clinician (required) and an optional
+chair instead of an appointment; it writes one row with no `appointment_id` and
+refuses an inactive clinician or chair with the same `UNBOOKABLE_RESOURCE` 409 as a
+booking. The tenant foreign keys answer for it — `DrizzleVisitRepository.save`
+translates `23503` into `INVALID_INPUT`, so a patient from another clinic is a 422,
+not a 500 (ADR 0024). Product question 19: may the same patient hold two open visits
+at once?
 
 Session 24 delivered the **second slice**: closing one. `POST /api/v1/visits/:visitId/complete`
 and `.../reopen` are bodyless, and the decision worth its weight is what they _do not_ do
@@ -1297,3 +1306,52 @@ warning) · format · build 5/5 · 549 unit/component (7 new) · 189 integration
 real PostgreSQL 17) · 85/85 e2e unchanged, no UI calls either endpoint · no migration ·
 four mutations checked: `orderBy` removed, the clinic filter dropped from each of the two
 reads, and `NOT_FOUND` replaced with a fabricated visit.
+
+Session 26: the walk-in. `startWalkInVisit`, `startWalkInVisitSchema`, and
+`POST /api/v1/visits/walk-in`, ADR 0024. Nine integration tests and twelve unit tests,
+and the boundary between the two doors is the argument, not the route.
+
+The design decision was that a walk-in is **not** `POST /api/v1/visits` with a sparse
+body. The bridge takes one field and reads the patient, clinician and chair off the
+booking; a walk-in has no booking, so the caller names all three. Folding the walk-in
+into the bridge union would have given the schema a rule for every mix it can express —
+appointment _and_ patient, walk-in with and without a chair — each one a second answer
+for a question the domain has one answer for. Two doors, and each schema says what its
+request is.
+
+The second decision was **who may be named**. The clinician is required, by the same
+argument that refuses a visit for an appointment whose dentist left: a visit records
+treatment, treatment is attributable to a clinician, and attributing a treatment to
+nobody is not a record. The column stays nullable for the _future_ fact of a departure,
+not as an invitation to create a visit without a name. The chair is optional, like a
+booking. And the walk-in runs the same bookable-resource rule as the booking — an
+inactive clinician or chair answers the same 409 — while the bridge deliberately does
+not, because a booking already ran that rule at booking time. The asymmetry is the
+point, two doors, two code paths, one rule.
+
+The third was **how a walk-in learns it named a reference this clinic does not hold.**
+It does not read the patient first, exactly as a booking does not (ADR 0014); the
+composite tenant foreign keys are the answer, and this session's real work was the
+translation. `DrizzleVisitRepository.save` now turns `23503` into `INVALID_INPUT` —
+"That patient, dentist or chair is not in this clinic" — so the walk-in's most common
+mistake, a patient id from the wrong clinic, is a 422, not the 500 it would otherwise
+arrive as. Detection lives once, in `isForeignKeyViolation`, and the appointment
+repository's private rethrow used it too.
+
+A walk-in writes **one row**, and deliberately **no appointment**: it does not appear
+on the agenda and is not counted by the dashboard's `inTreatment` total, because both
+read the book and a walk-in is not in it. The clinical timeline is where it lives, as a
+first-class visit with no `appointmentId`.
+
+The rule this session refused to invent is the one that seems obvious: a patient cannot
+be in two chairs, so refuse a second open visit for the same patient. It applies to
+_both_ doors, the appointment door shipped without it, and adding the rule here would
+make the two doors disagree. It is product question 19, and `findOpenForPatient` is
+waiting for whichever door needs it first.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
+warning) · format · build 5/5 · 561 unit/component (12 new) · 201 integration (12 new,
+real PostgreSQL 17) · 85/85 e2e unchanged, no UI calls the endpoint · no migration ·
+the FK translation is proven by direct integration tests (a foreign patient and a
+foreign clinician, each refused twice at the boundary), a follow-up session's
+mutation-hour can pick `save` apart the way session 24 dissected the repository.

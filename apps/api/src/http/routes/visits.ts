@@ -1,5 +1,5 @@
 /**
- * Starting a visit — the one door a clinical encounter comes in through.
+ * Visits: starting one, closing one, reading one.
  *
  * This route is parsing and nothing else, which is the arrangement ADR 0011 fixed for
  * the calendar and ADR 0018 for the appointment writes: the rules live in
@@ -7,35 +7,52 @@
  * client get the same answer, and what arrives here from them is a `DomainError` that
  * `sendProblem` turns into a status a person can act on.
  *
- * **The body is one field wide.** `POST /api/v1/visits` accepts an `appointmentId`
- * and nothing else about the appointment — no patient, no dentist, no chair, no time.
- * Those are read from the booking, so there is no request that can produce a visit
- * disagreeing with the appointment it came from. A body that could restate them would
- * be a body that could restate them wrongly, and the clinical record would then be
- * evidence of something that did not happen (ADR 0021).
+ * **There are two creation doors, and they are two endpoints rather than one body
+ * with a branch in it** (ADR 0024):
  *
- * **No `clinicId` in the body, either.** It comes from the request scope: a client that
+ *  - `POST /api/v1/visits` takes an `appointmentId` and nothing else about the
+ *    appointment — no patient, no dentist, no chair, no time. Those are read from the
+ *    booking, so there is no request that can produce a visit disagreeing with the
+ *    appointment it came from. A body that could restate them would be a body that
+ *    could restate them wrongly, and the clinical record would then be evidence of
+ *    something that did not happen (ADR 0021).
+ *  - `POST /api/v1/visits/walk-in` takes a patient and a clinician instead, because
+ *    there is no booking to read them from. Separate, so each endpoint validates
+ *    exactly what it accepts and neither can be handed half of the other's shape.
+ *
+ * **No `clinicId` in either body.** It comes from the request scope: a client that
  * could choose its own clinic would be a cross-tenant write (ADR 0014).
  *
- * What the endpoint answers with is the visit *and* the appointment as the database now
- * holds them, because the caller almost always has both in view — the agenda is showing
- * the booking while the clinician starts the visit — and answering with only one of
- * them would leave the other to be guessed at.
+ * What the appointment door answers with is the visit *and* the appointment as the
+ * database now holds them, because the caller almost always has both in view — the
+ * agenda is showing the booking while the clinician starts the visit — and answering
+ * with only one of them would leave the other to be guessed at. The walk-in answers
+ * with the visit alone: there is no second row, so the wrapper would be a shape with
+ * one field in it.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
-import type { Clock, IdGenerator, UnitOfWork } from '@denti-code-u3/domain';
+import type {
+  ChairRepository,
+  Clock,
+  DentistRepository,
+  IdGenerator,
+  UnitOfWork,
+} from '@denti-code-u3/domain';
 import {
   completeVisitRecord,
   getVisit,
   listVisitsForPatient,
   reopenVisitRecord,
   startVisit,
+  startWalkInVisit,
   type VisitRepository,
 } from '@denti-code-u3/domain';
-import { startVisitSchema, uuidSchema } from '@denti-code-u3/validation';
+import { startVisitSchema, startWalkInVisitSchema, uuidSchema } from '@denti-code-u3/validation';
 import {
   asAppointmentId,
+  asChairId,
+  asDentistId,
   asPatientId,
   asVisitId,
   type ClinicId,
@@ -50,29 +67,44 @@ export interface VisitsDependencies {
    * The transaction the bridge runs in.
    *
    * Required, and there is no non-transactional alternative wired anywhere: starting a
-   * visit writes two rows, and a route that could be given repositories directly would
-   * be one refactor away from writing them separately (ADR 0021).
+   * visit from a booking writes two rows, and a route that could be given repositories
+   * directly would be one refactor away from writing them separately (ADR 0021). The
+   * walk-in does not use it, because it writes one row and there is nothing to make
+   * atomic — the same reason the two closing endpoints are handed the repository.
    */
   readonly unitOfWork: UnitOfWork;
 
   /**
-   * The plain repository the two closing endpoints use.
+   * The plain repository the walk-in and the two closing endpoints use.
    *
    * A repository here and a transaction there is not an inconsistency: `startVisit`
-   * writes a visit *and* an appointment, and each of these writes one row whose status
-   * and end time travel in the same statement. Giving all three the same shape would
-   * mean either wrapping one statement in a transaction nobody needs or, worse, handing
-   * the two-row operation a plain repository and losing the guarantee that made it
-   * atomic in the first place (ADR 0022).
+   * writes a visit *and* an appointment, and each of the others writes one row whose
+   * status and end time travel in the same statement. Giving all of them the same shape
+   * would mean either wrapping one statement in a transaction nobody needs or, worse,
+   * handing the two-row operation a plain repository and losing the guarantee that made
+   * it atomic in the first place (ADR 0022).
    */
   readonly visits: VisitRepository;
+
+  /**
+   * The two resources a walk-in names, because there is no booking to name them from.
+   *
+   * Required rather than optional for the same reason the appointment routes require
+   * theirs (ADR 0020): a door that could be wired without them is a door where the
+   * "who may be named" rule silently does not run. The appointment door does not need
+   * them — it reads the booking's names and does not re-check them, because the
+   * treatment happened under whoever the booking said.
+   */
+  readonly dentists: DentistRepository;
+  readonly chairs: ChairRepository;
+
   readonly clock: Clock;
   readonly ids: IdGenerator;
 }
 
 export async function registerVisitsRoutes(
   app: FastifyInstance,
-  { unitOfWork, visits, clock, ids }: VisitsDependencies,
+  { unitOfWork, visits, dentists, chairs, clock, ids }: VisitsDependencies,
 ): Promise<void> {
   /**
    * `POST /api/v1/visits` — start a visit from an appointment.
@@ -90,14 +122,7 @@ export async function registerVisitsRoutes(
     const parsed = startVisitSchema.safeParse(request.body);
 
     if (!parsed.success) {
-      return reply.status(422).send({
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'The visit could not be started',
-          details: { issues: parsed.error.issues },
-          requestId: request.id,
-        },
-      });
+      return sendInvalidBody(reply, request, 'The visit could not be started', parsed.error);
     }
 
     try {
@@ -108,6 +133,62 @@ export async function registerVisitsRoutes(
       });
 
       return reply.status(201).send(started);
+    } catch (error) {
+      return sendProblem(reply, request, error);
+    }
+  });
+
+  /**
+   * `POST /api/v1/visits/walk-in` — start a visit for a patient who arrived with no
+   * booking (ADR 0024).
+   *
+   * 201 with the visit: one row, so the answer is the row rather than a wrapper around
+   * it — which is what the two closing endpoints answer with too.
+   *
+   * 409 for a clinician or chair marked inactive, the same refusal a booking gets and
+   * for the same reason: the request names a resource for care that is about to
+   * happen, and product question 17 answered that an inactive one may not be named.
+   *
+   * 422 for a patient, clinician or chair this clinic does not hold. That answer comes
+   * from the composite tenant foreign keys, translated by the repository — the walk-in
+   * does not read the patient first, exactly as the booking does not (ADR 0014), and
+   * without the translation the same refusal would arrive as a 500.
+   *
+   * **No appointment is created**, so nothing appears on the agenda and the dashboard's
+   * `inTreatment` total does not grow: both read the book, and a walk-in is not in it.
+   * The patient's timeline and profile are where this record shows up.
+   */
+  app.post('/api/v1/visits/walk-in', async (request, reply) => {
+    const clinicId = request.clinicId as ClinicId;
+    const parsed = startWalkInVisitSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return sendInvalidBody(
+        reply,
+        request,
+        'The walk-in visit could not be started',
+        parsed.error,
+      );
+    }
+
+    try {
+      const visit = await startWalkInVisit(
+        clinicId,
+        {
+          patientId: asPatientId(parsed.data.patientId),
+          dentistId: asDentistId(parsed.data.dentistId),
+          ...(parsed.data.chairId ? { chairId: asChairId(parsed.data.chairId) } : {}),
+        },
+        {
+          visits,
+          dentists,
+          chairs,
+          clock,
+          newId: () => asVisitId(ids.nextId()),
+        },
+      );
+
+      return reply.status(201).send(visit);
     } catch (error) {
       return sendProblem(reply, request, error);
     }
@@ -305,6 +386,31 @@ function sendInvalidVisitId(
       code: 'VALIDATION_ERROR',
       message,
       details: { issues: [{ path: ['visitId'], code: 'invalid_uuid' }] },
+      requestId: request.id,
+    },
+  });
+}
+
+/**
+ * 422 for a body the schema refused, in the envelope every endpoint uses.
+ *
+ * Shared by the two creation doors because they were each about to inline the same
+ * eight lines, and the message is a parameter because "the visit could not be started"
+ * and "the walk-in visit could not be started" name different requests — a client
+ * parsing the message to find out which door it knocked on would otherwise be told the
+ * wrong one.
+ */
+function sendInvalidBody(
+  reply: FastifyReply,
+  request: FastifyRequest,
+  message: string,
+  error: { readonly issues: unknown },
+): FastifyReply {
+  return reply.status(422).send({
+    error: {
+      code: 'VALIDATION_ERROR',
+      message,
+      details: { issues: error.issues },
       requestId: request.id,
     },
   });

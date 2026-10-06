@@ -1,21 +1,23 @@
 /**
  * Visit boundary schemas.
  *
- * One request body, and it is one field wide on purpose: `POST /api/v1/visits` takes an
- * `appointmentId` and nothing else about the appointment. The patient, the clinician
- * and the chair are read from the booking rather than accepted here, because a body
- * that could restate them is a body that could restate them *differently* — a visit
- * whose dentist is not the one who was booked is a record of a conversation that did
- * not happen (ADR 0021).
+ * Two request bodies, because there are two doors and they are different requests
+ * rather than two values of one field (ADR 0024):
  *
- * `startedAt` is absent for the same reason from the other side: the use case reads
- * the clock, so a client cannot file a visit that started last Tuesday or next month.
+ *  - `POST /api/v1/visits` takes an `appointmentId` and nothing else about the
+ *    appointment. The patient, the clinician and the chair are read from the booking
+ *    rather than accepted here, because a body that could restate them is a body that
+ *    could restate them *differently* — a visit whose dentist is not the one who was
+ *    booked is a record of a conversation that did not happen (ADR 0021).
+ *  - `POST /api/v1/visits/walk-in` takes the patient and the clinician instead,
+ *    because there is no booking to read them from. That is what makes it a second
+ *    schema with its own argument, and not an optional `appointmentId` (ADR 0021 §6).
  *
- * A walk-in — a patient who arrives with no appointment — is a real case and is not
- * here yet. Its body would name a patient and a clinician instead of a booking, which
- * makes it a genuinely different request rather than an optional field, and the rules
- * about what a walk-in may omit deserve their own argument before they become a schema
- * (ADR 0021).
+ * `startedAt` is absent from both from the same side: the use case reads the clock, so
+ * a client cannot file a visit that started last Tuesday or next month.
+ *
+ * `clinicId` is absent from both because it comes from the request scope — a client
+ * that could choose its own clinic would be a cross-tenant write (ADR 0014).
  */
 
 import { z } from 'zod';
@@ -34,6 +36,27 @@ export const startVisitSchema = z.object({
 });
 
 export type StartVisitInput = z.infer<typeof startVisitSchema>;
+
+/**
+ * Start a visit for a patient who arrived without a booking.
+ *
+ * `dentistId` is required and not optional, which is the whole of this schema's
+ * argument: a visit records treatment and treatment is attributable to a clinician, so
+ * the walk-in may not be the door that skips the rule the appointment bridge keeps
+ * (ADR 0021 §5, ADR 0024). `chairId` is optional for the reason it is optional on a
+ * booking — the chair is chosen when one is free.
+ *
+ * Deliberately absent: `reason` and `summary`. The columns exist and nothing reads
+ * them yet, and a field the API stores but never returns is a form answered with
+ * silence (ADR 0018).
+ */
+export const startWalkInVisitSchema = z.object({
+  patientId: uuidSchema,
+  dentistId: uuidSchema,
+  chairId: uuidSchema.optional(),
+});
+
+export type StartWalkInVisitInput = z.infer<typeof startWalkInVisitSchema>;
 
 /**
  * Deliberately not here: a `visitStatusSchema` mirroring the domain's three statuses.
