@@ -4,26 +4,29 @@
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
-  "description": "Drizzle schema, migrations, seeds and DB tooling for Denti-Code U3 (PostgreSQL only)",
+  "description": "Drizzle schema, migrations, seeds and DB tooling for Denti-Code U3 (SQLite default, PostgreSQL retained — ADR 0025)",
   "main": "schema/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint schema migrate.ts seed.ts",
     "test": "vitest run --passWithNoTests",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "db:generate:sqlite": "drizzle-kit generate --config drizzle.config.sqlite.ts",
     "db:migrate": "tsx --env-file-if-exists=../.env migrate.ts",
     "db:seed": "tsx --env-file-if-exists=../.env seed.ts",
     "db:studio": "drizzle-kit studio --config drizzle.config.ts"
   },
   "dependencies": {
+    "@denti-code-u3/domain": "workspace:*",
+    "@denti-code-u3/types": "workspace:*",
+    "better-sqlite3": "^12.11.1",
     "drizzle-orm": "0.45.3",
     "postgres": "3.4.9",
-    "zod": "4.6.5",
-    "@denti-code-u3/domain": "workspace:*",
-    "@denti-code-u3/types": "workspace:*"
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@denti-code-u3/tsconfig": "workspace:*",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "26.6.3",
     "drizzle-kit": "0.31.11",
     "tsx": "4.23.15",
@@ -32,6 +35,8 @@
   },
   "exports": {
     ".": "./schema/index.ts",
-    "./schema": "./schema/index.ts"
+    "./schema": "./schema/index.ts",
+    "./schema/sqlite": "./schema/sqlite/index.ts",
+    "./db-url": "./db-url.ts"
   }
 }

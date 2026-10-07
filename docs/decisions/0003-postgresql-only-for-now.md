@@ -1,6 +1,10 @@
 # ADR 0003 — PostgreSQL only, no SQLite, no offline sync in this phase
 
-- **Status:** Accepted
+- **Status:** Accepted — **partially superseded by
+  [ADR 0025](./0025-two-engines-sqlite-runs-postgresql-kept.md)**, which makes
+  SQLite the engine that runs the product while PostgreSQL is retained as a
+  second engine. The parts that stand: no offline mode, no sync engine, no
+  second source of truth, and the repository ports remain the only seam.
 - **Date:** 2026-09-30
 - **Deciders:** Principal Architect
 - **Affects:** database strategy, desktop architecture, roadmap

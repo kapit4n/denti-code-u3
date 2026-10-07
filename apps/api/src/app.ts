@@ -11,9 +11,9 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { loadApiConfig, type ApiConfig, type EnvSource } from './config/env.js';
 import { loggerOptions } from './config/logger.js';
 import {
-  createDatabaseConnection,
+  openDatabaseConnection,
   type DatabaseConnection,
-} from './infrastructure/persistence/postgres/connection.js';
+} from './infrastructure/persistence/connection.js';
 import { registerCors } from './http/plugins/cors.js';
 import { registerClinicScope } from './http/plugins/clinic-scope.js';
 import { registerHealthRoutes } from './http/routes/health.js';
@@ -24,13 +24,6 @@ import { registerDentistsRoutes } from './http/routes/dentists.js';
 import { registerChairsRoutes } from './http/routes/chairs.js';
 import { registerVisitsRoutes } from './http/routes/visits.js';
 import { registerPatientsRoutes } from './http/routes/patients.js';
-import { DrizzlePatientRepository } from './infrastructure/persistence/repositories/patient-repository.js';
-import { DrizzleAppointmentRepository } from './infrastructure/persistence/repositories/appointment-repository.js';
-import { DrizzleClinicRepository } from './infrastructure/persistence/repositories/clinic-repository.js';
-import { DrizzleDentistRepository } from './infrastructure/persistence/repositories/dentist-repository.js';
-import { DrizzleChairRepository } from './infrastructure/persistence/repositories/chair-repository.js';
-import { DrizzleVisitRepository } from './infrastructure/persistence/repositories/visit-repository.js';
-import { DrizzleUnitOfWork } from './infrastructure/persistence/postgres/unit-of-work.js';
 import { systemClock } from './infrastructure/clock/system-clock.js';
 import { uuidGenerator } from './infrastructure/id/uuid-generator.js';
 import { sendProblem } from './http/problem.js';
@@ -52,7 +45,11 @@ export type DentiApiServer = FastifyInstance;
 
 export async function buildServer(env: EnvSource = process.env): Promise<DentiApiServer> {
   const config = loadApiConfig(env);
-  const connection = createDatabaseConnection(config.databaseUrl);
+  // The engine is chosen by the `DATABASE_URL` scheme — see
+  // `infrastructure/persistence/connection.ts`. From here on the wiring speaks
+  // only to ports, so nothing else in the process needs to know which engine
+  // answered (ADR 0025).
+  const connection = openDatabaseConnection(config.databaseUrl, config.clinicTimeZone);
 
   const app = Fastify({
     logger: loggerOptions(config),
@@ -89,34 +86,27 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   // ADR 0014's scoping rule enforceable rather than aspirational.
   await registerClinicScope(app, { config });
 
-  // One appointment repository for every reader *and* writer: the agenda endpoint,
-  // the dashboard's view of today's book and the three write endpoints, so "today"
-  // and "the book" each have one implementation.
-  const appointments = new DrizzleAppointmentRepository(connection.db);
-  const clinics = new DrizzleClinicRepository(connection.db);
-  // Read once and shared: the two read endpoints, the agenda's filters and the
-  // booking rule all read the same rows, and two instances of one repository would
-  // be two answers to one question.
-  const dentists = new DrizzleDentistRepository(connection.db);
-  const chairs = new DrizzleChairRepository(connection.db);
+  // Every reader and writer shares one repository per port, so "today" and "the
+  // book" each have one implementation — the connection builds them once, behind
+  // whichever engine answered. Two instances of one repository would be two
+  // answers to one question.
+  const { appointments, clinics, dentists, chairs } = connection.repositories;
 
   await registerDashboardRoutes(app, {
-    db: connection.db,
+    // The dashboard's aggregates answer through the connection's read store;
+    // "today's book" is still the agenda query the calendar uses.
+    dashboard: connection.dashboard,
     appointments,
-    fallbackTimeZone: config.clinicTimeZone,
   });
   // One repository for the whole patient feature: the handlers get a port, so a
   // route cannot forget the clinic filter, and adding a read does not require
   // handing out the connection again.
   await registerPatientsRoutes(app, {
-    patients: new DrizzlePatientRepository(connection.db),
+    patients: connection.repositories.patients,
     ids: uuidGenerator,
     clock: systemClock,
   });
 
-  // The dashboard keeps `db` for the aggregates that have no port yet — counts,
-  // revenue, occupancy — and says so on `DashboardDependencies`.
-  //
   // The writes need the clinic's own record, for opening hours: a clinic that opens
   // at 07:00 must not need a deployment to say so.
   await registerAppointmentsRoutes(app, {
@@ -143,10 +133,10 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   // separately (ADR 0021). The `UnitOfWork` builds its repositories per transaction, so
   // none of them can write outside it.
   await registerVisitsRoutes(app, {
-    unitOfWork: new DrizzleUnitOfWork(connection.db),
+    unitOfWork: connection.unitOfWork,
     // A plain repository alongside the transaction, because the walk-in and the two
     // closing endpoints write one row each (ADR 0022, ADR 0024).
-    visits: new DrizzleVisitRepository(connection.db),
+    visits: connection.repositories.visits,
     // The two resources a walk-in names, because it has no booking to read them from.
     // The same instances the agenda's filters and the booking rule use: one question,
     // one implementation.

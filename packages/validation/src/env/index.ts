@@ -23,7 +23,12 @@ const commaSeparatedList = z.string().transform((value) =>
 );
 
 /**
- * A PostgreSQL connection string.
+ * A database connection string, on either of the two supported engines.
+ *
+ * The engine is chosen by the URL scheme (ADR 0025): anything starting with
+ * `postgres:` / `postgresql:` opens the retained PostgreSQL engine, and a
+ * `sqlite:` / `file:` URL opens the default SQLite engine. Everything on the
+ * API runs over SQLite unless `DATABASE_URL` says otherwise.
  *
  * `z.url()`'s `protocol` option matches the scheme *including* its trailing
  * colon, which reads well but silently rejects every real `postgres://` URL
@@ -34,10 +39,10 @@ const commaSeparatedList = z.string().transform((value) =>
  * schema stays usable in a plain ES2023 runtime with no DOM or Node globals —
  * it runs in the browser, in Node and inside the Tauri shell.
  */
-const postgresUrlSchema = z
+const databaseUrlSchema = z
   .url('DATABASE_URL must be a valid URL')
-  .refine((value) => /^postgres(ql)?:\/\//.test(value), {
-    message: 'DATABASE_URL must be a PostgreSQL connection string',
+  .refine((value) => /^postgres(ql)?:\/\//.test(value) || /^(sqlite|file):/.test(value), {
+    message: 'DATABASE_URL must be a postgres:// or sqlite:/file: URL',
   });
 
 /**
@@ -57,13 +62,13 @@ export const apiEnvironmentSchema = z.object({
   API_PORT: z.coerce.number().int().min(1).max(65_535).default(3010),
   LOG_LEVEL: logLevelSchema.default('info'),
   CORS_ORIGINS: commaSeparatedList.default([]),
-  DATABASE_URL: postgresUrlSchema,
+  DATABASE_URL: databaseUrlSchema,
   CLINIC_TIMEZONE: timeZoneSchema.default('UTC'),
   CLINIC_ID: clinicIdSchema,
 });
 
 export const databaseEnvironmentSchema = z.object({
-  DATABASE_URL: postgresUrlSchema,
+  DATABASE_URL: databaseUrlSchema,
 });
 
 /**

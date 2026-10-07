@@ -44,9 +44,11 @@ describe('loadApiConfig', () => {
     expect(() => loadApiConfig({ ...VALID_ENV, CLINIC_ID: 'not-a-uuid' })).toThrow(/CLINIC_ID/);
   });
 
-  it('rejects a non-PostgreSQL connection string', () => {
+  it('rejects a connection string for a database that is not PostgreSQL or SQLite', () => {
+    // ADR 0025: two engines, no third. A `mysql://` URL is not a typo a caller
+    // ever makes, so refusing it at boot is what catches the drift silently.
     expect(() => loadApiConfig({ ...VALID_ENV, DATABASE_URL: 'mysql://host/db' })).toThrow(
-      /DATABASE_URL must be a PostgreSQL connection string/,
+      /DATABASE_URL must be a postgres:\/\/ or sqlite:\/file: URL/,
     );
   });
 

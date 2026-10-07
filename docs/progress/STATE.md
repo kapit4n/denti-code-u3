@@ -1,7 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 26 (the walk-in: a second door, no appointment, one row, and the
-> tenant foreign keys answering for it)
+> Last updated: session 27 (two engines; SQLite runs everything by default — ADR 0025)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -86,22 +85,25 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 23)
+## Verification log (last run, session 27)
 
 | Command                     | Result                                                                     |
 | --------------------------- | -------------------------------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                                           |
-| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK`                                      |
+| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)           |
 | `pnpm run format:check`     | clean                                                                      |
-| `pnpm run test`             | 12/12 tasks pass — 533 tests (17 new)                                      |
-| `pnpm run test:integration` | 13 files, 158 tests pass against real PostgreSQL 17                        |
+| `pnpm run test`             | 12/12 tasks pass — api 7 files / 70 tests (12 new, always-on SQLite smoke) |
+| `pnpm run test:integration` | PostgreSQL suites opt-in via `TEST_DATABASE_URL` (13 api files, not run)   |
 | `pnpm run build`            | 5/5 tasks pass                                                             |
-| `pnpm run test:e2e`         | 85 passed (unchanged — no UI moved this session)                           |
+| `pnpm run db:migrate`       | SQLite default: `sqlite:` URL migrates + seeds; PG path unchanged          |
 | `pnpm run guard:boundaries` | OK                                                                         |
-| `pnpm run db:migrate`       | `0003_visit_links_and_tenant_keys` applied; `db:generate` reports no drift |
 
-Per-package unit/component tests: domain 166, validation 66, api-client 15, api 58
-(integration skipped here, run separately), app 225, desktop 3.
+The SQLite smoke test (`apps/api/test/sqlite-smoke.integration.test.ts`) always
+runs, because SQLite needs no external service: /ready, registration, folded
+search, booking, the INSERT and UPDATE overlap triggers (409s), the tenant FK
+(422), the visit bridge in a transaction, the unique second-visit refusal, and
+the dashboard read model — all against a real SQLite file the test migrates and
+seeds itself.
 
 **The session's real subject was a rule that was dead code, and only a third test could
 see it.** `startVisitFromAppointment` refuses an appointment that already has a visit —
@@ -1355,3 +1357,62 @@ real PostgreSQL 17) · 85/85 e2e unchanged, no UI calls the endpoint · no migra
 the FK translation is proven by direct integration tests (a foreign patient and a
 foreign clinician, each refused twice at the boundary), a follow-up session's
 mutation-hour can pick `save` apart the way session 24 dissected the repository.
+
+Session 27: the engine. Denti-Code U3 no longer needs PostgreSQL to boot — **SQLite
+runs everything by default**, and PostgreSQL stays a supported second engine behind
+the same ports. ADR 0025 records the rule: no abstraction over the two engines;
+a schema change lands in `database/schema` _and_ `database/schema/sqlite`, and a
+repository method is written twice.
+
+- **The schema and the migrations are per engine.** `database/schema/sqlite` (23
+  tables, snake_case, the same `CHECK` enums) with `database/migrations-sqlite`
+  (`0000_baseline`, `0001` the overlap guards, `0002` the tenant foreign keys).
+  SQLite has no exclusion constraints, so the overlap guard is three pairs of
+  `BEFORE INSERT` / `BEFORE UPDATE` triggers over `start + duration*60000`; the
+  UPDATE triggers carry `id <> NEW.id` because the row being moved is still there,
+  and the INSERT side omits it intentionally (a BEFORE trigger may not see the
+  defaulted id). Tenant isolation is composite `(id, clinic_id)` foreign keys,
+  the same columns ADR 0014 demands on PostgreSQL. `db:migrate` and the browser
+  `db:seed` are dual-engine; `sqliteDatabasePath` resolves a `sqlite:` URL against
+  the repository root, and the relative-path rule is the same resolver the API
+  uses, so migrator, seeder and server always mean the same file.
+- **The API persistence layer split, and the seam is the URL scheme.** One
+  `DatabaseConnection` port (`persistence/connection.ts`, ADR 0025's only
+  dispatch point) names `{ engine, repositories, unitOfWork, dashboard,
+isReachable, close }`, and `openDatabaseConnection` hands a `sqlite:`/`file:`
+  URL the SQLite stack (`persistence/sqlite/*`) and a `postgres://` the existing
+  one. Every route now imports a port; `app.ts` no longer knows what database it
+  is on. The dashboard read model became `DashboardReadStore`, with one
+  implementation per engine. Routes moved their queries behind it; only
+  `/dashboard/stats` and the calendar preview go through the store directly.
+- **The hand-written SQLite `UnitOfWork` is a real design fact.** better-sqlite3's
+  `.transaction()` refuses to wrap an async callback ("Transaction function
+  cannot return a promise"), so `SQLiteUnitOfWork` owns `BEGIN`/`COMMIT`/`ROLLBACK`
+  by `exec()` around the async `work(repos)`, safe on one synchronous connection.
+- **The smoke test proved a silent data-loss bug before it fixed anything else.**
+  The first full run answered 201s while `SELECT * FROM patients` returned `[]`:
+  two fire-and-forget inserts (`patient-repository.register`, `visit-repository.save`)
+  built drizzle statements that **nothing executed** until `.run()` was added.
+  A register that quietly truncs history to a status line was exactly the failure
+  the always-on SQLite smoke suite was written to catch, and it was the first it
+  caught.
+- **This machine's bundled SQLite has no `translate()`**, so the accent fold's SQL
+  side is per engine: PostgreSQL keeps `lower(translate(...))`, and SQLite calls a
+  `fold_accents()` scalar — the same JS `foldAccents`, registered `deterministic`
+  on every SQLite connection so it may be indexed — via `sqliteFoldable`.
+- **Three of my expectations were wrong about the wire, not about the code.**
+  `INVALID_INPUT` reaches the client as `VALIDATION_ERROR`, and the second visit
+  in a row fails the domain's `DUPLICATED_RECORD` guard before any row is written,
+  which the wire folds to `DOMAIN_RULE_VIOLATION` — the same answers the
+  PostgreSQL route suite already pins. And moving an appointment onto its _own_
+  slot is not a conflict: the UPDATE trigger's `id <> NEW.id` self-exclusion is
+  why, so the trigger test needed a second booking to collide with.
+- **The default stack came down to a file.** `.env.example` now points
+  `DATABASE_URL=sqlite:./data/denti-code-u3.db` (one `db:migrate` + `db:seed`
+  to create it); the `postgres://` line remains as the way back to the second
+  engine, and the containerized instance is untouched.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
+warning) · format · build 5/5 · api: 7 passed / 13 skipped (PG opt-in) / 70 tests,
+of which 12 are the always-on SQLite smoke · migration + seed verified on a real
+SQLite file before the API ever opened it.

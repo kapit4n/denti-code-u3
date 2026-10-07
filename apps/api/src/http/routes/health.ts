@@ -8,10 +8,7 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import {
-  isDatabaseReachable,
-  type DatabaseConnection,
-} from '../../infrastructure/persistence/postgres/connection.js';
+import type { DatabaseConnection } from '../../infrastructure/persistence/connection.js';
 import type { ApiConfig } from '../../config/env.js';
 
 export interface HealthDependencies {
@@ -31,7 +28,7 @@ export async function registerHealthRoutes(
   }));
 
   app.get('/ready', async (_request, reply) => {
-    const database = await isDatabaseReachable(connection);
+    const database = await connection.isReachable();
     return reply.status(database ? 200 : 503).send({
       status: database ? 'ready' : 'degraded',
       checks: { database: database ? 'ok' : 'unreachable' },

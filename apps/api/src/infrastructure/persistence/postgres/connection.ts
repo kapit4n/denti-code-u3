@@ -2,8 +2,10 @@
  * The PostgreSQL connection.
  *
  * This module and `database/` are the **only** places allowed to hold a
- * database connection or to import Drizzle. Neither the React application nor the
- * Tauri shell ever connects to PostgreSQL.
+ * database connection or to import Drizzle for this engine. Neither the React
+ * application nor the Tauri shell ever connects to PostgreSQL, and the API
+ * wiring reaches this module through `persistence/connection.ts`, which is the
+ * one place that decides which engine answers a `DATABASE_URL` (ADR 0025).
  */
 
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -17,14 +19,14 @@ import * as schema from '@denti-code-u3/database/schema';
  */
 export type DentiDatabase = PostgresJsDatabase<typeof schema>;
 
-export interface DatabaseConnection {
+export interface PostgresConnection {
   readonly db: DentiDatabase;
   /** The underlying postgres.js client. */
   readonly sql: postgres.Sql;
   close(): Promise<void>;
 }
 
-export function createDatabaseConnection(connectionString: string): DatabaseConnection {
+export function createPostgresConnection(connectionString: string): PostgresConnection {
   const sql = postgres(connectionString, {
     max: 10,
     // Fail fast instead of queueing requests forever when the database is down.
@@ -44,14 +46,4 @@ export function createDatabaseConnection(connectionString: string): DatabaseConn
       await sql.end({ timeout: 5 });
     },
   };
-}
-
-/** `true` when the database answers — used by the health probe. */
-export async function isDatabaseReachable(connection: DatabaseConnection): Promise<boolean> {
-  try {
-    await connection.sql`select 1`;
-    return true;
-  } catch {
-    return false;
-  }
 }

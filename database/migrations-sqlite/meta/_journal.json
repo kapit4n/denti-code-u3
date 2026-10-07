@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1791327078064,
+      "tag": "0000_sleepy_robbie_robertson",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1791327078065,
+      "tag": "0001_appointment_overlap_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791327078066,
+      "tag": "0002_tenant_key_delete_guards",
+      "breakpoints": true
+    }
+  ]
+}

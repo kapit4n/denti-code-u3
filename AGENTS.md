@@ -54,7 +54,11 @@ See `docs/roadmap.md` for the milestone sequence.
 10. No global API-data store.
 11. No circular dependencies between packages.
 12. No giant generic utility directory.
-13. No microservices. 14. No GraphQL. 15. No Redux. 16. No SQLite yet.
+13. No microservices. 14. No GraphQL. 15. No Redux. 16. Two engines, one set
+    of ports: **SQLite runs everything by default**, PostgreSQL is retained as a
+    second engine (ADR 0025). A schema change lands in `database/schema` _and_
+    `database/schema/sqlite`; a new repository method is written twice. Never a
+    third database, and never an abstraction over the two.
 14. No offline synchronization.
 15. No premature abstractions.
 16. Prefer explicit dependencies. 20. Prefer simple solutions.

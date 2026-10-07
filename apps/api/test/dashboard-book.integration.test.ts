@@ -35,6 +35,7 @@ import * as schema from '@denti-code-u3/database/schema';
 import { resolveClinicTimeWindow } from '../src/application/clinic-time-window.js';
 import { registerDashboardRoutes } from '../src/http/routes/dashboard.js';
 import { DrizzleAppointmentRepository } from '../src/infrastructure/persistence/repositories/appointment-repository.js';
+import { PostgresDashboardReadStore } from '../src/infrastructure/persistence/postgres/dashboard-store.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -84,9 +85,8 @@ describeIntegration('dashboard: appointment-derived readings (PostgreSQL)', () =
       (request as FastifyRequest & { clinicId: string }).clinicId = clinicId;
     });
     await registerDashboardRoutes(app, {
-      db,
+      dashboard: new PostgresDashboardReadStore(db, 'UTC'),
       appointments: new DrizzleAppointmentRepository(db),
-      fallbackTimeZone: 'UTC',
     });
 
     await sql`

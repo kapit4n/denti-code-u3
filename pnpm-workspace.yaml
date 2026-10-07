@@ -3,3 +3,9 @@ packages:
   - 'packages/*'
   - 'database'
   - 'e2e'
+
+# Native modules whose postinstall scripts must run (pnpm 10 blocks them by
+# default). better-sqlite3 compiles a C++ binding; without `approve-builds`
+# the SQLite engine cannot load and the pnpm-stored build flag silently skips it.
+onlyBuiltDependencies:
+  - better-sqlite3

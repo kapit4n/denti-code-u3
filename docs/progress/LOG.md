@@ -1678,7 +1678,7 @@ rethrow. A walk-in writes one row and creates no appointment — it is not on th
 and not in the dashboard's `inTreatment` count; it lives on the clinical timeline with
 no booking link.
 
-**Refused to decide.** No second-open-visit rule: it applies to *both* doors, the
+**Refused to decide.** No second-open-visit rule: it applies to _both_ doors, the
 appointment door shipped without it, and adding it here alone would make the two doors
 disagree. Product question 19; `findOpenForPatient` is waiting for the rule or its
 caller.
@@ -1702,3 +1702,68 @@ test inserts are added to the suite's teardown.
 **Not done, and deliberately.** The visit workspace UI, clinical notes, treatment
 records, prescriptions, charges, files and payments. Consolidating the patient profile's
 visit query.
+
+---
+
+## Session 27 — two engines, SQLite runs everything by default (ADR 0025)
+
+**Goal.** Drop the Docker layer from the default developer loop. SQLite becomes the
+engine everything boots on; PostgreSQL is retained as a second engine behind the same
+ports, and the two are never abstracted over — ADR 0025. Phase-1-flavoured groundwork
+that touches the API, the database tooling and the shape of every future migration.
+
+**Done.**
+
+- `database/schema/sqlite/*` (mirror of the 23-table schema, snake_case) and
+  `database/migrations-sqlite/{0000,0001,0002}`. The overlap guard that PostgreSQL
+  expresses with exclusion constraints is three `BEFORE INSERT`/`BEFORE UPDATE`
+  trigger pairs; tenant isolation is composite `(id, clinic_id)` FKs. `db:migrate`
+  and the browser `db:seed` are dual-engine, and `sqliteDatabasePath` is the one
+  place a relative `sqlite:` URL is resolved, shared by migrator, seeder and API.
+- API persistence behind one seam: `DatabaseConnection` +
+  `openDatabaseConnection` (URL scheme dispatches to `persistence/sqlite/*` or the
+  PostgreSQL stack). Repos are forked per engine; the dashboard read model became a
+  `DashboardReadStore` with one implementation per engine; routes import only ports.
+- `SQLiteUnitOfWork`: better-sqlite3's `.transaction()` rejects async callbacks, so
+  the unit of work manages `BEGIN`/`COMMIT`/`ROLLBACK` itself around the async
+  work, on one synchronous connection.
+- An always-on smoke suite (`apps/api/test/sqlite-smoke.integration.test.ts`):
+  migrates and seeds its own SQLite file, then drives the real server — registration,
+  folded search, booking, both overlap-trigger 409s, the tenant-FK 422, the visit
+  bridge in a transaction, the second-visit refusal, and the dashboard read model.
+
+**Defects found, in the order the suite found them.**
+
+1. `new Database(sqlite:...)` gets a URL, not a path — the API opened nothing while
+   the migrator wrote a real file. Now routes through the shared `sqliteDatabasePath`.
+2. Fire-and-forget drizzle builders never executed: `register` and `visit.save`
+   answered 201s while `SELECT * FROM patients` returned `[]`. Both now end in
+   `.run()`.
+3. This better-sqlite3's SQLite has **no `translate()`** — the accent fold for
+   SQLite is a `fold_accents()` scalar (the same JS fold, registered deterministic
+   per connection) via `sqliteFoldable`; PostgreSQL keeps `translate()`.
+4. Three wrong expectations of mine, not code defects: `INVALID_INPUT` → the wire's
+   `VALIDATION_ERROR`; the sequential second visit → `DOMAIN_RULE_VIOLATION`
+   (the domain guard fires before the DB); and a move onto an appointment's _own_
+   slot is correctly non-conflicting (UPDATE trigger self-exclusion) — the trigger
+   test now uses a second booking.
+
+**Also.** `.env.example` now defaults to `DATABASE_URL=sqlite:./data/denti-code-u3.db`;
+the `postgres://` line is the way back, and the development container is untouched.
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean (fixed via prettier --write)
+pnpm run build            5/5 successful
+pnpm run test             12/12 tasks — api 7 passed / 13 skipped (PG opt-in) / 70 tests,
+                          of which 12 are the new always-on SQLite smoke
+pnpm run test:integration not run this session (needs TEST_DATABASE_URL + container)
+pnpm run db:migrate       verified on a real SQLite file (0000–0002 applied) + seed
+pnpm run test:e2e         not re-run — no web/app/ui file changed
+```
+
+**NOT Done and deliberately.** No SQLite index on the SQL-side fold (the lists are
+small; revisit when search performance means anything). The PostgreSQL integration
+suites are untouched and still opt-in. `docs/decisions/0025`, `STATE.md` updated with
+this log.
