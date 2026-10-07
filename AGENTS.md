@@ -168,11 +168,15 @@ At the **end** of a session:
 - Rust toolchain installed via rustup (stable 1.99.0, `~/.cargo`, `--no-modify-path`,
   PATH export appended to `~/.bashrc`). System Tauri deps installed via apt:
   `build-essential libwebkit2gtk-4.1-dev libgtk-3-dev libssl-dev
-  libayatana-appindicator3-dev librsvg2-dev`. `pnpm run dev:desktop` verified —
+libayatana-appindicator3-dev librsvg2-dev`. `pnpm run dev:desktop` verified —
   first Rust compile takes ~3 minutes (422 crates, tauri 2.12.1). Desktop dev
   runs on `DISPLAY=:0`; keep the machine limitation note here if this changes.
 - esbuild is added to `onlyBuiltDependencies` in `pnpm-workspace.yaml`; pnpm 10
   blocks its postinstall otherwise and Vite/Tauri frontend tooling breaks.
+- Playwright's browsers live in `~/.cache/ms-playwright` and are **not** part of
+  `pnpm install`. If every e2e spec fails with "Executable doesn't exist", run
+  `pnpm exec playwright install chromium` from `e2e/` (done in session 28 — a disk
+  cleanup had removed them again).
 
 <!-- BEGIN:turborepo-agent-rules -->
 

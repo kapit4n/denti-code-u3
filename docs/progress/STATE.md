@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 27 (two engines; SQLite runs everything by default — ADR 0025)
+> Last updated: session 28 (the visit workspace — the Milestone 6 exit criterion)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -20,6 +20,16 @@ Session 22 delivered the one thing item 5 of the plan below had been waiting for
 agenda's filters. `AgendaFilterBar` chooses clinicians and chairs, and the narrowing is
 **the request's**, not the browser's. Room _columns_ remain, and are blocked rather than
 deferred — they need a `roomId` in the read model, which ADR 0018 deliberately left out.
+
+Session 28 delivered the **visit workspace**, Milestone 6's exit criterion: the place
+where closing a visit happens. `/visits/$visitId` carries the header (patient, record
+number, status chip, source), a data-driven section nav whose first row is `summary`,
+the summary and clinical-summary cards in the clinic's clock with the clinician and
+chair resolved from their lists, and **Complete / Reopen** as buttons. The buttons are
+`allowedVisitTransitions(status)` narrowed to what has an endpoint — the domain's
+`OPEN → CANCELLED` has none, so it is not offered — and the mutations are deliberately
+non-optimistic: the chip changes on the refetch, so the screen can never show a state
+the server does not hold. The patient profile's "Recent visits" card links in.
 
 Session 25 delivered the **third slice**, and the smallest yet: reading one. Until now
 every visit route was a `POST`, so a visit closed by the API could not be seen closed
@@ -85,67 +95,90 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 27)
+## Verification log (last run, session 28)
 
-| Command                     | Result                                                                     |
-| --------------------------- | -------------------------------------------------------------------------- |
-| `pnpm run typecheck`        | 12/12 tasks pass                                                           |
-| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)           |
-| `pnpm run format:check`     | clean                                                                      |
-| `pnpm run test`             | 12/12 tasks pass — api 7 files / 70 tests (12 new, always-on SQLite smoke) |
-| `pnpm run test:integration` | PostgreSQL suites opt-in via `TEST_DATABASE_URL` (13 api files, not run)   |
-| `pnpm run build`            | 5/5 tasks pass                                                             |
-| `pnpm run db:migrate`       | SQLite default: `sqlite:` URL migrates + seeds; PG path unchanged          |
-| `pnpm run guard:boundaries` | OK                                                                         |
+| Command                     | Result                                                                       |
+| --------------------------- | ---------------------------------------------------------------------------- |
+| `pnpm run typecheck`        | 12/12 tasks pass                                                             |
+| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)             |
+| `pnpm run format:check`     | clean (prettier also reflowed two wrapped lines in `AGENTS.md` / `STATE.md`) |
+| `pnpm run test`             | 12/12 tasks pass — 593 tests, 20 of them new in `features/visits`            |
+| `pnpm run test:integration` | not run — no API, domain, validation or schema file changed                  |
+| `pnpm run build`            | 5/5 tasks pass; `routeTree.gen.ts` regenerated with `/visits/$visitId`       |
+| `pnpm run guard:boundaries` | OK                                                                           |
+| `pnpm run test:e2e`         | 76 passed, **14 failed — pre-existing date drift, not this session's** below |
 
-The SQLite smoke test (`apps/api/test/sqlite-smoke.integration.test.ts`) always
-runs, because SQLite needs no external service: /ready, registration, folded
-search, booking, the INSERT and UPDATE overlap triggers (409s), the tenant FK
-(422), the visit bridge in a transaction, the unique second-visit refusal, and
-the dashboard read model — all against a real SQLite file the test migrates and
-seeds itself.
+**The 14 e2e failures are fixtures pinned to a day that has moved, and they reproduce on
+clean HEAD `a0d9361`.** The e2e layer sets its agenda and booking fixtures to Monday
+2026-10-05 (`agendaEntries`, `bookingFixtures`' `TEN_AM_LIMA`), but the agenda opens on
+_today_; a failing spec's own error context reads "October 7, 2026" over an empty grid.
+Every failure sits in `agenda.spec.ts`, `agenda-filters.spec.ts` or `booking.spec.ts`
+and is the same fact twice over — the events are two days behind the page, and the
+clicked 10:00 lane is an instant the fixture's expected value does not share. Verified
+as pre-existing with `git stash -u` and the same command: 14 failed / 25 passed, the
+identical set, on the clean tree. The visit workspace's 5 new specs pass, and so do the
+other 76.
 
-**The session's real subject was a rule that was dead code, and only a third test could
-see it.** `startVisitFromAppointment` refuses an appointment that already has a visit —
-written in session 15 and tested ever since against a hand-built entity. The repository's
-`ENTITY_COLUMNS` projection never selected `visit_id`, so no appointment read by the API
-had ever carried one. The rule could not fire. Every sequential duplicate was caught
-instead by the unique index on `visits.appointment_id`, which answers identically: same
-`DUPLICATED_RECORD`, same 409, same one row. There was no symptom to notice.
+The fix is not one line and it is not this session's: either Playwright's clock is
+frozen at the fixtures' day (which changes what `Date` means in every spec, debounces
+and query staleness included) or the fixtures compute their dates from today (which
+changes every hard-coded instant, including the booking spec's claim about which lane
+was clicked). **OPEN QUESTION** for the next session — neither choice should be made
+from inside a different milestone.
 
-1. **The fix is one column, and the test that proves it is a repository test.** Dropping
-   `visitId: appointments.visitId` from the projection again fails "hands the domain the
-   link it needs to refuse a duplicate" — and leaves the sequential-duplicate test
-   _passing_. That is the point: the omission is invisible at every boundary, which is
-   why it survived six sessions. The new test asserts on what `findById` returns before
-   and after a visit is started, not on what the endpoint answers.
-2. **The write order is a constraint, not a preference.** The visit is written first
-   because `appointments.visit_id` names a row the next statement creates. Reversing the
-   two writes in `startVisit` fails six of the twelve domain tests, and the integration
-   suite would refuse the second statement with `23503`.
-3. **The fixture fought the constraint, and the constraint was right.** The first teardown
-   deleted visits, then appointments. Both links are `on delete restrict`, so there is
-   **no order in which those two rows can simply be deleted** — PostgreSQL refused the
-   very first run. The fixture now clears both links and then deletes, which is what the
-   domain does through status transitions and what a fixture has to do by hand.
-
-**Three test-only defects surfaced before any implementation defect did, which is the
-usual order.** A rollback test that replaced the whole appointments repository failed
-with `findById is not a function` — a repository is a class instance, so spreading it
-copies an object with no own methods, and the test would have gone on "passing" against a
-transaction that did nothing. It uses a proxy that breaks only `becomeVisit`. A
-`countVisits(undefined)` assertion could never find a row that does not exist, so a
-tenant test proved nothing; it counts by clinic. And the other clinic's booking needed
-that clinic's patient, dentist and chair — its own same-clinic foreign key refused the
-mixed fixture, which is the appointment table's half of the rule these tests cover for
-visits.
-
-**Two assertions were wrong about the API, not about the code.** They expected
-`DUPLICATED_RECORD` and `ILLEGAL_TRANSITION` to reach the client. They do not:
-`toApiErrorCode` collapses every rule refusal to `DOMAIN_RULE_VIOLATION` on purpose, so
-both answer 409 with one code and the meaningful part of the answer is the status.
+**What this session's work is verified by.** 20 new unit/component tests across three
+files: the workspace itself (9 — header, status chip, the buttons derived from the
+transition set, the section nav, the 404 branch, the unavailable-patient heading), the
+status presentation and closure labels, and the failure sentences (which quote
+`ApiClientError`'s message and no other error's). Plus 5 new e2e specs: the clinic's
+clock against the browser's own zone, the bodyless POST and the refetch that follows
+it, a 409 refusal reaching the screen, a 404 visit, and the profile's link into the
+completed visit its own card describes. The component tests had to be mounted in a real
+router — a `<Link>` with no router context renders nothing — and the mock is keyed by
+`url.pathname` rather than the origin-prefixed `BASE_URL`, which is why the first run of
+the new suite failed for a reason that had nothing to do with the workspace.
 
 ## Decisions made this session (not yet in ADRs)
+
+### Decisions from session 28 (the visit workspace)
+
+- **The section nav is data with one row in it.** `visitSections` holds `summary` and
+  nothing else, and a row is added when an endpoint gives that section something to
+  show — clinical notes next. A link to a section that renders "not implemented" is a
+  promise the nav would be making on someone else's behalf; a nav that grows with the
+  sections is not. The chosen section is component state, deliberately not route
+  search params: file-based routes type search params as `any`, so a typed route param
+  would be a guarantee the framework does not actually give (the same reason as T2's
+  record).
+- **The buttons are the domain's transition set narrowed to what has an endpoint.**
+  `allowedVisitTransitions(status)` ∩ `['OPEN', 'COMPLETED']`. The domain also allows
+  `OPEN → CANCELLED`, no endpoint implements it, and a button that 404s is worse than
+  no button — so it is not drawn. Deriving from the domain means a new transition
+  appears as a button only when someone writes the endpoint's path beside it, and the
+  component test asserts the derivation rather than a hand-written list.
+- **The mutations are non-optimistic on purpose.** Nothing is simulated: the chip flips
+  on the refetch the invalidation triggers (`['visits']` and
+  `['patients','profile',patientId]`), so the screen can only ever show a row the
+  server has answered. What is deliberately _not_ invalidated is the agenda and the
+  dashboard — a closure does not move the appointment (ADR 0022), and re-fetching them
+  would be the client implying that it did. The e2e proves the claim the unit test
+  cannot: the visit is read a second time before the chip changes.
+- **Times are the clinic's, everywhere, and the rule needed a shared home.**
+  `READING_THE_CLINIC_CLOCK` moved from the patients route into `format-clinic-time.ts`
+  because the workspace needs the same sentence. `startedAt` is an instant; every
+  screen that shows one owes the clinic its zone rather than the visitor's.
+- **The patient's name is a second query, not a field on the visit.** The visit read
+  model returns ids (ADR 0023's shape), so the header reads `usePatient(visitId)`'s
+  sibling by id; when that 404s the heading says the record is unavailable instead of
+  inventing a name or rendering "undefined".
+- **Two visit fixtures, and the profile is the source of the second's shape.**
+  `VISIT_ID` is the open visit a spec completes; `COMPLETED_VISIT_ID` is the row the
+  profile's "Recent visits" card already reports, times and summary included — a spec
+  that followed the link into an _open_ visit would be asserting a fixture the profile
+  had just contradicted. And the specs that deliberately provoke a 409 and a 404 assert
+  the console-error list minus the browser's own "Failed to load resource" lines:
+  Chromium logs a failing response before the application can react, so the raw list
+  would be about the browser rather than about the app.
 
 - **The filters are the server's, and that is the whole design.** `AgendaFilterBar`
   changes the request; it never hides blocks that have already been fetched. A
@@ -427,8 +460,13 @@ by committed e2e specs. Remaining:
        `web/dashboard.spec.ts` (9) and `web/patients.spec.ts` (10), against a
        fixture-backed mock API. Each spec was verified by reintroducing the
        defect it guards and confirming it fails — see the verification log.
-3. [ ] Extend the e2e layer when Milestone 5 lands: appointment lifecycle, visit
-       workspace, agenda views.
+3. [x] Extend the e2e layer when Milestone 5 lands: appointment lifecycle, visit
+       workspace, agenda views. Appointment lifecycle and agenda views came with
+       sessions 13–22's specs (`agenda`, `agenda-filters`, `booking`); the visit
+       workspace's 5 specs came in session 28. Caveat: 14 of the agenda/booking
+       specs fail today for a **pre-existing** reason — their fixtures are pinned to
+       2026-10-05 (see the verification log), so this item is done and the suite is
+       not green.
 
 **Milestone 4 — PATIENTS.** Functionally complete on both sides: searchable
 paginated list, global search, profile with allergies / next appointment / visits /
@@ -669,8 +707,9 @@ editing. Both sides now go through `PatientRepository`. Remaining:
      restate them wrongly, and the clinical record would then be evidence of something
      that did not happen.
 
-   **Still to do, in order:** the walk-in case, a visit read side, closing and reopening
-   a visit, the visit workspace UI, clinical notes, treatments, charges and payments.
+   **Still to do, in order:** clinical notes, treatments, charges and payments. The
+   walk-in (session 26), the read side (session 25), closing and reopening (session 24)
+   and the workspace UI (session 28) are done.
 
 **Milestone 6 onward** — the rest of visits, odontogram, treatments, payments,
 inventory, reports, auth: not started.
@@ -1416,7 +1455,7 @@ isReachable, close }`, and `openDatabaseConnection` hands a `sqlite:`/`file:`
   postinstall was pnpm-blocked. Fixed: rustup stable 1.99.0 installed to
   `~/.cargo` (PATH appended to `~/.bashrc`), Tauri system deps via apt
   (`build-essential libwebkit2gtk-4.1-dev libgtk-3-dev libssl-dev
-  libayatana-appindicator3-dev librsvg2-dev`), and `esbuild` added to
+libayatana-appindicator3-dev librsvg2-dev`), and `esbuild` added to
   `onlyBuiltDependencies`. `pnpm run dev:desktop` now compiles (422 crates,
   ~3 min, tauri 2.12.1) and launches the window on `DISPLAY=:0`.
 
@@ -1424,3 +1463,48 @@ isReachable, close }`, and `openDatabaseConnection` hands a `sqlite:`/`file:`
 warning) · format · build 5/5 · api: 7 passed / 13 skipped (PG opt-in) / 70 tests,
 of which 12 are the always-on SQLite smoke · migration + seed verified on a real
 SQLite file before the API ever opened it.
+
+Session 28: the visit workspace — Milestone 6's exit criterion. `/visits/$visitId` is
+the first screen a visit lives on, and the two endpoints session 24 wrote now have the
+buttons that call them. `features/visits/` holds the presentation (status tone and
+label, closure labels), one query (`useVisit`), one mutation (`useVisitClosure` over
+the two bodyless POSTs), the failure sentences, and `visit-workspace.tsx`; the route
+file renders it and does nothing else.
+
+- **Everything on the screen is derived rather than declared.** The buttons are
+  `allowedVisitTransitions(status)` ∩ `['OPEN','COMPLETED']` — the domain's
+  `OPEN → CANCELLED` has no endpoint, so it is not drawn. The section nav is a data
+  array with one row (`summary`) until an endpoint gives another section something to
+  show, and the chosen section is component state, not search params (file routes type
+  those `any`). Times come from `formatClinicDayTime` in the clinic's zone, with
+  `READING_THE_CLINIC_CLOCK` moved into `format-clinic-time.ts` for the second screen
+  that needs it; the clinician and chair are resolved from `useDentists`/`useChairs`
+  with `onlyActive: false`, because a clinician who has left still has their history.
+- **The mutation is non-optimistic, and the e2e exists to say so.** The chip flips on
+  the refetch the invalidation triggers (`['visits']` + the patient's profile key);
+  the agenda and dashboard are deliberately not invalidated, because a closure does not
+  move the appointment (ADR 0022). The spec asserts the second read _and_ the chip, so
+  a future optimisation that skips the refetch fails it.
+- **The record is the door.** The patient profile's "Recent visits" rows are links now,
+  and a `GET` 404 renders "This visit does not exist in the current clinic." with an
+  "All patients" link rather than an empty shell.
+- **Deliberately not built:** the doors that _start_ a visit — the agenda's start-visit
+  action and the walk-in form — still have no UI (they are not on this phase's ordered
+  list), and the sidebar's `/visits` link is a 404 with no visits list, which ADR
+  0023's "no filterable collection" makes its own decision rather than an omission.
+- **Two harness lessons worth keeping.** A component with `<Link>` cannot be tested
+  without a router context, so the workspace tests mount a minimal three-route router
+  with memory history; and the mock compares `url.pathname` to `/api/v1/...`, never to
+  the origin-prefixed `BASE_URL`, which is why the first run failed for reasons that
+  had nothing to do with the workspace.
+- **The e2e layer's date drift was found here and is not this session's.** Fourteen
+  specs in `agenda`, `agenda-filters` and `booking` fail because their fixtures are
+  pinned to 2026-10-05 while the grid opens on today (see the verification log);
+  reproduced on clean `a0d9361` with `git stash -u`, identical set.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
+warning) · format · build 5/5 · 593 unit/component (20 new, three files under
+`features/visits`) · 201 integration not run (no API, domain or schema file changed) ·
+e2e: 76 pass including 5 new visit-workspace specs, 14 pre-existing failures reproduced
+on the clean tree · Playwright chromium reinstalled (`pnpm exec playwright install
+chromium`) after it had been cleared from the machine's cache.

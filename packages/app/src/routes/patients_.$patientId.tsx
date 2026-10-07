@@ -45,23 +45,17 @@ import {
 import { ArrowLeft, CalendarPlus } from 'lucide-react';
 
 import { AppointmentBookingDialog } from '../features/agenda/components/appointment-booking-dialog.js';
-import { formatClinicDay, formatClinicDayTime } from '../features/clinic/format-clinic-time.js';
+import {
+  formatClinicDay,
+  formatClinicDayTime,
+  READING_THE_CLINIC_CLOCK,
+} from '../features/clinic/format-clinic-time.js';
 import { useClinicSettings } from '../features/clinic/queries/clinic-settings-query.js';
 import { usePatient } from '../features/patients/hooks/use-patients.js';
 
 export const Route = createFileRoute('/patients_/$patientId')({
   component: PatientProfile,
 });
-
-/**
- * What a time reads as while the clinic is still being fetched.
- *
- * **Said once because it is said in three places** — the next appointment, each recent
- * visit, and the moment the record was created — and three copies of a sentence drift.
- * It names what is being waited for rather than showing nothing: a blank where a time
- * belongs reads as "there is no appointment", which is a different fact.
- */
-const READING_THE_CLINIC_CLOCK = 'Reading the clinic’s clock…';
 
 function PatientProfile() {
   const { patientId } = Route.useParams();
@@ -237,16 +231,30 @@ function PatientProfile() {
             {patient.recentVisits.length > 0 ? (
               <ul className="space-y-2">
                 {patient.recentVisits.map((visit) => (
-                  <li key={visit.id} className="rounded-lg border p-3 text-sm">
-                    <p className="font-medium">
-                      {timeZone ? (
-                        formatClinicDayTime(visit.startedAt ?? visit.createdAt, timeZone)
-                      ) : (
-                        <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
-                      )}{' '}
-                      · {visit.status}
-                    </p>
-                    {visit.reason ? <p className="text-muted-foreground">{visit.reason}</p> : null}
+                  <li key={visit.id}>
+                    {/*
+                      A link, because a recent visit is the door into its own
+                      workspace: this card was the only place the visit existed on
+                      screen, and a row that could not be opened left the clinical
+                      record one click short of its home.
+                    */}
+                    <Link
+                      to="/visits/$visitId"
+                      params={{ visitId: visit.id }}
+                      className="block rounded-lg border p-3 text-sm transition-colors hover:bg-accent"
+                    >
+                      <p className="font-medium">
+                        {timeZone ? (
+                          formatClinicDayTime(visit.startedAt ?? visit.createdAt, timeZone)
+                        ) : (
+                          <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+                        )}{' '}
+                        · {visit.status}
+                      </p>
+                      {visit.reason ? (
+                        <p className="text-muted-foreground">{visit.reason}</p>
+                      ) : null}
+                    </Link>
                   </li>
                 ))}
               </ul>

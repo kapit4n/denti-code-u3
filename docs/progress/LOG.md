@@ -1778,3 +1778,83 @@ librsvg2-dev`), and `esbuild` added to `onlyBuiltDependencies` in
 ~3 min (tauri 2.12.1), `target/debug/denti-code-u3-desktop` launched on
 `DISPLAY=:0`, no warnings or errors in the log. `AGENTS.md` environment notes
 updated to match.
+
+---
+
+## Session 28 — the visit workspace (Milestone 6's exit criterion)
+
+**Started from:** clean tree at `a0d9361` (session 27). Next roadmap item: "Visit
+workspace: patient/visit header, left section nav, right workspace" — and the
+milestone's exit criterion, which reads "a clinician can complete a visit, but not
+_from_ the visit context".
+
+**Work performed**
+
+- New route `/visits/$visitId` and the `features/visits/` folder behind it:
+  - `visit-status-presentation.ts` — status tone/label, `visitClosureTransitions`,
+    `visitClosureLabel` (3 tests).
+  - `queries/visit-query.ts` — `useVisit`, key `['visits','detail',visitId]`.
+  - `mutations/use-visit-closure.ts` — one mutation over the two bodyless POSTs
+    (`.../complete`, `.../reopen`) plus the shared invalidation helper.
+  - `describe-visit-failure.ts` — quotes `ApiClientError`'s message and no other
+    error's; 404 and network failure get their own sentences (5 tests).
+  - `components/visit-workspace.tsx` — header (patient, record number, status chip,
+    source, back link), the data-driven section nav, the summary and clinical-summary
+    cards in clinic time with the clinician/chair resolved by id, and the
+    Complete/Reopen buttons (9 tests).
+- The patient profile's "Recent visits" rows are links into the workspace;
+  `READING_THE_CLINIC_CLOCK` moved from that route into `format-clinic-time.ts`,
+  because the workspace is the second screen that needs the same rule.
+- e2e: `web/visit-workspace.spec.ts` (5 specs) and the fixtures behind it —
+  `VISIT_ID` (the open visit a spec completes), `COMPLETED_VISIT_ID` (the row the
+  profile's own card reports, so the link cannot land on a contradiction), `openVisit`,
+  `completedVisit`, `visitWorkspaceFixtures(overrides)`.
+
+**Decisions** (written up under "Decisions from session 28" in `STATE.md`)
+
+- Buttons = `allowedVisitTransitions(status)` ∩ `['OPEN','COMPLETED']`: the domain's
+  `OPEN → CANCELLED` has no endpoint and gets no button. Section nav = data with one
+  row, added to when an endpoint gives a section something to show. Section choice is
+  component state — file routes type search params `any`.
+- The mutation is **non-optimistic**: the chip changes on the refetch, and the e2e
+  asserts the second read before the chip, so skipping the refetch later fails the
+  spec. The agenda and dashboard are not invalidated (ADR 0022: closures do not move
+  the appointment).
+
+**Defects and findings, in the order they appeared**
+
+1. The workspace's component tests rendered nothing until they mounted a real router:
+   a `<Link>` with no router context has no context to render into. The tests now build
+   a three-route in-memory router, which is the harness any future screen with links
+   will need.
+2. The same tests then failed on the mock, not on the app: the fixtures are keyed by
+   `url.pathname`, and the code passed the origin-prefixed `BASE_URL`.
+3. **The e2e suite has 14 pre-existing failures, and they are date drift.**
+   `agendaEntries` and `bookingFixtures` are pinned to Monday 2026-10-05 while the grid
+   opens on today — a failing spec's own error context reads "October 7, 2026" over an
+   empty grid. Verified not ours: `git stash -u` on clean `a0d9361`, same command,
+   identical 14 failed / 25 passed. The fix is a real choice (freeze Playwright's
+   clock at the fixtures' day vs. compute fixture dates from today, both changing what
+   every other spec means) and is logged as an OPEN QUESTION rather than decided here.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format           clean (prettier also reflowed two wrapped lines in AGENTS.md / STATE.md)
+pnpm run build            5/5 successful (routeTree.gen.ts regenerated with /visits/$visitId)
+pnpm run test             12/12 tasks — 593 tests, 20 new under features/visits
+pnpm run test:integration not run — no API, domain, validation or schema file changed
+pnpm run test:e2e         76 passed, 14 failed (pre-existing date drift, reproduced on clean HEAD)
+```
+
+Playwright's browsers had been cleared from `~/.cache/ms-playwright`; reinstalled with
+`pnpm exec playwright install chromium`, and the environment note is now in
+`AGENTS.md`.
+
+**NOT done and deliberately.** The doors that _start_ a visit (the agenda's action and
+the walk-in form) have no UI — not on this phase's ordered list. The sidebar's
+`/visits` link is a 404: ADR 0023 has no filterable visits collection, so a list is its
+own decision. The clinical-notes section row waits for its endpoint. Integration tests
+were skipped because nothing behind them changed.

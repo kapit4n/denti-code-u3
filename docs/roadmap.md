@@ -190,6 +190,20 @@ same reason — nothing can put an appointment in a room yet.
   - **Not done:** consolidating the patient profile's inline `visits` query, which is
     recorded in ADR 0023 as open work rather than a rejection.
 - Visit workspace: patient/visit header, left section nav, right workspace
+  - **Done (session 28).** `/visits/$visitId` — the header (patient name, record
+    number, status chip, source, "Back to patient"), the section nav (data-driven
+    with one row, `summary`, until an endpoint gives another section something to
+    show), the summary and clinical-summary cards in clinic time with the clinician
+    and chair resolved from their lists, and **Complete / Reopen** as buttons. The
+    buttons are `allowedVisitTransitions(status)` narrowed to what has an endpoint,
+    and the mutations are deliberately non-optimistic: the chip changes on the
+    refetch, so the screen never disagrees with the row the server holds. Entered
+    from the patient profile's "Recent visits" card; a `GET` 404 renders a message
+    and a way back rather than an empty shell.
+  - **Not done:** the doors into a visit (the agenda's "start visit" and the
+    walk-in form) still have no UI — see session 28's note in `STATE.md` — and the
+    sidebar's `/visits` link is a 404 with no visits list, which ADR 0023's
+    "no filterable collection" deliberately leaves out.
 - Clinical notes
 - Treatment records per visit
 - Prescriptions per visit
@@ -205,10 +219,10 @@ same reason — nothing can put an appointment in a room yet.
   - **Not done: the audit trail.** There is no authenticated user to attribute a reopening
     to, so nothing records _that_ it happened beyond `updated_at`. Question 18.
 
-**Exit criteria:** not met. A clinician can complete a visit, but not _from_ the visit
-context — there is no visit workspace yet, so both endpoints have no UI. That exit
-criterion is about where the action happens, and it stays open until the workspace
-exists.
+**Exit criteria: met (session 28).** Completing and reopening now happen _from_ the
+visit context — `/visits/$visitId` owns both endpoints' buttons, so the action lives
+where the record lives. What is still missing around them is the audit (question 18)
+and the doors that _start_ a visit, neither of which this criterion asked for.
 
 ---
 

@@ -21,6 +21,17 @@
 const UNREADABLE = '—';
 
 /**
+ * What a time reads as while the clinic's zone is still being fetched.
+ *
+ * Said once because it is said in four places — three on the patient profile and
+ * one in the visit workspace — and four copies of a sentence drift. It names what is
+ * being waited for rather than showing nothing: a blank where a time belongs reads as
+ * "there is no appointment", which is a different fact, and a fallback to the
+ * browser's zone puts the wrong hour there instead.
+ */
+export const READING_THE_CLINIC_CLOCK = 'Reading the clinic’s clock…';
+
+/**
  * The wall-clock time, e.g. `14:00`.
  *
  * 24-hour on purpose: a clinic book is read aloud ("four in the afternoon") and

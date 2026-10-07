@@ -21,6 +21,18 @@
 export const ANA_ID = '11111111-3333-4444-8555-000000000001';
 export const LUIS_ID = '11111111-3333-4444-8555-000000000002';
 
+/** The open visit the workspace specs open directly, by id. */
+export const VISIT_ID = '11111111-7777-4888-8999-000000000041';
+
+/**
+ * Ana's closed visit — the one her profile's "Recent visits" card links to.
+ *
+ * A different id from the open one on purpose: the profile is a *history*, so the
+ * visit it names is already finished, and a spec that followed the link into an open
+ * visit would be asserting a fixture that could never be produced by the API.
+ */
+export const COMPLETED_VISIT_ID = '11111111-7777-4888-8999-000000000042';
+
 import type { Fixture, MockedResponses } from './mock-api.js';
 
 export interface PatientSummaryFixture {
@@ -95,7 +107,7 @@ export const anaProfile = {
   },
   recentVisits: [
     {
-      id: '11111111-7777-4888-8999-000000000001',
+      id: COMPLETED_VISIT_ID,
       status: 'COMPLETED',
       startedAt: '2026-09-11T20:09:00.000Z',
       endedAt: '2026-09-11T20:54:00.000Z',
@@ -602,6 +614,66 @@ export function bookedAppointment(overrides: Record<string, unknown> = {}): Fixt
     startsAt: '2026-10-05T15:00:00.000Z',
     endsAt: '2026-10-05T15:30:00.000Z',
     status: 'SCHEDULED',
+    ...overrides,
+  };
+}
+
+/**
+ * An open visit, as `GET /api/v1/visits/:visitId` answers for it.
+ *
+ * Ids only, exactly as the API sends them: the workspace's whole job is to turn
+ * `dentistId` and `chairId` into names, and a fixture carrying `Dra. Rivera` would
+ * let a spec pass against a client that rendered the raw uuid or invented a label.
+ * The names are resolved against `everyDentistList` and `everyChairList`, which is
+ * also what makes those lookups testable from here.
+ */
+export const openVisit = {
+  id: VISIT_ID,
+  clinicId: '11111111-1111-4111-8111-111111111111',
+  patientId: ANA_ID,
+  dentistId: DENTIST_ID,
+  appointmentId: ANA_APPOINTMENT_ID,
+  chairId: CHAIR_ID,
+  startedAt: '2026-10-06T13:05:00.000Z',
+  status: 'OPEN',
+} as const;
+
+/**
+ * Ana's finished visit — the same row her profile reports under "Recent visits",
+ * times and summary included, so a spec that follows the link sees the history it
+ * just read rather than a second account of it.
+ */
+export const completedVisit = {
+  id: COMPLETED_VISIT_ID,
+  clinicId: '11111111-1111-4111-8111-111111111111',
+  patientId: ANA_ID,
+  dentistId: DENTIST_ID,
+  appointmentId: ANA_APPOINTMENT_ID,
+  chairId: CHAIR_ID,
+  startedAt: '2026-09-11T20:09:00.000Z',
+  endedAt: '2026-09-11T20:54:00.000Z',
+  status: 'COMPLETED',
+  summary: 'Composite restoration on tooth 16.',
+} as const;
+
+/**
+ * Every endpoint the visit workspace opens, in one call.
+ *
+ * Separate from `bookingFixtures()` for the usual reason: these are the requests a
+ * spec makes only when it is looking at a visit, and registering them everywhere
+ * would let a spec that forgot its subject pass on fixtures it never intended to use.
+ *
+ * The `overrides` argument comes last so a spec can replace one answer — the 409
+ * refusal, a 404 for a visit this clinic does not hold — without restating the rest.
+ */
+export function visitWorkspaceFixtures(overrides: MockedResponses = {}): MockedResponses {
+  return {
+    [`/api/v1/visits/${VISIT_ID}`]: { body: openVisit },
+    [`/api/v1/visits/${COMPLETED_VISIT_ID}`]: { body: completedVisit },
+    [`/api/v1/patients/${ANA_ID}`]: { body: anaProfile },
+    '/api/v1/clinic': { body: clinicSettings },
+    '/api/v1/dentists': { body: everyDentistList },
+    '/api/v1/chairs': { body: everyChairList },
     ...overrides,
   };
 }
