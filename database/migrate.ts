@@ -18,7 +18,7 @@ import { drizzle as sqliteDrizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate as sqliteMigrate } from 'drizzle-orm/better-sqlite3/migrator';
 
 import * as sqliteSchema from '@denti-code-u3/database/schema/sqlite';
-import { isSqliteUrl, sqliteDatabasePath } from './db-url.js';
+import { isSqliteUrl, sqliteDatabasePath, ensureSqliteDatabaseDirectory } from './db-url.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -30,6 +30,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 if (isSqliteUrl(databaseUrl)) {
   const migrationsFolder = path.join(here, 'migrations-sqlite');
+  ensureSqliteDatabaseDirectory(databaseUrl);
   const client = new Database(sqliteDatabasePath(databaseUrl));
   // Foreign keys are OFF by default in SQLite: our schema's referential integrity
   // tests put the trigger guarantees through them, so this is not optional.

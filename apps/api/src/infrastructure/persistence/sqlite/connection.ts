@@ -17,7 +17,7 @@
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import Database from 'better-sqlite3';
 import * as sqliteSchema from '@denti-code-u3/database/schema/sqlite';
-import { sqliteDatabasePath } from '@denti-code-u3/database/db-url';
+import { ensureSqliteDatabaseDirectory, sqliteDatabasePath } from '@denti-code-u3/database/db-url';
 import { foldAccents } from '../fold-accents.js';
 
 /**
@@ -46,6 +46,9 @@ export interface SqliteDatabaseConnection {
  * would both open the wrong thing and refuse its relative form.
  */
 export function createSqliteConnection(databaseUrl: string): SqliteDatabaseConnection {
+  // `data/` is gitignored, so the directory may not exist yet; without this the
+  // API would fail to boot on a machine where only `db:migrate` has not run.
+  ensureSqliteDatabaseDirectory(databaseUrl);
   const client = new Database(sqliteDatabasePath(databaseUrl));
 
   // SQLite defaults to foreign keys OFF per connection, and every row in this

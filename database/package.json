@@ -8,7 +8,7 @@
   "main": "schema/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "eslint schema migrate.ts seed.ts",
+    "lint": "eslint schema db-url.ts db-url.test.ts migrate.ts seed.ts",
     "test": "vitest run --passWithNoTests",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:generate:sqlite": "drizzle-kit generate --config drizzle.config.sqlite.ts",

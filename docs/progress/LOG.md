@@ -1917,6 +1917,18 @@ for.
 - The e2e asserts the server's `id` and `createdAt` in the clinic's zone rather than
   the text it typed, because that is the part no browser could have produced.
 
+**Defect found after the report: the SQLite file had no directory to live in.**
+Booting the app to look at it, the desktop shell showed "The patient list could not be
+loaded" — no API was running, and `pnpm run db:migrate` then crashed with `Cannot open
+database because the directory does not exist`, because `data/` is gitignored and had
+been cleaned off the machine. better-sqlite3 refuses a missing directory instead of
+creating it, and three places open that file.
+`ensureSqliteDatabaseDirectory` (`database/db-url.ts`) now creates it, called by the
+migrator, the seeder and the API connection before `new Database(path)`, with 6 tests
+in the new `database/db-url.test.ts` (both files now in the package's lint script).
+Migrate then seed created `data/denti-code-u3.db`, the API was started with
+`pnpm run dev:api`, and `/health` plus `/api/v1/patients` answer 200.
+
 **Environment finding.** Docker and every PostgreSQL client are absent from this
 environment (no `docker`, `podman`, `psql`, or `/var/run/docker.sock`), so the
 PostgreSQL integration suite — including the six new route tests — could not be
@@ -1931,7 +1943,7 @@ pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing
 pnpm run format:check     clean
 pnpm run guard:boundaries OK (one pre-existing warning)
 pnpm run build            5/5 successful
-pnpm run test             12/12 tasks — 616 passed (23 new), 207 integration skipped
+pnpm run test             12/12 tasks — 622 passed (29 new), 207 integration skipped
 pnpm run test:integration not run — no Docker/PostgreSQL in this environment
 pnpm run test:e2e         92 passed, 0 failed (2 new notes specs)
 ```

@@ -22,6 +22,10 @@ test-results/
 # database
 *.sql.gz
 database/**/*.local.json
+# The default engine's local file (ADR 0025). `pnpm run db:migrate` and
+# `db:seed` create it from scratch; a committed database would be a patient
+# record in the repository.
+/data/
 
 # TanStack Router plugin scratch space. It writes generated bundles here; they
 # are build output, not source.

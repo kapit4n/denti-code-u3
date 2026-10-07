@@ -111,7 +111,7 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 | `pnpm run typecheck`        | 12/12 tasks pass                                                     |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)     |
 | `pnpm run format:check`     | clean                                                                |
-| `pnpm run test`             | 12/12 tasks pass — 616 tests (23 new), 207 integration tests skipped |
+| `pnpm run test`             | 12/12 tasks pass — 622 tests (29 new), 207 integration tests skipped |
 | `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**               |
 | `pnpm run build`            | 5/5 tasks pass                                                       |
 | `pnpm run guard:boundaries` | OK                                                                   |
@@ -126,7 +126,7 @@ the same path without a database is the always-on SQLite smoke suite, which gain
 test that files a note, reads it back through the endpoint and proves both verbs are
 scoped through the visit — and which did run.
 
-**What session 29's work is verified by.** 23 new passing tests across four files: the
+**What session 29's work is verified by.** 29 new passing tests across five files: the
 domain use cases (7 — the subject is read before the write, a foreign visit is a 404
 for both verbs, a blank body never reaches `save`), the validation schema (5 — trim
 happens before the minimum is counted, and the cap matches the appointment's own
@@ -138,6 +138,16 @@ asserts no notes are requested before the section is opened, that the row that a
 after the POST carries the server's `createdAt` in the clinic's zone, that the POST body
 is exactly what was typed, and that the notes were read twice — once by the section,
 once by the invalidation; and one that a 422 leaves the paragraph in the box.
+
+**Then the app was booted for real, and the first thing it showed was a defect this
+session had introduced nothing to prevent.** The desktop shell opened on "The patient
+list could not be loaded": no API was running, and `pnpm run db:migrate` itself crashed
+with `Cannot open database because the directory does not exist`, because `data/` is
+gitignored and had been cleaned off the machine. `ensureSqliteDatabaseDirectory` in
+`database/db-url.ts` now creates the directory a file URL names, and all three places
+that open the file — migrator, seeder, API connection — call it before they do (6 tests,
+including the no-op `:memory:` case). Migrate, seed and the API then ran against a real
+file, and `/health` plus `/api/v1/patients` answered 200.
 
 **The 14 failures session 28's first full run showed were date drift in the harness,
 and they were proved not ours before anything was changed.** The e2e layer's fixtures
@@ -1617,10 +1627,18 @@ and `VisitNotesSection` is the second row in `visitSections`.
 - **Not attributable, not editable.** `authorId` is null (no user model — ADR 0022's
   question 18) and there is no edit or delete: an append-only record was the simplest
   honest rule until revising history becomes a product decision.
+- **Booting the app found a defect in the ground under it.** The desktop shell opened
+  on "The patient list could not be loaded": no API was running, and `db:migrate`
+  itself crashed with `Cannot open database because the directory does not exist`,
+  because `data/` is gitignored and had been cleaned off the machine.
+  `ensureSqliteDatabaseDirectory` (`database/db-url.ts`) now creates the directory a
+  file URL names, called by all three openers — migrator, seeder, API connection —
+  before `new Database(path)` (6 tests). Migrate, seed and the API then ran against a
+  real file; `/health` and `/api/v1/patients` answered 200.
 
 **Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
-warning) · format · guard:boundaries OK · build 5/5 · 616 unit/component (23 new across
-domain, validation and `features/visits`) · 207 integration skipped — **Docker and every
-PostgreSQL client are absent from this environment, so the six new route tests were
-written and typechecked but not executed**, with the always-on SQLite smoke test
-covering the same path · e2e: **92/92** — 2 new notes specs.
+warning) · format · guard:boundaries OK · build 5/5 · 622 unit/component (29 new:
+domain, validation, `features/visits`, and the SQLite path helper) · 207 integration
+skipped — **Docker and every PostgreSQL client are absent from this environment, so the
+six new route tests were written and typechecked but not executed**, with the always-on
+SQLite smoke test covering the same path · e2e: **92/92** — 2 new notes specs.

@@ -4,7 +4,8 @@
  * Everything in the monorepo that opens a database reads the engine from the
  * URL scheme: `postgres:` / `postgresql:` is the retained PostgreSQL engine,
  * `sqlite:` / `file:` is the default SQLite engine. This module is where the
- * two dispatching helpers live so `database/migrate.ts`, `database/seed.ts`
+ * two dispatching helpers — and the one that prepares a file-based SQLite path
+ * for opening — live so `database/migrate.ts`, `database/seed.ts`
  * and `apps/api` agree about what a URL *means* — a path disagreement between
  * "the place migrations were applied" and "the file the API opened" is a bug
  * that shows up as foreign-key failures that do not make a load of sense.
@@ -19,6 +20,7 @@
  */
 
 import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
 import path from 'node:path';
 
 /** `database/` is one directory below the repository root. */
@@ -54,4 +56,24 @@ export function sqliteDatabasePath(databaseUrl: string): string {
   }
 
   return path.isAbsolute(decoded) ? decoded : path.resolve(repoRoot, decoded);
+}
+
+/**
+ * Creates the directory a file-based SQLite URL lives in, so the file can be
+ * opened at all.
+ *
+ * `data/` is gitignored, so a fresh clone has no directory to create the
+ * database in — and `new Database(path)` refuses a missing directory rather
+ * than creating it (better-sqlite3 raises `Cannot open database because the
+ * directory does not exist`). Every place that *opens* the file — the migrator,
+ * the seeder and the API's connection — calls this first, so "the resolver named
+ * a path" and "the path can be opened" are the same claim rather than two that
+ * can drift. No-op for `:memory:`, which has no directory to create.
+ */
+export function ensureSqliteDatabaseDirectory(databaseUrl: string): void {
+  const databasePath = sqliteDatabasePath(databaseUrl);
+  if (databasePath === ':memory:') {
+    return;
+  }
+  fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 }

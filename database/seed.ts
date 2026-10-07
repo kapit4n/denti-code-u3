@@ -22,7 +22,7 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import Database from 'better-sqlite3';
 import { drizzle as sqliteDrizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
-import { isSqliteUrl, sqliteDatabasePath } from './db-url.js';
+import { isSqliteUrl, sqliteDatabasePath, ensureSqliteDatabaseDirectory } from './db-url.js';
 
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as pgSchema from '@denti-code-u3/database/schema';
@@ -651,6 +651,7 @@ async function insertPaymentsSqlite(db: BetterSQLite3Database<typeof sqliteSchem
 let seedResult: string;
 
 if (isSqliteUrl(databaseUrl)) {
+  ensureSqliteDatabaseDirectory(databaseUrl);
   const client = new Database(sqliteDatabasePath(databaseUrl));
   client.pragma('foreign_keys = ON');
   const db = sqliteDrizzle(client, { schema: sqliteSchema, casing: 'snake_case' });
