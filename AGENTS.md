@@ -165,9 +165,14 @@ At the **end** of a session:
   `export PATH="$HOME/.local/bin:$PATH"` first (already added to `~/.bashrc`).
 - Docker works (29.8.0) → local PostgreSQL runs via `docker compose`.
   Do not touch unrelated containers (e.g. `denti-rabbitmq`).
-- Tauri on Linux needs system webkit2gtk libs; if the Rust build cannot be
-  completed, that limitation is documented in `docs/desktop.md` rather than
-  worked around.
+- Rust toolchain installed via rustup (stable 1.99.0, `~/.cargo`, `--no-modify-path`,
+  PATH export appended to `~/.bashrc`). System Tauri deps installed via apt:
+  `build-essential libwebkit2gtk-4.1-dev libgtk-3-dev libssl-dev
+  libayatana-appindicator3-dev librsvg2-dev`. `pnpm run dev:desktop` verified —
+  first Rust compile takes ~3 minutes (422 crates, tauri 2.12.1). Desktop dev
+  runs on `DISPLAY=:0`; keep the machine limitation note here if this changes.
+- esbuild is added to `onlyBuiltDependencies` in `pnpm-workspace.yaml`; pnpm 10
+  blocks its postinstall otherwise and Vite/Tauri frontend tooling breaks.
 
 <!-- BEGIN:turborepo-agent-rules -->
 
