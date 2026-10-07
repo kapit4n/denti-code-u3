@@ -224,6 +224,20 @@ same reason — nothing can put an appointment in a room yet.
 treatments` names it so the workspace's third row can resolve a record's name
     client-side. Charges remain the next "per visit" book.
 - Prescriptions per visit
+  - **Done (session 31).** `addVisitPrescription` / `listVisitPrescriptions` over a
+    `PrescriptionRepository`. Scope comes through the visit (both verbs read it first;
+    a foreign visit is a 404, both engines translating the FK violation back to
+    `NOT_FOUND`); `dentistId` is nullable and inherited from the visit, never accepted
+    from the body, and `issuedAt` is the clinic's clock. One `save` statement, no
+    transaction. Validation lives in the endpoint schema (trim first, `min(1).max(200)`
+    on the course fields, whole days 1–365) and is mirrored by the domain's inline
+    course validation, so both sides refuse the same shapes. The workspace's
+    **Prescriptions** section — the nav's fourth row — lists what was written (route
+    labelled through one presentation file) and writes a course with a route picker,
+    keeping the clinician's draft on a refusal.
+  - **Not done:** editing or deleting a prescription. `Repositories` is ten now, and
+    every member has both engines — the session 23 policy has grown a member three
+    sessions running.
 - Charges per visit
 - Files/attachments (platform capability)
 - Payments recorded against the visit's charges

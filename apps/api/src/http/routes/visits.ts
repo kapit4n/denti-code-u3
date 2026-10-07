@@ -30,10 +30,11 @@
  * with the visit alone: there is no second row, so the wrapper would be a shape with
  * one field in it.
  *
- * **The notes are here rather than in a file of their own** because they have no
- * address but this one: a note belongs to a visit, `clinical_notes` has no clinic of
- * its own, and `GET /visits/:visitId/notes` says whose notes these are without a query
- * parameter. One route, one subject (ADR 0023).
+ * **The notes, the treatment records and the prescriptions are here rather than in
+ * files of their own** because none of them has an address but these: each belongs to
+ * a visit, each table has no clinic of its own, and `GET /visits/:visitId/notes`,
+ * `GET /visits/:visitId/treatments` and `GET /visits/:visitId/prescriptions` say whose
+ * these are without a query parameter. One route, one subject (ADR 0023).
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -43,16 +44,19 @@ import type {
   Clock,
   DentistRepository,
   IdGenerator,
+  PrescriptionRepository,
   TreatmentRecordRepository,
   TreatmentRepository,
   UnitOfWork,
 } from '@denti-code-u3/domain';
 import {
   addClinicalNote,
+  addVisitPrescription,
   completeVisitRecord,
   getVisit,
   listClinicalNotes,
   listTreatmentRecords,
+  listVisitPrescriptions,
   listVisitsForPatient,
   recordVisitTreatment,
   reopenVisitRecord,
@@ -62,6 +66,7 @@ import {
 } from '@denti-code-u3/domain';
 import {
   createClinicalNoteSchema,
+  createPrescriptionSchema,
   recordVisitTreatmentSchema,
   startVisitSchema,
   startWalkInVisitSchema,
@@ -73,6 +78,7 @@ import {
   asClinicalNoteId,
   asDentistId,
   asPatientId,
+  asPrescriptionId,
   asTreatmentId,
   asVisitId,
   asVisitTreatmentExecutionId,
@@ -131,6 +137,16 @@ export interface VisitsDependencies {
   readonly treatments: TreatmentRepository;
 
   /**
+   * The prescriptions written on a visit.
+   *
+   * A plain repository rather than the transaction, for the same reason the notes are:
+   * prescribing writes one row, the use case reads the visit in this clinic before the
+   * insert, and `prescriptions` has no clinic column of its own to check against
+   * (ADR 0014).
+   */
+  readonly prescriptions: PrescriptionRepository;
+
+  /**
    * The two resources a walk-in names, because there is no booking to name them from.
    *
    * Required rather than optional for the same reason the appointment routes require
@@ -154,6 +170,7 @@ export async function registerVisitsRoutes(
     clinicalNotes,
     treatmentRecords,
     treatments,
+    prescriptions,
     dentists,
     chairs,
     clock,
@@ -494,6 +511,95 @@ export async function registerVisitsRoutes(
       );
 
       return reply.status(201).send(recorded);
+    } catch (error) {
+      return sendProblem(reply, request, error);
+    }
+  });
+
+  /**
+   * `GET /api/v1/visits/:visitId/prescriptions` — what the patient was sent home with.
+   *
+   * 200 with `{ prescriptions: [...] }`, in the order the course was handed over, and
+   * `[]` for a visit that wrote none. Each prescription names its visit and inherits the
+   * patient and clinician from it — who the record is about is not stored twice.
+   *
+   * **404 for a visit this clinic does not hold, for the same reason the notes list
+   * 404s.** `prescriptions` has no clinic column, so a scoped query alone would answer
+   * `[]` for another clinic's visit — an empty list that reads as "nothing was
+   * prescribed" (ADR 0014).
+   */
+  app.get('/api/v1/visits/:visitId/prescriptions', async (request, reply) => {
+    const path = readVisitId(request.params, request.clinicId as ClinicId);
+
+    if (!path.valid) {
+      return sendInvalidVisitId(reply, request);
+    }
+
+    try {
+      const list = await listVisitPrescriptions(path.clinicId, path.visitId, {
+        visits,
+        prescriptions,
+      });
+
+      return reply.status(200).send({ prescriptions: list });
+    } catch (error) {
+      return sendProblem(reply, request, error);
+    }
+  });
+
+  /**
+   * `POST /api/v1/visits/:visitId/prescriptions` — prescribe a medication.
+   *
+   * 201 with the prescription as it was written. The body carries only the course —
+   * the medication, its route and how long — because the visit is the path, the clinic
+   * is the request scope, the time is the clock's, and who the record is about is
+   * inherited from the visit rather than accepted from the request (ADR 0014, ADR 0021):
+   * a body that could name the patient or clinician could name them differently from
+   * the visit the course is filed on.
+   *
+   * 422 for a course that says nothing (blank medication, dosage or frequency), a route
+   * this product does not know, or a course that is not whole days within a year.
+   *
+   * 404 for a visit this clinic does not hold — and for the race where the visit is
+   * deleted between the read and the insert, answered by the domain the way its read
+   * would.
+   */
+  app.post('/api/v1/visits/:visitId/prescriptions', async (request, reply) => {
+    const path = readVisitId(request.params, request.clinicId as ClinicId);
+
+    if (!path.valid) {
+      return sendInvalidVisitId(reply, request);
+    }
+
+    const parsed = createPrescriptionSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return sendInvalidBody(reply, request, 'The prescription could not be written', parsed.error);
+    }
+
+    try {
+      const prescription = await addVisitPrescription(
+        path.clinicId,
+        path.visitId,
+        {
+          medication: parsed.data.medication,
+          dosage: parsed.data.dosage,
+          route: parsed.data.route,
+          frequency: parsed.data.frequency,
+          durationDays: parsed.data.durationDays,
+          ...(parsed.data.instructions !== undefined
+            ? { instructions: parsed.data.instructions }
+            : {}),
+        },
+        {
+          visits,
+          prescriptions,
+          clock,
+          newId: () => asPrescriptionId(ids.nextId()),
+        },
+      );
+
+      return reply.status(201).send(prescription);
     } catch (error) {
       return sendProblem(reply, request, error);
     }

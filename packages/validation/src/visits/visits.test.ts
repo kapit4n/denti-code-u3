@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   createClinicalNoteSchema,
+  createPrescriptionSchema,
+  medicationRouteSchema,
   recordVisitTreatmentSchema,
   startVisitSchema,
   startWalkInVisitSchema,
@@ -242,5 +244,151 @@ describe('createClinicalNoteSchema', () => {
     // in this product rather than one per table that holds one.
     expect(createClinicalNoteSchema.safeParse({ body: 'x'.repeat(2_000) }).success).toBe(true);
     expect(createClinicalNoteSchema.safeParse({ body: 'x'.repeat(2_001) }).success).toBe(false);
+  });
+});
+
+describe('medicationRouteSchema', () => {
+  it('accepts every route the domain names', () => {
+    for (const route of ['ORAL', 'TOPICAL', 'INHALATION', 'INJECTION', 'RECTAL', 'OTHER']) {
+      expect(medicationRouteSchema.safeParse(route).success).toBe(true);
+    }
+  });
+
+  it('refuses a route the domain does not name', () => {
+    // A mirrored list drift would surface here: each side spells one clinical fact,
+    // and the database's own `enumCheck` is the belt keeping the column honest.
+    for (const route of ['SUBLINGUAL', 'oral', '', null]) {
+      expect(medicationRouteSchema.safeParse(route).success).toBe(false);
+    }
+  });
+});
+
+describe('createPrescriptionSchema', () => {
+  it('accepts a course and trims the free text around it', () => {
+    const result = createPrescriptionSchema.safeParse({
+      medication: '  Ibuprofen  ',
+      dosage: ' 400 mg ',
+      route: 'ORAL',
+      frequency: ' Every 8 hours as needed ',
+      durationDays: 5,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({
+      medication: 'Ibuprofen',
+      dosage: '400 mg',
+      route: 'ORAL',
+      frequency: 'Every 8 hours as needed',
+      durationDays: 5,
+    });
+  });
+
+  it('accepts instructions, and their absence or a blank', () => {
+    // A blank instruction is the domain's to drop to null, never an empty string —
+    // the same "blank means not recorded" policy a treatment's notes obey.
+    for (const without of [
+      {
+        medication: 'Ibuprofen',
+        dosage: '400 mg',
+        route: 'ORAL',
+        frequency: 'Every 8 hours',
+        durationDays: 5,
+      },
+    ]) {
+      expect(createPrescriptionSchema.safeParse(without).success).toBe(true);
+    }
+    const withBlank = createPrescriptionSchema.safeParse({
+      medication: 'Ibuprofen',
+      dosage: '400 mg',
+      route: 'ORAL',
+      frequency: 'Every 8 hours',
+      durationDays: 5,
+      instructions: '   ',
+    });
+    expect(withBlank.success).toBe(true);
+    if (!withBlank.success) return;
+    expect(withBlank.data.instructions).toBe('');
+  });
+
+  it('refuses a blank medication, dosage or frequency', () => {
+    // A course that does not say what to take is not an order; whitespace is the
+    // interesting case for the same reason it is for a note's `.min(1)` on the trim.
+    const base = {
+      medication: 'Ibuprofen',
+      dosage: '400 mg',
+      route: 'ORAL',
+      frequency: 'Every 8 hours',
+      durationDays: 5,
+    };
+    for (const field of ['medication', 'dosage', 'frequency']) {
+      expect(createPrescriptionSchema.safeParse({ ...base, [field]: '   ' }).success).toBe(false);
+      expect(createPrescriptionSchema.safeParse({ ...base, [field]: '' }).success).toBe(false);
+    }
+  });
+
+  it('refuses a missing medication rather than defaulting to an unnamed order', () => {
+    const result = createPrescriptionSchema.safeParse({
+      dosage: '400 mg',
+      route: 'ORAL',
+      frequency: 'Every 8 hours',
+      durationDays: 5,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(['medication']);
+  });
+
+  it('refuses a course that is not whole days, a positive span, or within a year', () => {
+    const valid = {
+      medication: 'Ibuprofen',
+      dosage: '400 mg',
+      route: 'ORAL',
+      frequency: 'Every 8 hours',
+    };
+    for (const durationDays of [0, -1, 1.5, 366]) {
+      expect(createPrescriptionSchema.safeParse({ ...valid, durationDays }).success).toBe(false);
+    }
+  });
+
+  it('refuses instructions beyond the note ceiling', () => {
+    const base = {
+      medication: 'Ibuprofen',
+      dosage: '400 mg',
+      route: 'ORAL',
+      frequency: 'Every 8 hours',
+      durationDays: 5,
+    };
+    expect(
+      createPrescriptionSchema.safeParse({ ...base, instructions: 'x'.repeat(2_001) }).success,
+    ).toBe(false);
+    expect(
+      createPrescriptionSchema.safeParse({ ...base, instructions: 'x'.repeat(2_000) }).success,
+    ).toBe(true);
+  });
+
+  it('drops who the record belongs to, which is inherited and not in the body', () => {
+    // patientId, dentistId, visitId and issuedAt all belong to the server: a body
+    // that could state them could state them differently from the visit they are
+    // filed on (ADR 0014, ADR 0021). Extras are stripped, never honoured.
+    const result = createPrescriptionSchema.safeParse({
+      medication: 'Ibuprofen',
+      dosage: '400 mg',
+      route: 'ORAL',
+      frequency: 'Every 8 hours',
+      durationDays: 5,
+      patientId: PATIENT_ID,
+      dentistId: DENTIST_ID,
+      visitId: '44444444-4444-4444-8444-444444444444',
+      issuedAt: '2020-01-01T00:00:00.000Z',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({
+      medication: 'Ibuprofen',
+      dosage: '400 mg',
+      route: 'ORAL',
+      frequency: 'Every 8 hours',
+      durationDays: 5,
+    });
   });
 });

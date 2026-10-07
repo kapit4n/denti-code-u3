@@ -25,6 +25,10 @@
  *     refetch.** The list shows the server's `id` and `createdAt` — values no browser
  *     could invent — which is what makes "not optimistic" observable rather than
  *     asserted; and a refused note keeps the clinician's text on screen.
+ *  6. **Prescriptions follow the same discipline as notes and treatments**: asked for
+ *     when their section opens (never before), written non-optimistically (the row
+ *     appears by refetch, carrying the server's `issuedAt`), and kept on screen
+ *     when refused.
  *
  * What is *not* here: the rules. Which moves are legal is the domain's, tested
  * against the domain and against a real API elsewhere. This file asserts that
@@ -41,10 +45,13 @@ import {
   anaProfile,
   existingVisitTreatment,
   filedNote,
+  filedPrescription,
   openVisit,
   recordedTreatment,
   treatmentsCatalogue,
   visitNote,
+  visitPrescription,
+  visitPrescriptions,
   visitTreatments,
   visitWorkspaceFixtures,
 } from './fixtures/api-responses.js';
@@ -90,6 +97,20 @@ function treatmentsReads(
     (entry) =>
       entry.method === 'GET' &&
       new URL(entry.url).pathname === `/api/v1/visits/${VISIT_ID}/treatments`,
+  ).length;
+}
+
+/**
+ * How many times this visit's prescriptions were read — one when the section opened,
+ * one after the write.
+ */
+function prescriptionsReads(
+  recorded: readonly { readonly method: string; readonly url: string }[],
+): number {
+  return recorded.filter(
+    (entry) =>
+      entry.method === 'GET' &&
+      new URL(entry.url).pathname === `/api/v1/visits/${VISIT_ID}/prescriptions`,
   ).length;
 }
 
@@ -432,6 +453,130 @@ test.describe('Visit workspace', () => {
     await expect(page.getByRole('alert')).toHaveText(/"99" is not a valid FDI tooth number/);
     await expect(page.getByTestId('treatment-tooth')).toHaveValue('99');
     await expect(page.getByTestId('treatment-record')).toHaveCount(0);
+
+    expect(expectedResourceFailures(errors)).toEqual([]);
+  });
+
+  test('files a prescription and shows it only once the server has stored it', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...visitWorkspaceFixtures({
+        [`/api/v1/visits/${VISIT_ID}/prescriptions`]: {
+          body: visitPrescriptions([visitPrescription]),
+        },
+        [`POST /api/v1/visits/${VISIT_ID}/prescriptions`]: {
+          body: filedPrescription,
+          status: 201,
+        },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+
+    // The summary is what the workspace opens on, and the prescriptions were not
+    // asked for until somebody asked to see them.
+    await expect(page.getByTestId('visit-workspace')).toBeVisible();
+    expect(prescriptionsReads(api.recorded)).toBe(0);
+
+    await page.getByTestId('visit-section-prescriptions').click();
+
+    // The names and the durations are the workspace's rendering of the row's facts,
+    // and 13:00Z is 08:00 in Lima: the clinic's clock again, on a row nothing but the
+    // endpoint could have produced.
+    const existing = page.getByTestId('prescription').filter({ hasText: 'Ibuprofen' });
+    await expect(existing).toContainText('Ibuprofen · 400 mg');
+    await expect(existing).toContainText('Oral · Every 8 hours as needed');
+    await expect(existing).toContainText('· 5 days');
+    await expect(existing).toContainText('Take after meals.');
+    await expect(existing).toContainText('08:00');
+    await expect(existing).not.toContainText('13:00');
+
+    await page.getByTestId('prescription-medication').fill('Amoxicillin');
+    await page.getByTestId('prescription-dosage').fill('500 mg');
+    await page.getByTestId('prescription-route').click();
+    await page.getByRole('option', { name: /Oral/ }).click();
+    await page.getByTestId('prescription-frequency').fill('Every 12 hours');
+    await page.getByTestId('prescription-duration').fill('7');
+    await page.getByTestId('prescription-instructions').fill('Complete the whole course.');
+    await page.getByTestId('write-prescription').click();
+
+    // The server's answer to the POST is installed before the POST can resolve, so
+    // the refetch the mutation triggers reads the prescriptions as they now stand. The
+    // row that appears carries the server's own `id` and `issuedAt` — which is the
+    // point: nothing in the browser could have produced them, so nothing but the
+    // refetch could have put it on screen.
+    await installApi(page, {
+      [`/api/v1/visits/${VISIT_ID}/prescriptions`]: {
+        body: visitPrescriptions([visitPrescription, filedPrescription]),
+      },
+    });
+
+    const filed = page.getByTestId('prescription').filter({ hasText: 'Amoxicillin' });
+    await expect(filed).toContainText('Amoxicillin · 500 mg');
+    await expect(filed).toContainText('· 7 days');
+    await expect(page.getByTestId('prescription-medication')).toHaveValue('');
+    await expect(page.getByTestId('prescription-duration')).toHaveValue('');
+    await expect(page.getByTestId('prescription-route')).toContainText('Choose a route');
+
+    const post = api.recorded.find(
+      (entry) => entry.method === 'POST' && entry.url.includes(`/visits/${VISIT_ID}/prescriptions`),
+    );
+    expect(post).toBeTruthy();
+    // Trimmed on the way out, dropped when blank — the writer sends what we store.
+    expect(post?.body).toEqual({
+      medication: 'Amoxicillin',
+      dosage: '500 mg',
+      route: 'ORAL',
+      frequency: 'Every 12 hours',
+      durationDays: 7,
+      instructions: 'Complete the whole course.',
+    });
+
+    // Two reads, not one: the section's own, and the one the invalidation asked for.
+    await expect.poll(() => prescriptionsReads(api.recorded)).toBe(2);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('keeps what the clinician typed when the prescription is refused', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    await installApi(page, {
+      ...visitWorkspaceFixtures({
+        [`/api/v1/visits/${VISIT_ID}/prescriptions`]: {
+          body: visitPrescriptions([]),
+        },
+        [`POST /api/v1/visits/${VISIT_ID}/prescriptions`]: {
+          status: 422,
+          body: {
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'A prescription needs a medication name',
+              requestId: 'e2e',
+            },
+          },
+        },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+    await page.getByTestId('visit-section-prescriptions').click();
+    await expect(page.getByText('No prescriptions written yet.')).toBeVisible();
+
+    await page.getByTestId('prescription-medication').fill('Ibuprofen');
+    await page.getByTestId('prescription-dosage').fill('400 mg');
+    await page.getByTestId('prescription-route').click();
+    await page.getByRole('option', { name: /Oral/ }).click();
+    await page.getByTestId('prescription-frequency').fill('Every 8 hours');
+    await page.getByTestId('prescription-duration').fill('5');
+    await page.getByTestId('write-prescription').click();
+
+    // The refusal reaches the screen in the API's own words (the wire code collapses
+    // every refusal, so the message is the only part that says why), and the draft is
+    // still there — a failed request that took the clinician's course with it would be
+    // the most destructive thing this panel does.
+    await expect(page.getByRole('alert')).toHaveText(/A prescription needs a medication name/);
+    await expect(page.getByTestId('prescription-medication')).toHaveValue('Ibuprofen');
+    await expect(page.getByTestId('prescription')).toHaveCount(0);
 
     expect(expectedResourceFailures(errors)).toEqual([]);
   });

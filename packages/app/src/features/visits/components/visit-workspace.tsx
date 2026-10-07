@@ -28,9 +28,10 @@
  * showed "Completed" before the server agreed would be the only screen in the app
  * that could contradict the record.
  *
- * The section nav is data-driven and holds the three sections an endpoint stands
- * behind: `summary` reads the visit, `notes` reads and writes the notes on it,
- * `treatments` reads and writes what was performed. A row is added when — and only
+ * The section nav is data-driven and holds the sections an endpoint stands behind:
+ * `summary` reads the visit, `notes` reads and writes the notes on it, `treatments`
+ * reads and writes what was performed, `prescriptions` reads and writes what the
+ * patient was sent home with. A row is added when — and only
  * when — an endpoint stands behind it, so the nav grows with the milestone
  * (odontogram, files, payments) instead of promising panels that render an empty
  * state. Section choice is component state, not a search param, for
@@ -42,7 +43,7 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
-import type { TreatmentRecord, Visit } from '@denti-code-u3/domain';
+import type { MedicationRoute, TreatmentRecord, Visit } from '@denti-code-u3/domain';
 
 import {
   Button,
@@ -65,11 +66,15 @@ import { useClinicSettings } from '../../clinic/queries/clinic-settings-query.js
 import { usePatient } from '../../patients/hooks/use-patients.js';
 import { useChairs, useDentists } from '../../agenda/queries/bookable-resources-query.js';
 import { describeNoteFailure } from '../describe-note-failure.js';
+import { describePrescriptionFailure } from '../describe-prescription-failure.js';
 import { describeTreatmentFailure } from '../describe-treatment-failure.js';
 import { describeVisitFailure } from '../describe-visit-failure.js';
 import { useCreateClinicalNote } from '../mutations/use-create-clinical-note.js';
+import { useCreatePrescription } from '../mutations/use-create-prescription.js';
 import { useRecordVisitTreatment } from '../mutations/use-record-visit-treatment.js';
 import { useVisitClosure } from '../mutations/use-visit-closure.js';
+import { MEDICATION_ROUTE_OPTIONS, medicationRouteLabel } from '../prescription-presentation.js';
+import { useVisitPrescriptions } from '../queries/prescriptions-query.js';
 import { useTreatments, useVisitTreatments } from '../queries/treatments-query.js';
 import { useVisitNotes } from '../queries/visit-notes-query.js';
 import { useVisit } from '../queries/visit-query.js';
@@ -87,17 +92,18 @@ export interface VisitWorkspaceProps {
 /**
  * The sections this workspace can draw.
  *
- * Three rows today, each with an endpoint behind it. `odontogram`, `files` and
+ * Four rows today, each with an endpoint behind it. `odontogram`, `files` and
  * `payments` from the brief each arrive with their own endpoint and their own row
  * here — a nav entry with nothing behind it is the "control that looks live and is
  * not" this project refuses to ship.
  */
-type VisitSectionId = 'summary' | 'notes' | 'treatments';
+type VisitSectionId = 'summary' | 'notes' | 'treatments' | 'prescriptions';
 
 const VISIT_SECTIONS: readonly { readonly id: VisitSectionId; readonly label: string }[] = [
   { id: 'summary', label: 'Summary' },
   { id: 'notes', label: 'Notes' },
   { id: 'treatments', label: 'Treatments' },
+  { id: 'prescriptions', label: 'Prescriptions' },
 ];
 
 export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
@@ -256,7 +262,7 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
 
         <div className="min-w-0 space-y-4">
           {/*
-            The two sections that exist, and only those: each has an endpoint behind it
+            The sections that exist, and only those: each has an endpoint behind it
             and a row in the nav above. A `null` here would be the honest answer for a
             section nobody can open yet — but the nav cannot offer one, so nothing
             reaches this switch without a panel to draw.
@@ -274,6 +280,9 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
           ) : null}
           {section === 'treatments' ? (
             <VisitTreatmentsSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
+          ) : null}
+          {section === 'prescriptions' ? (
+            <VisitPrescriptionsSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
           ) : null}
         </div>
       </div>
@@ -655,6 +664,264 @@ function VisitTreatmentsSection({ visitId, clinicTimeZone }: VisitTreatmentsSect
               Record treatment
             </Button>
             {record.isPending ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
+                Saving…
+              </p>
+            ) : null}
+          </div>
+        </form>
+
+        {failure ? (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
+            <span>{failure}</span>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * The prescriptions written on this visit, and the door to write more.
+ *
+ * Mounted only while the section is open, which is what keeps the prescriptions
+ * request an answer to something on screen (see `prescriptions-query.ts`). It owns
+ * its own hooks rather than taking them as props for the same reason the notes
+ * section does: this is a feature with a picker, a draft and a mutation of its own.
+ *
+ * **Nothing is written optimistically, and the form stays filled until the server
+ * answers.** The prescription appears in the list because the invalidation refetched
+ * it — a course shown before the API accepted it is a clinical record the record does
+ * not contain. The form clears on success, and only there: a refused prescription is
+ * still the clinician's draft, and taking it back after a network error would be the
+ * one destructive thing this panel does.
+ *
+ * The route's label comes from `prescription-presentation.ts`, the same place the
+ * picker reads it from: one spelling of each route on this screen, never two.
+ */
+interface VisitPrescriptionsSectionProps {
+  readonly visitId: string;
+  /** Absent while the clinic is still being fetched; the times then wait for it. */
+  readonly clinicTimeZone: string | undefined;
+}
+
+function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptionsSectionProps) {
+  const prescriptionsQuery = useVisitPrescriptions(visitId);
+  const createPrescription = useCreatePrescription();
+  const [medication, setMedication] = useState('');
+  const [dosage, setDosage] = useState('');
+  const [route, setRoute] = useState<MedicationRoute | ''>('');
+  const [frequency, setFrequency] = useState('');
+  const [durationDays, setDurationDays] = useState('');
+  const [instructions, setInstructions] = useState('');
+
+  const failure = describePrescriptionFailure(
+    createPrescription.error,
+    'The prescription could not be written.',
+  );
+
+  const wholeDays = Number(durationDays);
+  const ready =
+    medication.trim().length > 0 &&
+    dosage.trim().length > 0 &&
+    route.length > 0 &&
+    frequency.trim().length > 0 &&
+    Number.isInteger(wholeDays) &&
+    wholeDays > 0;
+
+  return (
+    <Card data-testid="visit-prescriptions">
+      <CardHeader>
+        <CardTitle>Prescriptions</CardTitle>
+        <CardDescription>What the patient was sent home with</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {prescriptionsQuery.isPending ? (
+          <p className="text-sm text-muted-foreground">Loading the prescriptions…</p>
+        ) : prescriptionsQuery.error ? (
+          <p className="text-sm text-destructive" role="alert">
+            The prescriptions could not be loaded.
+          </p>
+        ) : prescriptionsQuery.data.prescriptions.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No prescriptions written yet.</p>
+        ) : (
+          <ul className="space-y-3">
+            {prescriptionsQuery.data.prescriptions.map((prescription) => (
+              <li
+                key={prescription.id}
+                className="rounded-md border p-3 text-sm"
+                data-testid="prescription"
+              >
+                <p className="mb-1 text-xs text-muted-foreground">
+                  {clinicTimeZone ? (
+                    formatClinicDayTime(prescription.issuedAt, clinicTimeZone)
+                  ) : (
+                    <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+                  )}
+                </p>
+                <p className="font-medium">
+                  {prescription.medication} · {prescription.dosage}
+                </p>
+                <p className="text-muted-foreground">
+                  {medicationRouteLabel(prescription.route)} · {prescription.frequency}
+                  {prescription.durationDays === 1
+                    ? ' · 1 day'
+                    : ` · ${prescription.durationDays} days`}
+                </p>
+                {prescription.instructions ? (
+                  <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
+                    {prescription.instructions}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form
+          className="space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!ready) {
+              return;
+            }
+            createPrescription.mutate(
+              {
+                visitId,
+                medication,
+                dosage,
+                route: route as MedicationRoute,
+                frequency,
+                durationDays: wholeDays,
+                instructions,
+              },
+              {
+                onSuccess: () => {
+                  setMedication('');
+                  setDosage('');
+                  setRoute('');
+                  setFrequency('');
+                  setDurationDays('');
+                  setInstructions('');
+                },
+              },
+            );
+          }}
+        >
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="prescription-medication">Medication</Label>
+              <input
+                id="prescription-medication"
+                data-testid="prescription-medication"
+                value={medication}
+                onChange={(event) => setMedication(event.target.value)}
+                disabled={createPrescription.isPending}
+                className="w-full rounded-md border bg-background p-2 text-sm"
+                placeholder="e.g. Ibuprofen"
+                maxLength={200}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="prescription-dosage">Dosage</Label>
+              <input
+                id="prescription-dosage"
+                data-testid="prescription-dosage"
+                value={dosage}
+                onChange={(event) => setDosage(event.target.value)}
+                disabled={createPrescription.isPending}
+                className="w-full rounded-md border bg-background p-2 text-sm"
+                placeholder="e.g. 400 mg"
+                maxLength={200}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="prescription-route">Route</Label>
+              <Select
+                value={route}
+                onValueChange={(value) => setRoute(value as MedicationRoute)}
+                disabled={createPrescription.isPending}
+              >
+                <SelectTrigger id="prescription-route" data-testid="prescription-route">
+                  <SelectValue placeholder="Choose a route" />
+                </SelectTrigger>
+                <SelectContent>
+                  {MEDICATION_ROUTE_OPTIONS.map((option) => (
+                    <SelectItem key={option.route} value={option.route}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="prescription-frequency">Frequency</Label>
+              <input
+                id="prescription-frequency"
+                data-testid="prescription-frequency"
+                value={frequency}
+                onChange={(event) => setFrequency(event.target.value)}
+                disabled={createPrescription.isPending}
+                className="w-full rounded-md border bg-background p-2 text-sm"
+                placeholder="e.g. Every 8 hours"
+                maxLength={200}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="prescription-duration">Length of course</Label>
+              <input
+                id="prescription-duration"
+                data-testid="prescription-duration"
+                value={durationDays}
+                onChange={(event) => setDurationDays(event.target.value)}
+                type="number"
+                min={1}
+                max={365}
+                inputMode="numeric"
+                disabled={createPrescription.isPending}
+                className="w-full rounded-md border bg-background p-2 text-sm"
+                placeholder="Days"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="prescription-instructions">Instructions (optional)</Label>
+            <textarea
+              id="prescription-instructions"
+              data-testid="prescription-instructions"
+              value={instructions}
+              onChange={(event) => setInstructions(event.target.value)}
+              rows={2}
+              disabled={createPrescription.isPending}
+              className="w-full rounded-md border bg-background p-2 text-sm"
+              placeholder="e.g. Take after meals"
+              maxLength={2000}
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="submit"
+              data-testid="write-prescription"
+              disabled={createPrescription.isPending || !ready}
+            >
+              Write prescription
+            </Button>
+            {createPrescription.isPending ? (
               <p className="text-sm text-muted-foreground" role="status">
                 <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
                 Saving…

@@ -143,6 +143,15 @@ interface HarnessOptions {
    * the screen while the request is still in flight.
    */
   readonly treatmentGate?: Promise<void>;
+  /** The prescriptions the API answers with when the prescriptions section is opened. */
+  readonly visitPrescriptions?: Record<string, unknown>[];
+  /** When set, writing a prescription is refused with this envelope. */
+  readonly prescriptionRefusal?: { readonly status: number; readonly body: unknown };
+  /**
+   * A promise the prescription POST waits on before it answers, so a test can look
+   * at the screen while the request is still in flight.
+   */
+  readonly prescriptionGate?: Promise<void>;
 }
 
 function renderWorkspace({
@@ -158,8 +167,16 @@ function renderWorkspace({
   visitTreatments = [],
   treatmentRefusal,
   treatmentGate,
+  visitPrescriptions = [],
+  prescriptionRefusal,
+  prescriptionGate,
 }: HarnessOptions = {}) {
-  const state = { visit, notes: [...notes], visitTreatments: [...visitTreatments] };
+  const state = {
+    visit,
+    notes: [...notes],
+    visitTreatments: [...visitTreatments],
+    visitPrescriptions: [...visitPrescriptions],
+  };
 
   const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
     const url = new URL(String(input));
@@ -223,6 +240,40 @@ function renderWorkspace({
       // not been told about it yet.
       await treatmentGate;
       return jsonResponse(performed, 201);
+    }
+    if (path === `/api/v1/visits/${VISIT_ID}/prescriptions` && method === 'GET') {
+      return jsonResponse({ prescriptions: state.visitPrescriptions });
+    }
+    if (path === `/api/v1/visits/${VISIT_ID}/prescriptions` && method === 'POST') {
+      if (prescriptionRefusal) {
+        return jsonResponse(prescriptionRefusal.body, prescriptionRefusal.status);
+      }
+      const written = JSON.parse(String(init?.body)) as {
+        medication: string;
+        dosage: string;
+        route: string;
+        frequency: string;
+        durationDays: number;
+        instructions?: string;
+      };
+      const filed = {
+        id: `prescription-${state.visitPrescriptions.length + 1}`,
+        visitId: VISIT_ID,
+        patientId: PATIENT_ID,
+        dentistId: 'dentist-1',
+        issuedAt: '2026-10-05T14:35:00.000Z',
+        medication: written.medication,
+        dosage: written.dosage,
+        route: written.route,
+        frequency: written.frequency,
+        durationDays: written.durationDays,
+        instructions: written.instructions ?? null,
+      };
+      state.visitPrescriptions = [...state.visitPrescriptions, filed];
+      // The answer waits on the gate: the request has been made, and the screen has
+      // not been told about it yet.
+      await prescriptionGate;
+      return jsonResponse(filed, 201);
     }
     if (method === 'GET' && path === `/api/v1/patients/${PATIENT_ID}`) {
       return profile === null
@@ -718,5 +769,160 @@ describe('VisitWorkspace', () => {
     expect(screen.getByTestId('treatment-tooth')).toHaveValue('99');
     expect(fetchImplementation).toHaveBeenCalled();
     expect(screen.queryByTestId('treatment-record')).toBeNull();
+  });
+
+  it('lists the prescriptions on the visit, in the clinic’s clock, only once the section is open', async () => {
+    const { fetchImplementation } = renderWorkspace({
+      visitPrescriptions: [
+        {
+          id: 'prescription-1',
+          visitId: VISIT_ID,
+          patientId: PATIENT_ID,
+          dentistId: 'dentist-1',
+          issuedAt: '2026-10-05T14:00:00.000Z',
+          medication: 'Ibuprofen',
+          dosage: '400 mg',
+          route: 'ORAL',
+          frequency: 'Every 8 hours',
+          durationDays: 5,
+          instructions: 'Take after meals.',
+        },
+      ],
+    });
+
+    // The summary is what the workspace opens on, and the prescriptions were not
+    // asked for: a request whose answer no pixel can show is a request waiting to
+    // be stale.
+    await screen.findByTestId('visit-workspace');
+    expect(
+      fetchImplementation.mock.calls.filter(([url]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}/prescriptions`),
+      ),
+    ).toHaveLength(0);
+
+    await user.click(screen.getByTestId('visit-section-prescriptions'));
+
+    const row = await screen.findByTestId('prescription');
+    expect(row).toHaveTextContent('Ibuprofen · 400 mg');
+    expect(row).toHaveTextContent('Oral · Every 8 hours');
+    expect(row).toHaveTextContent('· 5 days');
+    expect(row).toHaveTextContent('Take after meals.');
+    // 14:00Z is 09:00 in Lima — the clinic's hour again, on a prescription this time.
+    expect(row).toHaveTextContent('09:00');
+    expect(row).not.toHaveTextContent('14:00');
+    expect(screen.queryByText('No prescriptions written yet.')).toBeNull();
+  });
+
+  it('says there are no prescriptions rather than showing an empty list as an error', async () => {
+    renderWorkspace({ visitPrescriptions: [] });
+
+    await user.click(await screen.findByTestId('visit-section-prescriptions'));
+
+    expect(await screen.findByText('No prescriptions written yet.')).toBeTruthy();
+    expect(screen.queryByTestId('prescription')).toBeNull();
+  });
+
+  it('files a prescription and shows it only once the server has answered', async () => {
+    let release: () => void = () => {};
+    const prescriptionGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { fetchImplementation } = renderWorkspace({
+      visitPrescriptions: [],
+      prescriptionGate,
+    });
+
+    await user.click(await screen.findByTestId('visit-section-prescriptions'));
+    await screen.findByText('No prescriptions written yet.');
+
+    await user.type(screen.getByTestId('prescription-medication'), '  Ibuprofen  ');
+    await user.type(screen.getByTestId('prescription-dosage'), '400 mg');
+    await chooseFrom('prescription-route', /Oral/);
+    await user.type(screen.getByTestId('prescription-frequency'), 'Every 8 hours');
+    await user.type(screen.getByTestId('prescription-duration'), '5');
+    await user.type(screen.getByTestId('prescription-instructions'), ' Take after meals.  ');
+    await user.click(screen.getByTestId('write-prescription'));
+
+    // The POST is on the wire and the prescription is not on screen: nothing is
+    // written optimistically, because a prescription the API has not accepted is not
+    // a clinical record.
+    expect(screen.queryByTestId('prescription')).toBeNull();
+    const post = fetchImplementation.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}/prescriptions`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'POST',
+    );
+    expect(post).toBeTruthy();
+    // Trimmed on the way out, so the server is not asked to store what the boxes'
+    // edges happen to hold.
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      medication: 'Ibuprofen',
+      dosage: '400 mg',
+      route: 'ORAL',
+      frequency: 'Every 8 hours',
+      durationDays: 5,
+      instructions: 'Take after meals.',
+    });
+
+    release();
+
+    // The invalidation refetched the list, and the server's row is what is on screen.
+    expect(await screen.findByTestId('prescription')).toHaveTextContent('Ibuprofen · 400 mg');
+    expect(screen.getByTestId('prescription')).toHaveTextContent('· 5 days');
+
+    // The form clears on success, and only there.
+    expect(screen.getByTestId('prescription-medication')).toHaveValue('');
+    expect(screen.getByTestId('prescription-dosage')).toHaveValue('');
+    expect(screen.getByTestId('prescription-frequency')).toHaveValue('');
+    // A number input reports empty through its value as a number, so the DOM value
+    // '' appears to the matcher as null.
+    expect(screen.getByTestId('prescription-duration')).toHaveValue(null);
+    expect(screen.getByTestId('prescription-instructions')).toHaveValue('');
+    expect(screen.getByTestId('prescription-route')).toHaveTextContent('Choose a route');
+
+    // Writing a prescription changes nothing about the visit itself, so neither the
+    // visit nor the patient's profile was refetched — invalidating `['visits']`
+    // wholesale would have done both for pixels that cannot differ.
+    const visitReads = fetchImplementation.mock.calls.filter(
+      ([url, init]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'GET',
+    );
+    expect(visitReads).toHaveLength(1);
+  });
+
+  it('keeps the form the clinician filled and says why when the prescription is refused', async () => {
+    const { fetchImplementation } = renderWorkspace({
+      prescriptionRefusal: {
+        status: 422,
+        body: {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'A prescription needs a medication name',
+            requestId: 'test',
+          },
+        },
+      },
+    });
+
+    await user.click(await screen.findByTestId('visit-section-prescriptions'));
+    await screen.findByText('No prescriptions written yet.');
+
+    await user.type(screen.getByTestId('prescription-medication'), 'Ibuprofen');
+    await user.type(screen.getByTestId('prescription-dosage'), '400 mg');
+    await chooseFrom('prescription-route', /Oral/);
+    await user.type(screen.getByTestId('prescription-frequency'), 'Every 8 hours');
+    await user.type(screen.getByTestId('prescription-duration'), '5');
+    await user.click(screen.getByTestId('write-prescription'));
+
+    // The refusal reaches the screen in the API's own words, and the medication is
+    // still there: a network error that took the clinician's course with it would be
+    // the most destructive thing this panel does.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'A prescription needs a medication name',
+    );
+    expect(screen.getByTestId('prescription-medication')).toHaveValue('Ibuprofen');
+    expect(fetchImplementation).toHaveBeenCalled();
+    expect(screen.queryByTestId('prescription')).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 30 (treatment records — the recordings that name the catalogue)
+> Last updated: session 31 (prescriptions — the fourth workspace section)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -15,6 +15,21 @@ by an enforced guard, the three write endpoints with the tenant foreign keys tha
 drag/resize/status UI, the bookable-resources endpoints, the rule that an inactive
 clinician or chair cannot be booked (ADR 0020), and a booking dialog reachable from all
 three doors a receptionist starts from.
+
+Session 31 delivered **prescriptions** — the fourth workspace section and the third
+"per visit" book. `listVisitPrescriptions` and `addVisitPrescription` sit over a real
+`PrescriptionRepository` (taking `Repositories` from nine to ten), `GET`/`POST
+/api/v1/visits/:visitId/prescriptions` list and file what the patient was sent home
+with, and a **Prescriptions** section in the workspace draws a course's route through
+one presentation file and writes a new one with a route picker. The prescription carries
+no clinic of its own: scope comes through the visit (both verbs read it first, a foreign
+visit is a 404 in both engines via the FK translation), `patientId` and `dentistId` are
+inherited from the visit — never accepted from the body — and `issuedAt` is the clinic's
+clock. `dentistId` is nullable (`on delete set null`) exactly as `Visit.dentistId` is.
+The worksheet course validates in the endpoint schema (trim first, 1–200 chars, whole
+days 1–365) and again inline in the domain use case, so the two sides refuse the same
+shapes; the app keeps the clinician's draft when the API refuses it, as notes and
+treatments do.
 
 Session 30 delivered **treatment records** — the third workspace section and the first
 slice that reads and writes a second book beside the visit itself. `recordVisitTreatment`
@@ -117,27 +132,52 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 30)
+## Verification log (last run, session 31)
 
-| Command                     | Result                                                                |
-| --------------------------- | --------------------------------------------------------------------- |
-| `pnpm run typecheck`        | 12/12 tasks pass                                                      |
-| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)      |
-| `pnpm run format:check`     | clean                                                                 |
-| `pnpm run test`             | 12/12 tasks pass — 643 tests (21 new), 215+ integration tests skipped |
-| `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                |
-| `pnpm run build`            | 5/5 tasks pass                                                        |
-| `pnpm run guard:boundaries` | OK                                                                    |
-| `pnpm run test:e2e`         | 94/94 pass — 2 new treatments specs                                   |
+| Command                     | Result                                                                 |
+| --------------------------- | ---------------------------------------------------------------------- |
+| `pnpm run typecheck`        | 12/12 tasks pass                                                       |
+| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)       |
+| `pnpm run format:check`     | clean                                                                  |
+| `pnpm run test`             | 12/12 tasks pass — 672 tests (26 new), PG suite skips |
+| `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                 |
+| `pnpm run build`            | 5/5 tasks pass                                                         |
+| `pnpm run guard:boundaries` | OK                                                                     |
+| `pnpm run test:e2e`         | 96/96 pass — 2 new prescriptions specs                                 |
 
 **The PostgreSQL integration suite could not be executed this session: Docker and every
 PostgreSQL client are absent from this environment** (no `docker`, no `podman`, no
 `psql`, no `/var/run/docker.sock`). The new route tests in `visits-route.integration.test.ts`
-(the treatment endpoint suite and their refusals) are written, typecheck and will run
-wherever `TEST_DATABASE_URL` exists; here they report as part of the 215 skipped. What
+(the prescription endpoint suite and its refusals) are written, typecheck and will run
+wherever `TEST_DATABASE_URL` exists; here they report as part of the skipped suite. What
 covers the same path without a database is the always-on SQLite smoke suite, which gained
-a test that reads the catalogue, records a treatment through the endpoint and reads it
-back — and which did run.
+a prescriptions block — list, file through the endpoint, foreign-visit 404s on both verbs,
+a blank medication refused — and did run.
+
+**What session 31's work is verified by.** 15 domain tests — a prescription is only ever
+written under its visit's patient and dentist; the course fields are trimmed and capped
+(blank medication never reaches `save`), the course is whole days 1–365, a blank
+instruction becomes `null`, a foreign visit is a 404 for both verbs and nothing is written;
+`issuedAt` comes from the clock; an existing needle-times test asserts the ordering — plus
+6 validation tests (the route enum, and a schema whose trim happens before the minimum
+counts, mirroring the domain's refusals), 4 workspace component tests (the section asks
+for its prescriptions only when opened, an empty list is "No prescriptions written yet",
+a filed prescription appears only after the refetch and the form clears, a 422 leaves the
+draft and the route in place), 1 always-on SQLite smoke block, and 2 e2e specs: one that
+asserts no prescriptions are requested before the section opens, that the row that appears
+after the POST carries the server's `issuedAt` in the clinic's zone, that the POST body is
+exactly the course trimmed, and that the prescriptions were read twice — once by the
+section, once by the invalidation; and one that a 422 leaves the whole draft in the boxes.
+A live run against the seeded dev database then exercised the real API: the seeded
+prescription served back, a POST inherited `patientId`/`dentistId` and put the clock on
+`issuedAt` while storing a blank instruction as null, a foreign visit answered 404, and a
+blank medication answered 422.
+
+**The seed and the second visit.** Session 31 kept the session 30 pattern: the seed gained
+a `prescriptions` row on Luis's open visit (both engines, `seedSummary` now names "1
+prescription"), and the dev database also carries a live-verification write from this
+session's API probe, exactly as a treatment-record probe row sits on Ana's visit from
+session 30 — the dev DB is a scratch space, and the seed remains idempotent.
 
 **What session 29's work is verified by.** 29 new passing tests across five files: the
 domain use cases (7 — the subject is read before the write, a foreign visit is a 404
@@ -198,6 +238,58 @@ router — a `<Link>` with no router context renders nothing — and the mock is
 the new suite failed for a reason that had nothing to do with the workspace.
 
 ## Decisions made this session (not yet in ADRs)
+
+### Decisions from session 31 (prescriptions)
+
+- **A prescription has no clinic of its own — tenancy comes through the visit.** The
+  table carries no `clinic_id` (it was in both baseline migrations exactly as found, so
+  no migration was written), so `findForVisit(clinicId, visitId)` inner-joins `visits`
+  and both use cases read the visit first: a visit this clinic does not hold answers
+  404 to **both** verbs, and only a visit that exists answers `[]` or accepts a write.
+  Both repositories translate the foreign-key violation (`23503` /
+  `SQLITE_CONSTRAINT_FOREIGNKEY`) into the same `NOT_FOUND` the visit repositories use,
+  so a raw statement can never silently write a prescription against a foreign visit.
+- **`patientId` and `dentistId` are inherited from the visit, never accepted from the
+  body.** The endpoint schema takes the course and nothing else — medication, dosage,
+  route, frequency, duration and instructions. The row's patient is the visit's patient
+  and the dentist is the visit's dentist, read from the row the use case just loaded, so
+  a request cannot attribute a course to anybody the visit is not about. `dentistId` is
+  nullable (`on delete set null`, the same column rule `Visit.dentistId` has) and a
+  prescription written on a dentist-less visit is simply a prescription with no dentist,
+  which is why the route exists for it at all.
+- **The domain validates the course, and the API schema refuses the same shapes — a
+  deliberate mirror, not a handoff.** The use case re-checks the course fields inline
+  (trimmed and non-blank, capped at 200; whole days 1–365; a blank instruction becomes
+  `null`) even though the endpoint's `createPrescriptionSchema` already guards them,
+  because the use case is the seam other callers could reach and the constraint on the
+  column is a backstop, not an interface. `assertValidPrescription` from the old
+  scaffold was **deleted** rather than kept: a second, drifting copy of the rules would
+  be where the two sides start to disagree.
+- **`Repositories` grew from nine to ten, again only with both engines.** `prescriptions`
+  entered the set only once the PostgreSQL and SQLite implementations existed — the
+  session 23 policy's third growth in as many sessions, and the outer
+  `repositoriesFor`/`repositories` wiring now named "ten" in the comments that used to
+  count them.
+- **The write is one statement, no transaction, non-optimistic, and invalidates only
+  its own key, because a prescription does not change the visit.** `addVisitPrescription`
+  takes a single `INSERT`; the visit was just read and the tenancy FK patrols the
+  boundary. The mutation invalidates only `['visits','prescriptions',visitId]` — never
+  `['visits']`, never the patient's profile — and the issued row arrives by refetch with
+  the server's `id` and `issuedAt`, exactly the discipline the notes and treatments
+  slices established.
+- **The clinic's clock stamps `issuedAt`; the route is one presentation file.** The use
+  case takes the instant from the `Clock`, because only the clinic's zone has the
+  authority to say when a course was written. `MEDICATION_ROUTE_OPTIONS` and
+  `medicationRouteLabel` in `prescription-presentation.ts` are the exhaustive
+  `Record<MedicationRoute, string>` over the domain enum — the same discipline as the
+  status tone tables — so the picker and the list can never spell a route differently
+  from each other, and a route added to the domain fails to compile here rather than
+  rendering a fallback.
+- **The refusal keeps the whole draft, route included.** `describe-prescription-failure`
+  quotes `ApiClientError`'s message (`VALIDATION_ERROR`/`DOMAIN_RULE_VIOLATION` → the
+  API's sentence, `NOT_FOUND` → "This visit no longer exists in the current clinic.")
+  and the form clears only on success, so a refused course is still the clinician's to
+  correct — the note panel's rule, applied to a wider form than the treatments one.
 
 ### Decisions from session 30 (treatment records)
 
@@ -860,9 +952,9 @@ editing. Both sides now go through `PatientRepository`. Remaining:
      that did not happen.
 
    **Still to do, in order:** charges and payments. The clinical notes (session 29),
-   the treatment records (session 30), the walk-in (session 26), the read side
-   (session 25), closing and reopening (session 24) and the workspace UI (session 28)
-   are done.
+   the treatment records (session 30), the prescriptions (session 31), the walk-in
+   (session 26), the read side (session 25), closing and reopening (session 24) and the
+   workspace UI (session 28) are done.
 
 **Milestone 6 onward** — the rest of visits, odontogram, treatments, payments,
 inventory, reports, auth: not started.
@@ -1665,6 +1757,26 @@ e2e: **90/90** — 5 new visit-workspace specs, plus the harness-clock fix that 
 the 14 date-drift failures · Playwright chromium reinstalled
 (`pnpm exec playwright install chromium`) after it had been cleared from the machine's
 cache.
+
+Session 31: prescriptions — the fourth workspace section, and the third "per visit"
+book after notes and treatments. `prescription.ts` was rewritten around the
+`PrescriptionRepository` (one port, `Repositories` ten): `prescription.ts` keeps the
+entity, `MEDICATION_ROUTES` and the `MedicationRoute` type, and `visit-prescriptions.ts`
+holds `addVisitPrescription` and `listVisitPrescriptions`. Scope comes through the visit
+(a foreign visit answers 404 to both verbs, in both engines via the FK translation —
+`23503`/`SQLITE_CONSTRAINT_FOREIGNKEY` → `NOT_FOUND`), `patientId`/`dentistId` are
+inherited from the visit and never accepted from the body, `issuedAt` is the clinic's
+clock, and a blank instruction stores null. The old `assertValidPrescription` was deleted
+as a second copy of the rules; the use case validates the course inline while the
+endpoint's `createPrescriptionSchema` refuses the same shapes. `GET`/`POST
+/api/v1/visits/:visitId/prescriptions` sit beside the treatments endpoints, and
+`VisitPrescriptionsSection` is the fourth nav row: it lists course, route label, frequency
+and days in the clinic's clock, files with a route picker over `MEDICATION_ROUTE_OPTIONS`,
+trims on the way out, and keeps the whole draft when the API refuses it. 15 domain tests,
+6 validation tests, 4 component tests, a SQLite smoke block, and 2 e2e specs (96/96);
+a live probe against the seeded dev DB confirmed the seeded row serves, inheritance,
+the clock, blank→null, and the 404/422 refusals. The seed gained a prescription on Luis's
+open visit and `seedSummary` says so.
 
 Session 30: treatment records — what was actually done, named through the catalogue.
 `recordVisitTreatment` and `listTreatmentRecords` (`visit-treatment-records.ts`) read the

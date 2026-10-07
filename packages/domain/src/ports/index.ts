@@ -69,13 +69,19 @@ export interface UnitOfWork {
  * Session 30 adds `treatments` and `treatmentRecords` for the same reason: recording
  * a treatment on a visit needs the clinic's catalogue read and the record written,
  * and both implementations exist before either name enters this set. The set is nine
- * now, and every one of its nine is constructible in both engines.
+ * then, and every one of its nine is constructible in both engines.
+ *
+ * Session 31 adds `prescriptions` in the same direction: prescribing needs the visit
+ * read (which `visits` already holds) and the prescription written, and the
+ * implementation exists in both engines before the name enters this set. The set is
+ * ten now, and every one of its ten is constructible in both engines.
  */
 export interface Repositories {
   readonly patients: PatientRepository;
   readonly appointments: AppointmentRepository & AppointmentWriteRepository;
   readonly visits: VisitRepository;
   readonly clinicalNotes: ClinicalNoteRepository;
+  readonly prescriptions: PrescriptionRepository;
   readonly treatments: TreatmentRepository;
   readonly treatmentRecords: TreatmentRecordRepository;
   readonly clinics: ClinicRepository;
@@ -565,6 +571,21 @@ export interface TreatmentRecordRepository {
   save(record: TreatmentRecord): Promise<void>;
 }
 
+/**
+ * A medication prescribed on a visit — the clinical record's third companion.
+ *
+ * Like `clinical_notes` and `visit_treatment_executions`, `prescriptions` has no
+ * `clinic_id`, so tenancy comes through `visits`: `findForVisit` joins the visit and
+ * filters the clinic in the same statement, because a read has no use case in front
+ * of it to scope with (ADR 0014). Issued-first, then by id — the order a course of
+ * medication is handed over in.
+ *
+ * `save` takes no clinic, because the use case has already resolved the visit. What
+ * it cannot know is whether the visit still exists by the time the insert lands, so
+ * the one refusal it translates is the foreign key — a visit deleted between the read
+ * and the insert answers the same `NOT_FOUND` the read would have, rather than a
+ * `23503` reaching the API as a 500.
+ */
 export interface PrescriptionRepository {
   findForVisit(clinicId: ClinicId, visitId: VisitId): Promise<readonly Prescription[]>;
   save(prescription: Prescription): Promise<void>;

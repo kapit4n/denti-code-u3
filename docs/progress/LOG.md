@@ -2049,3 +2049,76 @@ pnpm run test:e2e         94 passed, 0 failed (2 new treatment specs)
 recording by an authenticated clinician (no user model — ADR 0022), and the treatment
 plan → execution → charges → payments chain that the roadmap holds next. Charges and
 payments are the remaining "Still to do" under the visits milestone.
+
+## Session 31 — prescriptions (the fourth workspace section)
+
+**Started from:** clean tree at session 30's end. Next roadmap item: "Prescriptions — per
+visit", the fourth row of the workspace's section nav and the third "per visit" book. The
+`prescriptions` table had sat in both baseline migrations since Phase 1, untouched, with
+only a scaffold entity and a port stub (removed in session 23 when it had no engines).
+
+**What changed**
+
+- **Domain.** `prescription.ts` holds the entity (nullable `dentistId`, `instructions:
+string | null`), `MEDICATION_ROUTES` and the `MedicationRoute` type; the old
+  `assertValidPrescription` was deleted as a second copy of the rules that would drift.
+  `visit-prescriptions.ts` adds `addVisitPrescription` and `listVisitPrescriptions`:
+  both read the visit first (404 for a foreign visit), write inherits `patientId` /
+  `dentistId` from the visit, values the course inline (trim + cap, whole days 1–365,
+  blank instruction → null), stamps `issuedAt` from the `Clock`, one `save`, no
+  `UnitOfWork`. `Repositories` went seven→nine in session 30 and now grew to ten with
+  `prescriptions`, once both engines existed.
+- **Validation.** `medicationRouteSchema` (a literal enum mirroring the domain's, since
+  the validation package may not import the domain) and `createPrescriptionSchema`
+  (trim before `min(1)`, 1–200 on the course fields, whole days 1–365, instructions
+  optional ≤2000). The registration schema comment is honest about the startup check it
+  does not have — it does not repeat the appointments file's claim that a check exists.
+- **API.** `DrizzlePrescriptionRepository` + `SQLitePrescriptionRepository`, both
+  immutable-style twin implementations: `findForVisit(clinicId, visitId)` scopes through
+  `visits`, `save` translates the FK violation (`23503` / `SQLITE_CONSTRAINT_FOREIGNKEY`)
+  to `NOT_FOUND`, ordering `issued_at, id`. Wired into `app.ts`, the postgres
+  `repositoriesFor` and the sqlite `repositories`; `GET`/`POST
+/api/v1/visits/:visitId/prescriptions` added to `routes/visits.ts` beside the
+  treatments endpoints.
+- **App.** `prescriptions-query.ts` (`useVisitPrescriptions`, key
+  `['visits','prescriptions',visitId]`), `use-create-prescription.ts` (non-optimistic;
+  invalidates only its key; trims on the way out, blank instruction dropped),
+  `describe-prescription-failure.ts`, and `VisitPrescriptionsSection` as the fourth row
+  in the data-driven nav (`'prescriptions'`). Routes come from
+  `prescription-presentation.ts` (exhaustive `Record<MedicationRoute, string>` over the
+  domain enum), the list draws medication · dosage, route label, frequency, days and
+  instructions in the clinic's clock, and a refused write keeps the whole draft — route
+  included.
+- **Seed.** A `prescriptions` row on Luis's open visit in both engines (fixed id,
+  Ibuprofen 400 mg oral, 5 days), `seedSummary` now names "1 prescription".
+- **Tests.** 15 domain (`visit-prescriptions.test.ts`), 6 validation, 4 workspace
+  component tests (fetch-while-mounted; empty-list sentence; file + clear + no
+  `['visits']` invalidate; 422 keeps the draft), a SQLite-smoke block, and the
+  `visits-route.integration.test.ts` prescription suite (list, file, inheritance,
+  ordering, refusals — skips here, no `TEST_DATABASE_URL`). 2 new e2e specs; the
+  full-web rebuild got them green (a stale `apps/web/dist` reproduces the session 30
+  lesson).
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run guard:boundaries OK (one pre-existing warning)
+pnpm run build            5/5 successful
+pnpm run test             12/12 tasks — 672 passed (26 new), PG suite skipped
+pnpm run test:integration not run — no Docker/PostgreSQL in this environment
+pnpm run test:e2e         96 passed, 0 failed (2 new prescription specs)
+```
+
+A live probe against the seeded dev database then exercised the real API: the seeded
+prescription served back (GET), a POST inherited `patientId`/`dentistId` and put the
+clock on `issuedAt` while storing a blank instruction as null (201), a foreign visit
+answered 404, and a blank medication answered 422.
+
+**NOT done and deliberately.** Editing or deleting a prescription; recording a course
+that changes the visit or the patient (a prescription does not — so invalidating
+`['visits']` would refetch pixels that cannot differ); linking to the treatment plan
+(Milestone 8); charges and payments remain the next "per visit" book under the visits
+milestone.

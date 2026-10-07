@@ -52,7 +52,7 @@ const currencyCode = 'USD';
 const now = new Date();
 
 function seedSummary(): string {
-  return `clinic ${DEVELOPMENT_CLINIC_ID}, 3 patients, 2 dentists, 2 rooms, 4 chairs, 4 appointments, 1 visit, 1 plan (2 items), 4 treatments, 1 treatment execution, 2 charges, 2 payments`;
+  return `clinic ${DEVELOPMENT_CLINIC_ID}, 3 patients, 2 dentists, 2 rooms, 4 chairs, 4 appointments, 2 visits (1 completed, 1 open), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 charges, 2 payments`;
 }
 
 /**
@@ -498,9 +498,13 @@ async function insertTreatmentsSqlite(
     .onConflictDoNothing();
 }
 
-// A completed visit and an accepted plan give the patient profile real clinical
-// history to render. Both belong to Ana only, which is what proves the profile
-// filters by patient and not just by clinic.
+// Two visits give the profiles real clinical history to render, split across two
+// patients so the read side has to prove it filters by patient and not just by
+// clinic. Ana (a walk-in) carries a completed composite restoration of tooth 16;
+// Luis carries an open booking visit, still in its appointment's chair, with a
+// hygiene execution filed and a clinical note beside it — the picture the
+// workspace opens to: an OPEN visit with its Treatments and Notes sections
+// already populated.
 const DAY = 24 * 60 * 60 * 1000;
 
 async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
@@ -517,8 +521,30 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
         reason: 'Sensitivity in the upper right quadrant',
         summary: 'Composite restoration on tooth 16. No complications.',
       },
+      {
+        id: '11111111-7777-4888-8999-000000000002',
+        clinicId: DEVELOPMENT_CLINIC_ID,
+        patientId: '11111111-3333-4444-8555-000000000002',
+        dentistId: '11111111-2222-4333-8444-000000000001',
+        chairId: '11111111-4444-4555-8666-000000000002',
+        // Today's 10:00 appointment, born from it exactly as the start-visit
+        // bridge would (ADR 0021); the appointment itself is moved to
+        // IN_TREATMENT below, the state the bridge leaves it in.
+        appointmentId: '11111111-4444-4555-8666-000000000002',
+        status: 'OPEN',
+        startedAt: at(0, 10, 0),
+        reason: 'Scaling and hygiene visit',
+      },
     ])
     .onConflictDoNothing();
+
+  // The bridge's other half (ADR 0021): the appointment is not both SCHEDULED
+  // and being treated. An UPDATE is naturally idempotent — re-running the seed
+  // re-asserts the same status.
+  await db
+    .update(pgSchema.appointments)
+    .set({ status: 'IN_TREATMENT' })
+    .where(eq(pgSchema.appointments.id, '11111111-4444-4555-8666-000000000002'));
 
   await db
     .insert(pgSchema.treatmentPlans)
@@ -569,6 +595,43 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
       performedAt: new Date(now.getTime() - 21 * DAY + 20 * 60 * 1000),
     })
     .onConflictDoNothing();
+
+  await db
+    .insert(pgSchema.visitTreatmentExecutions)
+    .values({
+      id: '11111111-cccc-4ddd-8eee-000000000002',
+      visitId: '11111111-7777-4888-8999-000000000002',
+      treatmentId: '11111111-aaaa-4999-8ccc-000000000004',
+      notes: 'Dental hygiene instructions given.',
+      performedAt: at(0, 10, 25),
+    })
+    .onConflictDoNothing();
+
+  await db
+    .insert(pgSchema.clinicalNotes)
+    .values({
+      id: '11111111-cccc-4ddd-8eee-000000000003',
+      visitId: '11111111-7777-4888-8999-000000000002',
+      body: 'Scaling well tolerated; no discomfort reported after the visit.',
+    })
+    .onConflictDoNothing();
+
+  await db
+    .insert(pgSchema.prescriptions)
+    .values({
+      id: '11111111-cccc-4ddd-8eee-000000000004',
+      visitId: '11111111-7777-4888-8999-000000000002',
+      patientId: '11111111-3333-4444-8555-000000000002',
+      dentistId: '11111111-2222-4333-8444-000000000001',
+      issuedAt: at(0, 10, 30),
+      medication: 'Ibuprofen',
+      dosage: '400 mg',
+      route: 'ORAL',
+      frequency: 'Every 8 hours if needed',
+      durationDays: 5,
+      instructions: 'Take after meals. Do not exceed three doses a day.',
+    })
+    .onConflictDoNothing();
 }
 
 async function insertVisitsAndPlansSqlite(
@@ -587,8 +650,24 @@ async function insertVisitsAndPlansSqlite(
         reason: 'Sensitivity in the upper right quadrant',
         summary: 'Composite restoration on tooth 16. No complications.',
       },
+      {
+        id: '11111111-7777-4888-8999-000000000002',
+        clinicId: DEVELOPMENT_CLINIC_ID,
+        patientId: '11111111-3333-4444-8555-000000000002',
+        dentistId: '11111111-2222-4333-8444-000000000001',
+        chairId: '11111111-4444-4555-8666-000000000002',
+        appointmentId: '11111111-4444-4555-8666-000000000002',
+        status: 'OPEN',
+        startedAt: at(0, 10, 0),
+        reason: 'Scaling and hygiene visit',
+      },
     ])
     .onConflictDoNothing();
+
+  await db
+    .update(sqliteSchema.appointments)
+    .set({ status: 'IN_TREATMENT' })
+    .where(eq(sqliteSchema.appointments.id, '11111111-4444-4555-8666-000000000002'));
 
   await db
     .insert(sqliteSchema.treatmentPlans)
@@ -637,6 +716,43 @@ async function insertVisitsAndPlansSqlite(
       tooth: '16',
       notes: 'No complications.',
       performedAt: new Date(now.getTime() - 21 * DAY + 20 * 60 * 1000),
+    })
+    .onConflictDoNothing();
+
+  await db
+    .insert(sqliteSchema.visitTreatmentExecutions)
+    .values({
+      id: '11111111-cccc-4ddd-8eee-000000000002',
+      visitId: '11111111-7777-4888-8999-000000000002',
+      treatmentId: '11111111-aaaa-4999-8ccc-000000000004',
+      notes: 'Dental hygiene instructions given.',
+      performedAt: at(0, 10, 25),
+    })
+    .onConflictDoNothing();
+
+  await db
+    .insert(sqliteSchema.clinicalNotes)
+    .values({
+      id: '11111111-cccc-4ddd-8eee-000000000003',
+      visitId: '11111111-7777-4888-8999-000000000002',
+      body: 'Scaling well tolerated; no discomfort reported after the visit.',
+    })
+    .onConflictDoNothing();
+
+  await db
+    .insert(sqliteSchema.prescriptions)
+    .values({
+      id: '11111111-cccc-4ddd-8eee-000000000004',
+      visitId: '11111111-7777-4888-8999-000000000002',
+      patientId: '11111111-3333-4444-8555-000000000002',
+      dentistId: '11111111-2222-4333-8444-000000000001',
+      issuedAt: at(0, 10, 30),
+      medication: 'Ibuprofen',
+      dosage: '400 mg',
+      route: 'ORAL',
+      frequency: 'Every 8 hours if needed',
+      durationDays: 5,
+      instructions: 'Take after meals. Do not exceed three doses a day.',
     })
     .onConflictDoNothing();
 }

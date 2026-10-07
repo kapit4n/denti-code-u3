@@ -17,6 +17,7 @@ import { SQLiteClinicalNoteRepository } from './repositories/clinical-note-repos
 import { SQLiteClinicRepository } from './repositories/clinic-repository.js';
 import { SQLiteDentistRepository } from './repositories/dentist-repository.js';
 import { SQLitePatientRepository } from './repositories/patient-repository.js';
+import { SQLitePrescriptionRepository } from './repositories/prescription-repository.js';
 import { SQLiteTreatmentRecordRepository } from './repositories/treatment-record-repository.js';
 import { SQLiteTreatmentRepository } from './repositories/treatment-repository.js';
 import { SQLiteVisitRepository } from './repositories/visit-repository.js';
@@ -27,6 +28,7 @@ export function sqliteRepositoriesFor(db: SqliteDatabase): Repositories {
     appointments: new SQLiteAppointmentRepository(db),
     visits: new SQLiteVisitRepository(db),
     clinicalNotes: new SQLiteClinicalNoteRepository(db),
+    prescriptions: new SQLitePrescriptionRepository(db),
     treatments: new SQLiteTreatmentRepository(db),
     treatmentRecords: new SQLiteTreatmentRecordRepository(db),
     clinics: new SQLiteClinicRepository(db),

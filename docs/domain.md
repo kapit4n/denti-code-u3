@@ -197,14 +197,22 @@ TreatmentPlan    { id, clinicId, patientId, dentistId, title, status, startedAt?
 TreatmentPlanItem{ id, planId, treatmentId, toothRef?, sequence, status, estimatedPrice? }
 TreatmentRecord  { id, clinicId, visitId, patientId, treatmentId, toothRef?, status,
                    performedAt, notes? }
-Prescription     { id, clinicId, visitId, patientId, dentistId, issuedAt,
-                   medication, dosage, route, frequency, duration, instructions? }
+Prescription     { id, visitId, patientId, dentistId?, issuedAt,
+                   medication, dosage, route, frequency, durationDays, instructions? }
 ```
 
 A `TreatmentPlan` is a _proposal_ ordered by `sequence`; a `TreatmentRecord` is
 a _fact_ ("this was performed, in this visit"). Progress ("pending treatments"
 on the dashboard) is derived from the difference between the two — it is a
 projection, not a stored counter.
+
+A `Prescription` (session 31) carries **no clinic of its own**: tenancy comes
+through its visit (a prescription this clinic does not hold is a 404, answered by
+reading the visit first). `patientId` is the visit's patient and `dentistId` the
+visit's dentist — inherited, never accepted from the body, and nullable
+(`on delete set null`, like `Visit.dentistId`). `route` is the `MEDICATION_ROUTES`
+enum (Oral, Topical, Inhaled, Injection, Rectal, Other), `durationDays` is whole
+days 1–365 with a `CHECK` on the column, and `issuedAt` is the clinic's clock.
 
 ### 2.9 Payment, Invoice, Inventory
 

@@ -91,8 +91,16 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   // book" each have one implementation — the connection builds them once, behind
   // whichever engine answered. Two instances of one repository would be two
   // answers to one question.
-  const { appointments, clinics, dentists, chairs, clinicalNotes, treatmentRecords, treatments } =
-    connection.repositories;
+  const {
+    appointments,
+    clinics,
+    dentists,
+    chairs,
+    clinicalNotes,
+    prescriptions,
+    treatmentRecords,
+    treatments,
+  } = connection.repositories;
 
   await registerDashboardRoutes(app, {
     // The dashboard's aggregates answer through the connection's read store;
@@ -153,6 +161,9 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     // shape as the notes, and a plain repository for the same reason (ADR 0014).
     treatmentRecords,
     treatments,
+    // What the patient was sent home with — the same read-then-write shape as the
+    // notes, and a plain repository for the same reason (ADR 0014).
+    prescriptions,
     // The two resources a walk-in names, because it has no booking to read them from.
     // The same instances the agenda's filters and the booking rule use: one question,
     // one implementation.

@@ -760,11 +760,66 @@ export function visitTreatments(treatments: readonly Record<string, unknown>[]):
 }
 
 /**
+ * A prescription already on the open visit, as
+ * `GET /api/v1/visits/:visitId/prescriptions` answers for it.
+ *
+ * The row carries ids and an instant (`patientId`, `dentistId`, `issuedAt`); the
+ * names a spec sees on screen are resolved by the workspace, and `issuedAt` is 13:00Z
+ * so a spec can read the clinic's hour (08:00 in Lima) off the row — the same clock
+ * the notes and treatments specs read their timestamps from.
+ */
+export const visitPrescription = {
+  id: '11111111-cccc-4ddd-8eee-000000000003',
+  visitId: VISIT_ID,
+  patientId: ANA_ID,
+  dentistId: DENTIST_ID,
+  issuedAt: '2026-10-05T13:00:00.000Z',
+  medication: 'Ibuprofen',
+  dosage: '400 mg',
+  route: 'ORAL',
+  frequency: 'Every 8 hours as needed',
+  durationDays: 5,
+  instructions: 'Take after meals.',
+} as const;
+
+/**
+ * The row a spec writes, and the row the API answers the POST with.
+ *
+ * Its `id` and `issuedAt` are the server's, not the client's: a spec asserting that
+ * the list shows *this* row is asserting that the refetch is what put it on screen,
+ * because nothing in the browser could have produced those two values.
+ */
+export const filedPrescription = {
+  id: '11111111-cccc-4ddd-8eee-000000000004',
+  visitId: VISIT_ID,
+  patientId: ANA_ID,
+  dentistId: DENTIST_ID,
+  issuedAt: '2026-10-05T13:35:00.000Z',
+  medication: 'Amoxicillin',
+  dosage: '500 mg',
+  route: 'ORAL',
+  frequency: 'Every 12 hours',
+  durationDays: 7,
+  instructions: 'Complete the whole course.',
+} as const;
+
+export function visitPrescriptions(
+  prescriptions: readonly Record<string, unknown>[],
+): Fixture['body'] {
+  return { prescriptions };
+}
+
+/**
  * Every endpoint the visit workspace opens, in one call.
  *
  * Separate from `bookingFixtures()` for the usual reason: these are the requests a
  * spec makes only when it is looking at a visit, and registering them everywhere
  * would let a spec that forgot its subject pass on fixtures it never intended to use.
+ *
+ * The section reads — `/notes`, `/treatments`, `/prescriptions` — are *not* here, for
+ * the stronger reason that they must not happen at all until their section is opened.
+ * Each spec registers the one it needs, so an over-eager client draws a 501 instead of
+ * a silently-mocked row.
  *
  * The `overrides` argument comes last so a spec can replace one answer — the 409
  * refusal, a 404 for a visit this clinic does not hold — without restating the rest.

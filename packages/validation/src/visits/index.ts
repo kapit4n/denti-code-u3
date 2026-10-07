@@ -104,6 +104,69 @@ export const recordVisitTreatmentSchema = z.object({
 export type RecordVisitTreatmentInput = z.infer<typeof recordVisitTreatmentSchema>;
 
 /**
+ * The routes a medication can be taken by, mirrored from the domain enum's values.
+ *
+ * Mirrored as literals because this package holds no domain dependency, the same
+ * reason appointment statuses are mirrored in this package's sibling file. The list
+ * is two static copies of one clinical fact for now — `medicationRouteSchema` here
+ * and `MEDICATION_ROUTES` in the domain — kept aligned the way the appointment
+ * mirror is: the API's write path types its input as the domain's `MedicationRoute`,
+ * so a route this side cannot spell that the domain side does not know, and the
+ * database's own `enumCheck` guards the column. One value, declared in one place,
+ * stays a habit this product is still forming (ADR 0011).
+ */
+export const medicationRouteSchema = z.enum([
+  'ORAL',
+  'TOPICAL',
+  'INHALATION',
+  'INJECTION',
+  'RECTAL',
+  'OTHER',
+]);
+
+/**
+ * Prescribe a medication on a visit.
+ *
+ * `visitId` is the path rather than the body, and `issuedAt` along with the ids are
+ * the server's own — the same division every write body here keeps. **Who the record
+ * is about is inherited from the visit and is not in the body**: a request that could
+ * state the patient or the clinician could state them *differently* from the visit
+ * they are filed on (ADR 0014, ADR 0021). So the body is only the course.
+ *
+ * Medication, dosage and frequency are trimmed and required to be non-empty: a course
+ * that does not say what to take is not an order. `instructions` is optional and
+ * trimmed; a blank one is dropped to `null` by the domain, never stored empty. The
+ * 200-character ceilings are one number for "a short clinical field", and the
+ * 2,000-character instruction ceiling is the same number the note schemas use for a
+ * sentence.
+ */
+export const createPrescriptionSchema = z.object({
+  medication: z
+    .string()
+    .trim()
+    .min(1, 'A medication needs a name')
+    .max(200, 'The medication name is too long'),
+  dosage: z
+    .string()
+    .trim()
+    .min(1, 'A prescription needs a dosage')
+    .max(200, 'The dosage is too long'),
+  route: medicationRouteSchema,
+  frequency: z
+    .string()
+    .trim()
+    .min(1, 'A prescription needs a frequency')
+    .max(200, 'The frequency is too long'),
+  durationDays: z
+    .int()
+    .min(1, 'A prescription needs to last whole days')
+    .max(365, 'A course is at most a year'),
+  instructions: z.string().trim().max(2_000, 'The instructions are too long').optional().nullable(),
+});
+
+export type CreatePrescriptionInput = z.infer<typeof createPrescriptionSchema>;
+
+/**
  * Deliberately not here: a `visitStatusSchema` mirroring the domain's three statuses.
  *
  * The appointment package mirrors its enum and the API has a startup check that the

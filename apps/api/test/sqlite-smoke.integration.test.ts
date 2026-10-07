@@ -25,6 +25,11 @@
  *    is a `clinic_id` the row carries; a record is a `visit_id` it does not, so the
  *    record's read scopes through the visit and its write through the treatment — the
  *    second implementation of each, on the engine that must not disagree.
+ *  - **A prescription scopes through its visit, and names who it is about by
+ *    inheritance.** `prescriptions` has no clinic column and no patient or dentist
+ *    column of its own from the request — the write resolves the visit in this clinic
+ *    and copies the patient and clinician from it, and the join that scopes the read
+ *    is the second implementation of the notes' (ADR 0014, ADR 0025).
  *  - **The dashboard reads real rows** on the SQLite engine — revenue, capacity,
  *    calendar day, recent patients.
  */
@@ -313,6 +318,84 @@ describe('API on SQLite', () => {
     });
     expect(refused.statusCode).toBe(422);
     expect(refused.json().error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('prescribes a medication on the visit, inheriting whom it is about from the visit', async () => {
+    const filed = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/prescriptions`,
+      payload: {
+        medication: '  Ibuprofen  ',
+        dosage: '400 mg',
+        route: 'ORAL',
+        frequency: 'Every 8 hours as needed',
+        durationDays: 5,
+        instructions: 'Take after meals.',
+      },
+    });
+
+    expect(filed.statusCode).toBe(201);
+    // Trimming at the boundary, the patient and clinician inherited from the visit
+    // (a body cannot restate who) — the same envelope PostgreSQL answers with.
+    expect(filed.json()).toMatchObject({
+      visitId,
+      medication: 'Ibuprofen',
+      dosage: '400 mg',
+      route: 'ORAL',
+      frequency: 'Every 8 hours as needed',
+      durationDays: 5,
+      instructions: 'Take after meals.',
+    });
+    expect(filed.json().patientId).toBe(apiPatientId);
+    expect(filed.json().dentistId).toBe(dentistId);
+
+    const ours = await app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${visitId}/prescriptions`,
+    });
+    expect(ours.statusCode).toBe(200);
+    expect(ours.json().prescriptions).toHaveLength(1);
+
+    // `prescriptions` has no clinic column, so the read scopes by joining the visit —
+    // the same story the notes and the records tell, and the same 404 for another
+    // clinic's visit (ADR 0014).
+    const foreignRead = await app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${foreignVisitId}/prescriptions`,
+    });
+    expect(foreignRead.statusCode).toBe(404);
+    expect(foreignRead.json().error.code).toBe('NOT_FOUND');
+
+    // Refused before anything is written: the use case reads the visit first.
+    const refusedForeignWrite = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${foreignVisitId}/prescriptions`,
+      payload: {
+        medication: 'Ibuprofen',
+        dosage: '400 mg',
+        route: 'ORAL',
+        frequency: 'Every 8 hours',
+        durationDays: 5,
+      },
+    });
+    expect(refusedForeignWrite.statusCode).toBe(404);
+    expect(refusedForeignWrite.json().error.code).toBe('NOT_FOUND');
+
+    // A course that says nothing is refused by the boundary schema before the writing
+    // of any row — the seed of each refusal is written in `validation`, not here.
+    const refusedBlank = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/prescriptions`,
+      payload: {
+        medication: '   ',
+        dosage: '400 mg',
+        route: 'ORAL',
+        frequency: 'Every 8 hours',
+        durationDays: 5,
+      },
+    });
+    expect(refusedBlank.statusCode).toBe(422);
+    expect(refusedBlank.json().error.code).toBe('VALIDATION_ERROR');
   });
 
   it('summarises the day on the dashboard, occupancy included', async () => {

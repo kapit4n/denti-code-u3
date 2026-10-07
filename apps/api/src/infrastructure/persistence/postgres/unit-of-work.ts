@@ -17,7 +17,7 @@
  * **The set is built fresh rather than passed in,** because the alternative is a
  * `Repositories` object assembled once from the outer connection and then handed to
  * every callback, and that object would hold the wrong handles. The cost is that each
- * transaction constructs seven wrappers, which is nothing next to the round trip it is
+ * transaction constructs ten wrappers, which is nothing next to the round trip it is
  * about to make.
  */
 import type { Repositories, UnitOfWork } from '@denti-code-u3/domain';
@@ -29,6 +29,7 @@ import { DrizzleClinicalNoteRepository } from '../repositories/clinical-note-rep
 import { DrizzleClinicRepository } from '../repositories/clinic-repository.js';
 import { DrizzleDentistRepository } from '../repositories/dentist-repository.js';
 import { DrizzlePatientRepository } from '../repositories/patient-repository.js';
+import { DrizzlePrescriptionRepository } from '../repositories/prescription-repository.js';
 import { DrizzleTreatmentRecordRepository } from '../repositories/treatment-record-repository.js';
 import { DrizzleTreatmentRepository } from '../repositories/treatment-repository.js';
 import { DrizzleVisitRepository } from '../repositories/visit-repository.js';
@@ -37,7 +38,7 @@ import { DrizzleVisitRepository } from '../repositories/visit-repository.js';
  * One repository per port, all on the same handle.
  *
  * Exported because the API wires routes with repositories built on the outer
- * connection, and a caller that needed both would otherwise construct six twice.
+ * connection, and a caller that needed both would otherwise construct ten twice.
  */
 export function repositoriesFor(db: DentiDatabase): Repositories {
   return {
@@ -45,6 +46,7 @@ export function repositoriesFor(db: DentiDatabase): Repositories {
     appointments: new DrizzleAppointmentRepository(db),
     visits: new DrizzleVisitRepository(db),
     clinicalNotes: new DrizzleClinicalNoteRepository(db),
+    prescriptions: new DrizzlePrescriptionRepository(db),
     treatments: new DrizzleTreatmentRepository(db),
     treatmentRecords: new DrizzleTreatmentRecordRepository(db),
     clinics: new DrizzleClinicRepository(db),

@@ -43,6 +43,7 @@ import { DrizzleVisitRepository } from '../src/infrastructure/persistence/reposi
 import { DrizzleClinicalNoteRepository } from '../src/infrastructure/persistence/repositories/clinical-note-repository.js';
 import { DrizzleChairRepository } from '../src/infrastructure/persistence/repositories/chair-repository.js';
 import { DrizzleDentistRepository } from '../src/infrastructure/persistence/repositories/dentist-repository.js';
+import { DrizzlePrescriptionRepository } from '../src/infrastructure/persistence/repositories/prescription-repository.js';
 import { DrizzleTreatmentRecordRepository } from '../src/infrastructure/persistence/repositories/treatment-record-repository.js';
 import { DrizzleTreatmentRepository } from '../src/infrastructure/persistence/repositories/treatment-repository.js';
 import { DrizzleUnitOfWork } from '../src/infrastructure/persistence/postgres/unit-of-work.js';
@@ -250,6 +251,21 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       payload: payload as object,
     });
 
+  const getPrescriptions = (visitId: string, clinic = clinicId) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${visitId}/prescriptions`,
+      headers: { 'x-clinic-id': clinic },
+    });
+
+  const filePrescription = (visitId: string, payload: unknown, clinic = clinicId) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/prescriptions`,
+      headers: { 'x-clinic-id': clinic },
+      payload: payload as object,
+    });
+
   /**
    * The row as stored, with the timestamp read as an instant.
    *
@@ -325,6 +341,9 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       // the way the notes' is (ADR 0014).
       treatmentRecords: new DrizzleTreatmentRecordRepository(db),
       treatments: new DrizzleTreatmentRepository(db),
+      // The prescriptions written on a visit, exercised by the prescription tests
+      // below; a plain repository for the same read-then-write reason (ADR 0014).
+      prescriptions: new DrizzlePrescriptionRepository(db),
       // The two resources a walk-in names, for the same "who may be named" rule the
       // booking uses. The appointment door reads its names from the booking and never
       // calls these (ADR 0024).
@@ -1244,6 +1263,197 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
           url: '/api/v1/visits/not-a-uuid/treatments',
           headers: { 'x-clinic-id': clinicId },
           ...(method === 'POST' ? { payload: { treatmentId: treatment } } : {}),
+        });
+
+        expect(response.statusCode).toBe(422);
+        expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+      }
+    });
+  });
+
+  describe('GET and POST /api/v1/visits/:visitId/prescriptions', () => {
+    const course = (overrides: Record<string, unknown> = {}) => ({
+      medication: '  Ibuprofen  ',
+      dosage: '400 mg',
+      route: 'ORAL',
+      frequency: ' Every 8 hours as needed ',
+      durationDays: 5,
+      instructions: 'Take after meals.',
+      ...overrides,
+    });
+
+    it('prescribes a course and lists it back, with the clock’s time and the visit’s own who', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const filed = await filePrescription(visitId, course());
+
+      expect(filed.statusCode).toBe(201);
+      const body = filed.json() as {
+        id: string;
+        visitId: string;
+        patientId: string;
+        dentistId: string;
+        medication: string;
+        dosage: string;
+        route: string;
+        frequency: string;
+        durationDays: number;
+        instructions: string;
+        issuedAt: string;
+      };
+      // Who the row is about is inherited from the visit — the body may not restate
+      // the patient or the clinician (ADR 0014, ADR 0021).
+      expect(body.patientId).toBe(patient);
+      expect(body.dentistId).toBe(dentist);
+      // Trimmed by the boundary schema, so the row is not the box's edges.
+      expect(body.medication).toBe('Ibuprofen');
+      expect(body.frequency).toBe('Every 8 hours as needed');
+      expect(body.instructions).toBe('Take after meals.');
+      // The clock, not something the body could have said.
+      expect(new Date(body.issuedAt).toISOString()).toBe(NOW);
+
+      const listed = await getPrescriptions(visitId);
+      expect(listed.statusCode).toBe(200);
+      expect((listed.json() as { prescriptions: unknown[] }).prescriptions).toEqual([body]);
+
+      // The row itself: a route that answered 201 without writing would pass every
+      // assertion above and lose the record.
+      const [row] = await sql`
+        select visit_id, patient_id, dentist_id, medication, dosage, route, frequency, duration_days, instructions
+        from prescriptions where id = ${body.id}
+      `;
+      expect(row).toMatchObject({
+        visit_id: visitId,
+        patient_id: patient,
+        dentist_id: dentist,
+        medication: 'Ibuprofen',
+        dosage: '400 mg',
+        route: 'ORAL',
+        frequency: 'Every 8 hours as needed',
+        duration_days: 5,
+        instructions: 'Take after meals.',
+      });
+    });
+
+    it('drops a blank instruction to null, and lists a course with none', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const filed = await filePrescription(visitId, course({ instructions: '   ' }));
+
+      expect(filed.statusCode).toBe(201);
+      // "No instruction" is a fact, and an empty string would be a field typed and
+      // then forgotten — the same shape the teeth and notes dropped to null.
+      expect((filed.json() as { instructions: null }).instructions).toBeNull();
+    });
+
+    it('lists the course in the order it was handed over', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      // The earlier prescription is written straight into the table because this
+      // suite's clock is fixed: two courses filed through the API would carry the
+      // same `issued_at`, and the list would then be the id tiebreak's — stable, but
+      // not what "handed over first" claims to be.
+      await sql`
+        insert into prescriptions
+          (id, visit_id, patient_id, dentist_id, medication, dosage, route, frequency, duration_days, issued_at)
+        values (
+          '11111111-9999-4888-8999-000000000043', ${visitId}, ${patient}, ${dentist},
+          'Amoxicillin', '500 mg', 'ORAL', 'Every 12 hours', 7, '2026-04-16T08:00:00.000Z'
+        )
+      `;
+      const filed = await filePrescription(visitId, course({ medication: 'Ibuprofen' }));
+      expect(filed.statusCode).toBe(201);
+
+      const listed = await getPrescriptions(visitId);
+
+      expect(listed.statusCode).toBe(200);
+      const medications = (
+        listed.json() as { prescriptions: { medication: string }[] }
+      ).prescriptions.map((prescription) => prescription.medication);
+      expect(medications).toEqual(['Amoxicillin', 'Ibuprofen']);
+    });
+
+    it('refuses a course that says nothing and writes nothing', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const refused = await filePrescription(visitId, course({ medication: '   ' }));
+
+      expect(refused.statusCode).toBe(422);
+      expect(refused.json()).toMatchObject({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'The prescription could not be written',
+        },
+      });
+
+      const [count] = await sql`select count(*)::int as total from prescriptions`;
+      expect((count as { total: number }).total).toBe(0);
+    });
+
+    it('refuses a route the product does not know and writes nothing', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const refused = await filePrescription(visitId, course({ route: 'SUBLINGUAL' }));
+
+      expect(refused.statusCode).toBe(422);
+      expect(refused.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+
+      const [count] = await sql`select count(*)::int as total from prescriptions`;
+      expect((count as { total: number }).total).toBe(0);
+    });
+
+    it('refuses a course that is not whole days, and a year-plus course', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      for (const durationDays of [0, 1.5, 366]) {
+        const refused = await filePrescription(visitId, course({ durationDays }));
+        expect(refused.statusCode).toBe(422);
+        expect(refused.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+      }
+
+      const [count] = await sql`select count(*)::int as total from prescriptions`;
+      expect((count as { total: number }).total).toBe(0);
+    });
+
+    it('answers 404 for a visit another clinic holds, rather than an empty list', async () => {
+      const foreign = await seedVisit({
+        startedAt: `${day}T09:00:00.000Z`,
+        clinic: otherClinicId,
+      });
+      const ours = await seedVisit({ startedAt: `${day}T10:00:00.000Z` });
+
+      const readForeign = await getPrescriptions(foreign);
+
+      // `prescriptions` has no clinic column, so a scoped query alone would answer `[]`
+      // here — an empty list reading as "nothing was prescribed". The visit is the
+      // subject, and the subject is not in this clinic (ADR 0014).
+      expect(readForeign.statusCode).toBe(404);
+      expect(readForeign.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+      expect((await filePrescription(foreign, course())).statusCode).toBe(404);
+
+      // And the same visit asked about under the other clinic's header is a different
+      // request: our visit is theirs to read, ours is not theirs to write.
+      expect((await getPrescriptions(ours, otherClinicId)).statusCode).toBe(404);
+
+      // Nothing was written by either refusal.
+      const [count] = await sql`select count(*)::int as total from prescriptions`;
+      expect((count as { total: number }).total).toBe(0);
+    });
+
+    it('answers 404 for a visit id that is nowhere, in the same shape', async () => {
+      const response = await getPrescriptions(missingId);
+
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+    });
+
+    it('answers 422 for a path id that is not a uuid, on both verbs', async () => {
+      for (const method of ['GET', 'POST'] as const) {
+        const response = await app.inject({
+          method,
+          url: '/api/v1/visits/not-a-uuid/prescriptions',
+          headers: { 'x-clinic-id': clinicId },
+          ...(method === 'POST' ? { payload: course() } : {}),
         });
 
         expect(response.statusCode).toBe(422);
