@@ -17,7 +17,7 @@
  *    round trip, which is the part a component test stubs out.
  */
 
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/frozen-clock.js';
 
 import type { Page } from '@playwright/test';
 

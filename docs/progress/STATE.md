@@ -106,25 +106,30 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 | `pnpm run test:integration` | not run — no API, domain, validation or schema file changed                  |
 | `pnpm run build`            | 5/5 tasks pass; `routeTree.gen.ts` regenerated with `/visits/$visitId`       |
 | `pnpm run guard:boundaries` | OK                                                                           |
-| `pnpm run test:e2e`         | 76 passed, **14 failed — pre-existing date drift, not this session's** below |
+| `pnpm run test:e2e`         | 90/90 pass — after the harness-clock fix described below                     |
 
-**The 14 e2e failures are fixtures pinned to a day that has moved, and they reproduce on
-clean HEAD `a0d9361`.** The e2e layer sets its agenda and booking fixtures to Monday
-2026-10-05 (`agendaEntries`, `bookingFixtures`' `TEN_AM_LIMA`), but the agenda opens on
-_today_; a failing spec's own error context reads "October 7, 2026" over an empty grid.
-Every failure sits in `agenda.spec.ts`, `agenda-filters.spec.ts` or `booking.spec.ts`
-and is the same fact twice over — the events are two days behind the page, and the
-clicked 10:00 lane is an instant the fixture's expected value does not share. Verified
-as pre-existing with `git stash -u` and the same command: 14 failed / 25 passed, the
-identical set, on the clean tree. The visit workspace's 5 new specs pass, and so do the
-other 76.
+**The 14 failures this session's first full run showed were date drift in the harness,
+and they were proved not ours before anything was changed.** The e2e layer's fixtures
+are captures of Monday 2026-10-05 (`agendaEntries`, `bookingFixtures`' `TEN_AM_LIMA`),
+but the agenda opens on _today_; a failing spec's own error context read "October 7,
+2026" over an empty grid, and every failure sat in `agenda`, `agenda-filters` or
+`booking` — the events two days behind the page, the clicked 10:00 lane an instant the
+fixture's expected value did not share. `git stash -u` on clean `a0d9361`, same
+command: the identical 14 failed / 25 passed. The visit workspace's 5 new specs passed
+then, and so did the other 76.
 
-The fix is not one line and it is not this session's: either Playwright's clock is
-frozen at the fixtures' day (which changes what `Date` means in every spec, debounces
-and query staleness included) or the fixtures compute their dates from today (which
-changes every hard-coded instant, including the booking spec's claim about which lane
-was clicked). **OPEN QUESTION** for the next session — neither choice should be made
-from inside a different milestone.
+**The fix freezes the page's clock rather than unfreezing the fixtures.**
+`e2e/web/fixtures/frozen-clock.ts` exports the suite's `test`, whose `page` fixture
+calls `page.clock.setFixedTime('2026-10-05T13:00:00.000Z')` before the first
+navigation — Monday 08:00 in the clinic, the day every fixture describes and early
+enough that the 10:00 lane the booking specs click is still ahead of it, and the same
+wall-clock moment in every zone a run can land in. All ten spec files import
+`test`/`expect` from it instead of `@playwright/test`, and that import is the entire
+mechanism. Only `Date` is fixed — timers, debounces and query retries are untouched —
+so what changes is what the page believes today is. The alternative, computing every
+fixture instant from `new Date()`, would make the layer drift with the calendar and
+assert nothing about itself; the fixtures were frozen captures on purpose. Result:
+**90/90 e2e.**
 
 **What this session's work is verified by.** 20 new unit/component tests across three
 files: the workspace itself (9 — header, status chip, the buttons derived from the
@@ -463,10 +468,9 @@ by committed e2e specs. Remaining:
 3. [x] Extend the e2e layer when Milestone 5 lands: appointment lifecycle, visit
        workspace, agenda views. Appointment lifecycle and agenda views came with
        sessions 13–22's specs (`agenda`, `agenda-filters`, `booking`); the visit
-       workspace's 5 specs came in session 28. Caveat: 14 of the agenda/booking
-       specs fail today for a **pre-existing** reason — their fixtures are pinned to
-       2026-10-05 (see the verification log), so this item is done and the suite is
-       not green.
+       workspace's 5 specs came in session 28, which also froze the suite's clock
+       (`fixtures/frozen-clock.ts`) after 14 agenda/booking specs drifted off the
+       fixtures' day. The suite is green: 90/90.
 
 **Milestone 4 — PATIENTS.** Functionally complete on both sides: searchable
 paginated list, global search, profile with allergies / next appointment / visits /
@@ -1497,14 +1501,18 @@ file renders it and does nothing else.
   with memory history; and the mock compares `url.pathname` to `/api/v1/...`, never to
   the origin-prefixed `BASE_URL`, which is why the first run failed for reasons that
   had nothing to do with the workspace.
-- **The e2e layer's date drift was found here and is not this session's.** Fourteen
-  specs in `agenda`, `agenda-filters` and `booking` fail because their fixtures are
-  pinned to 2026-10-05 while the grid opens on today (see the verification log);
-  reproduced on clean `a0d9361` with `git stash -u`, identical set.
+- **The e2e layer's date drift was found here and fixed here.** Fourteen specs in
+  `agenda`, `agenda-filters` and `booking` failed because their fixtures are pinned to
+  2026-10-05 while the grid opens on today — a failing error context read "October 7,
+  2026" over an empty grid — and the same fourteen reproduced on clean `a0d9361` with
+  `git stash -u` before anything was touched. Fixed by freezing the page's clock at
+  the fixtures' day (`e2e/web/fixtures/frozen-clock.ts`, which every spec now imports
+  its `test` from) rather than making fixtures chase the calendar. 90/90.
 
 **Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
 warning) · format · build 5/5 · 593 unit/component (20 new, three files under
 `features/visits`) · 201 integration not run (no API, domain or schema file changed) ·
-e2e: 76 pass including 5 new visit-workspace specs, 14 pre-existing failures reproduced
-on the clean tree · Playwright chromium reinstalled (`pnpm exec playwright install
-chromium`) after it had been cleared from the machine's cache.
+e2e: **90/90** — 5 new visit-workspace specs, plus the harness-clock fix that cleared
+the 14 date-drift failures · Playwright chromium reinstalled
+(`pnpm exec playwright install chromium`) after it had been cleared from the machine's
+cache.

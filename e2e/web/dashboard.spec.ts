@@ -17,7 +17,7 @@
  * window in the browser to assert it would test the spec, not the app.
  */
 
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/frozen-clock.js';
 import type { Locator, Page } from '@playwright/test';
 
 import {

@@ -1809,6 +1809,9 @@ _from_ the visit context".
   `VISIT_ID` (the open visit a spec completes), `COMPLETED_VISIT_ID` (the row the
   profile's own card reports, so the link cannot land on a contradiction), `openVisit`,
   `completedVisit`, `visitWorkspaceFixtures(overrides)`.
+- e2e harness: `web/fixtures/frozen-clock.ts` freezes the page's clock at the
+  fixtures' day, and all ten spec files now import `test`/`expect` from it (the drift
+  this fixed is defect 3 below).
 
 **Decisions** (written up under "Decisions from session 28" in `STATE.md`)
 
@@ -1829,13 +1832,17 @@ _from_ the visit context".
    will need.
 2. The same tests then failed on the mock, not on the app: the fixtures are keyed by
    `url.pathname`, and the code passed the origin-prefixed `BASE_URL`.
-3. **The e2e suite has 14 pre-existing failures, and they are date drift.**
+3. **The e2e suite had 14 failures, and they were date drift in the harness.**
    `agendaEntries` and `bookingFixtures` are pinned to Monday 2026-10-05 while the grid
-   opens on today — a failing spec's own error context reads "October 7, 2026" over an
-   empty grid. Verified not ours: `git stash -u` on clean `a0d9361`, same command,
-   identical 14 failed / 25 passed. The fix is a real choice (freeze Playwright's
-   clock at the fixtures' day vs. compute fixture dates from today, both changing what
-   every other spec means) and is logged as an OPEN QUESTION rather than decided here.
+   opens on today — a failing spec's own error context read "October 7, 2026" over an
+   empty grid. Proven not ours before touching anything: `git stash -u` on clean
+   `a0d9361`, same command, identical 14 failed / 25 passed. **Fixed** by freezing the
+   page's clock rather than chasing the calendar with the fixtures:
+   `fixtures/frozen-clock.ts` exports the suite's `test`, whose `page` fixture calls
+   `page.clock.setFixedTime('2026-10-05T13:00:00.000Z')` (Monday 08:00 in the clinic,
+   before the first navigation), and all ten spec files import `test`/`expect` from it.
+   Only `Date` is fixed — timers, debounces and retries untouched — so the fixtures
+   stay the frozen captures they were written to be. 90/90 after the change.
 
 **Verification**
 
@@ -1846,7 +1853,8 @@ pnpm run format           clean (prettier also reflowed two wrapped lines in AGE
 pnpm run build            5/5 successful (routeTree.gen.ts regenerated with /visits/$visitId)
 pnpm run test             12/12 tasks — 593 tests, 20 new under features/visits
 pnpm run test:integration not run — no API, domain, validation or schema file changed
-pnpm run test:e2e         76 passed, 14 failed (pre-existing date drift, reproduced on clean HEAD)
+pnpm run test:e2e         90 passed, 0 failed (after the frozen-clock fix; before it,
+                          76 passed / 14 failed, reproduced on clean HEAD)
 ```
 
 Playwright's browsers had been cleared from `~/.cache/ms-playwright`; reinstalled with

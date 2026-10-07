@@ -12,7 +12,7 @@
  * pages rather than errors, so nothing short of rendering the thing caught them.
  */
 
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/frozen-clock.js';
 
 import {
   ANA_ID,

@@ -29,7 +29,7 @@
  * that passes by coincidence on a machine set to UTC.
  */
 
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/frozen-clock.js';
 
 import {
   agendaEntries,

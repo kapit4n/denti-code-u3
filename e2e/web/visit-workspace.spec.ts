@@ -27,7 +27,7 @@
  * whatever the domain said reaches the screen.
  */
 
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/frozen-clock.js';
 
 import {
   ANA_ID,

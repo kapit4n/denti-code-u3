@@ -19,7 +19,7 @@
  *    input really does submit `''` and is really accepted.
  */
 
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/frozen-clock.js';
 
 import type { Page } from '@playwright/test';
 

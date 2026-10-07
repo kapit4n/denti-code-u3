@@ -21,7 +21,7 @@
  * "painted" and "painted with a style attribute that jsdom would have refused".
  */
 
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/frozen-clock.js';
 
 import {
   allAgendaFixtures,
