@@ -1767,3 +1767,14 @@ pnpm run test:e2e         not re-run — no web/app/ui file changed
 small; revisit when search performance means anything). The PostgreSQL integration
 suites are untouched and still opt-in. `docs/decisions/0025`, `STATE.md` updated with
 this log.
+
+**Environment enablement after the session (commit `53930f7`).** `dev:desktop` was
+dead on this machine: tauri could not find `cargo` (no Rust toolchain existed) and
+pnpm blocked esbuild's postinstall. Fixed — rustup stable 1.99.0 to `~/.cargo`
+(PATH appended to `~/.bashrc`), Tauri system deps via apt (`build-essential
+libwebkit2gtk-4.1-dev libgtk-3-dev libssl-dev libayatana-appindicator3-dev
+librsvg2-dev`), and `esbuild` added to `onlyBuiltDependencies` in
+`pnpm-workspace.yaml`. Re-run of `pnpm run dev:desktop`: 422 crates compiled in
+~3 min (tauri 2.12.1), `target/debug/denti-code-u3-desktop` launched on
+`DISPLAY=:0`, no warnings or errors in the log. `AGENTS.md` environment notes
+updated to match.

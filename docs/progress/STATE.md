@@ -1411,6 +1411,14 @@ isReachable, close }`, and `openDatabaseConnection` hands a `sqlite:`/`file:`
   `DATABASE_URL=sqlite:./data/denti-code-u3.db` (one `db:migrate` + `db:seed`
   to create it); the `postgres://` line remains as the way back to the second
   engine, and the containerized instance is untouched.
+- **Desktop dev was unblocked on this machine.** `pnpm run dev:desktop` failed
+  because no Rust toolchain existed (`cargo` not found by tauri) and esbuild's
+  postinstall was pnpm-blocked. Fixed: rustup stable 1.99.0 installed to
+  `~/.cargo` (PATH appended to `~/.bashrc`), Tauri system deps via apt
+  (`build-essential libwebkit2gtk-4.1-dev libgtk-3-dev libssl-dev
+  libayatana-appindicator3-dev librsvg2-dev`), and `esbuild` added to
+  `onlyBuiltDependencies`. `pnpm run dev:desktop` now compiles (422 crates,
+  ~3 min, tauri 2.12.1) and launches the window on `DISPLAY=:0`.
 
 **Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
 warning) · format · build 5/5 · api: 7 passed / 13 skipped (PG opt-in) / 70 tests,
