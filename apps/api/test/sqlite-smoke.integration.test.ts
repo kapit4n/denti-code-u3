@@ -21,6 +21,10 @@
  *  - **A note scopes through its visit.** `clinical_notes` has no clinic column, so
  *    both verbs resolve the visit in this clinic first — the join that does it is
  *    written twice, once per engine (ADR 0025), and this is the second one.
+ *  - **The catalogue and a treatment record scope through the clinic.** The catalogue
+ *    is a `clinic_id` the row carries; a record is a `visit_id` it does not, so the
+ *    record's read scopes through the visit and its write through the treatment — the
+ *    second implementation of each, on the engine that must not disagree.
  *  - **The dashboard reads real rows** on the SQLite engine — revenue, capacity,
  *    calendar day, recent patients.
  */
@@ -46,6 +50,9 @@ const dentistId = 'a0a0a0a0-0000-4000-8000-000000000004';
 const otherDentistId = 'a0a0a0a0-0000-4000-8000-000000000005';
 const chairId = 'a0a0a0a0-0000-4000-8000-000000000006';
 const roomId = 'a0a0a0a0-0000-4000-8000-000000000007';
+const treatmentId = 'a0a0a0a0-0000-4000-8000-000000000008';
+/** Another clinic's treatment, so the record write has something to refuse. */
+const foreignTreatmentId = 'a0a0a0a0-0000-4000-8000-000000000009';
 /** Another clinic's patient and visit, so the notes read has something to refuse. */
 const foreignPatientId = 'a0a0a0a0-0000-4000-8000-000000000011';
 const foreignVisitId = 'a0a0a0a0-0000-4000-8000-000000000012';
@@ -258,6 +265,56 @@ describe('API on SQLite', () => {
     expect(refusedWrite.json().error.code).toBe('NOT_FOUND');
   });
 
+  it('lists the catalogue and records a treatment through it, scoping both through the clinic', async () => {
+    const catalogue = await app.inject({ method: 'GET', url: '/api/v1/treatments' });
+
+    expect(catalogue.statusCode).toBe(200);
+    const items = catalogue.json().items as { id: string; name: string; isActive: boolean }[];
+    // The catalogue is scoped by the tenant the row carries — a second implementation
+    // of that `clinic_id = ?` select, on the engine that must not disagree (ADR 0025).
+    expect(items.map((item) => item.id)).toContain(treatmentId);
+    expect(items).not.toContain(foreignTreatmentId);
+
+    const recorded = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/treatments`,
+      payload: { treatmentId, tooth: '36', notes: 'Follow-up done.' },
+    });
+
+    expect(recorded.statusCode).toBe(201);
+    expect(recorded.json()).toMatchObject({
+      visitId,
+      treatmentId,
+      tooth: '36',
+      notes: 'Follow-up done.',
+    });
+
+    const ours = await app.inject({ method: 'GET', url: `/api/v1/visits/${visitId}/treatments` });
+    expect(ours.statusCode).toBe(200);
+    expect(ours.json().treatments).toHaveLength(1);
+
+    // `visit_treatment_executions` has no clinic column, so the read scopes by joining
+    // the visit — the same story the notes tell, and the same 404 for another clinic's
+    // visit (ADR 0014).
+    const foreignRead = await app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${foreignVisitId}/treatments`,
+    });
+    expect(foreignRead.statusCode).toBe(404);
+    expect(foreignRead.json().error.code).toBe('NOT_FOUND');
+
+    // The treatment is scoped too, by the second read the write makes: a treatment
+    // this clinic does not offer is `INVALID_INPUT`, folded to 422 by the wire, and
+    // nothing is written.
+    const refused = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/treatments`,
+      payload: { treatmentId: foreignTreatmentId },
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('summarises the day on the dashboard, occupancy included', async () => {
     // Two disjoint 30-minute bookings from a capacity of 08:00–17:00 × one
     // dentist: 60 of 540 minutes, which rounds to 11% occupancy.
@@ -321,6 +378,17 @@ async function seed(db: importedDb) {
     .insert(sqliteSchema.dentists)
     .values({ id: dentistId, clinicId, fullName: 'Dr Book', isActive: true });
 
+  // The catalogue a visit record names; one row per clinic, so the write has both a
+  // "this clinic offers it" and a "this clinic does not" fixture to judge against.
+  await db.insert(sqliteSchema.treatments).values({
+    id: treatmentId,
+    clinicId,
+    code: 'COMPO',
+    name: 'Composite restoration',
+    defaultPriceMinor: 15000,
+    isActive: true,
+  });
+
   // Another clinic's dentist: the booking rule must refuse it as a bad reference.
   await db.insert(sqliteSchema.clinics).values({
     id: otherClinicId,
@@ -333,6 +401,14 @@ async function seed(db: importedDb) {
     id: otherDentistId,
     clinicId: otherClinicId,
     fullName: 'Dr Foreign',
+    isActive: true,
+  });
+  await db.insert(sqliteSchema.treatments).values({
+    id: foreignTreatmentId,
+    clinicId: otherClinicId,
+    code: 'RCT',
+    name: 'Root canal therapy',
+    defaultPriceMinor: 60000,
     isActive: true,
   });
 

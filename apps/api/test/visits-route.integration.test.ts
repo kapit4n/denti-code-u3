@@ -43,6 +43,8 @@ import { DrizzleVisitRepository } from '../src/infrastructure/persistence/reposi
 import { DrizzleClinicalNoteRepository } from '../src/infrastructure/persistence/repositories/clinical-note-repository.js';
 import { DrizzleChairRepository } from '../src/infrastructure/persistence/repositories/chair-repository.js';
 import { DrizzleDentistRepository } from '../src/infrastructure/persistence/repositories/dentist-repository.js';
+import { DrizzleTreatmentRecordRepository } from '../src/infrastructure/persistence/repositories/treatment-record-repository.js';
+import { DrizzleTreatmentRepository } from '../src/infrastructure/persistence/repositories/treatment-repository.js';
 import { DrizzleUnitOfWork } from '../src/infrastructure/persistence/postgres/unit-of-work.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
 
@@ -85,6 +87,9 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
   const chair = '7d7d1111-1111-4111-8111-111111111111';
   const otherChair = '7d7d2222-2222-4222-8222-222222222222';
   const missingId = '7e7e9999-9999-4999-8999-999999999999';
+
+  const treatment = '7f7f1111-1111-4111-8111-111111111111';
+  const foreignTreatment = '7f7f2222-2222-4222-8222-222222222222';
 
   const day = '2026-04-16';
   const NOW = `${day}T14:30:00.000Z`;
@@ -230,6 +235,21 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       payload: payload as object,
     });
 
+  const getTreatments = (visitId: string, clinic = clinicId) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${visitId}/treatments`,
+      headers: { 'x-clinic-id': clinic },
+    });
+
+  const recordTreatment = (visitId: string, payload: unknown, clinic = clinicId) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/treatments`,
+      headers: { 'x-clinic-id': clinic },
+      payload: payload as object,
+    });
+
   /**
    * The row as stored, with the timestamp read as an instant.
    *
@@ -300,6 +320,11 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       // the use case has already resolved the visit in this clinic by the time it
       // runs (`clinical_notes` has no clinic column of its own).
       clinicalNotes: new DrizzleClinicalNoteRepository(db),
+      // What was done on a visit, and the catalogue it names. The record endpoint is
+      // exercised by the treatment tests below; each write is a read-then-write pair
+      // the way the notes' is (ADR 0014).
+      treatmentRecords: new DrizzleTreatmentRecordRepository(db),
+      treatments: new DrizzleTreatmentRepository(db),
       // The two resources a walk-in names, for the same "who may be named" rule the
       // booking uses. The appointment door reads its names from the booking and never
       // calls these (ADR 0024).
@@ -349,6 +374,15 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
     await sql`
       update chairs set is_active = false where id = ${inactiveChair}
     `;
+    // The catalogue the treatment records name. One row per clinic, so "a treatment
+    // this clinic does not offer" is a real fixture rather than a fabricated id.
+    await sql`
+      insert into treatments (id, clinic_id, code, name, default_price_minor)
+      values
+        (${treatment}, ${clinicId}, 'COMPO', 'Composite restoration', 15000),
+        (${foreignTreatment}, ${otherClinicId}, 'RCT', 'Root canal therapy', 60000)
+      on conflict (id) do nothing
+    `;
   });
 
   afterAll(async () => {
@@ -364,6 +398,7 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
     `;
     await sql`delete from dentists where id in (${dentist}, ${otherDentist}, ${inactiveDentist})`;
     await sql`delete from chairs where id in (${chair}, ${otherChair}, ${inactiveChair})`;
+    await sql`delete from treatments where id in (${treatment}, ${foreignTreatment})`;
     await sql`delete from clinics where id in (${clinicId}, ${otherClinicId})`;
     await sql.end({ timeout: 5 });
   });
@@ -1044,6 +1079,173 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
 
         // Before the guard existed this was a `22P02` reported as a 500 — which is how
         // the write side's helper came to default its clinic to an empty string.
+        expect(response.statusCode).toBe(422);
+        expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+      }
+    });
+  });
+
+  describe('GET and POST /api/v1/visits/:visitId/treatments', () => {
+    it('records a treatment and lists it back, with the clock’s time', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const recorded = await recordTreatment(visitId, {
+        // Trimmed by the boundary schema, so the row is not the box's edges.
+        treatmentId: treatment,
+        tooth: ' 16 ',
+        notes: '  No complications.  ',
+      });
+
+      expect(recorded.statusCode).toBe(201);
+      const body = recorded.json() as {
+        id: string;
+        visitId: string;
+        treatmentId: string;
+        tooth: string;
+        notes: string;
+        performedAt: string;
+      };
+      expect(body.visitId).toBe(visitId);
+      expect(body.treatmentId).toBe(treatment);
+      expect(body.tooth).toBe('16');
+      expect(body.notes).toBe('No complications.');
+      // The clock, not something the body could have said.
+      expect(new Date(body.performedAt).toISOString()).toBe(NOW);
+
+      const listed = await getTreatments(visitId);
+      expect(listed.statusCode).toBe(200);
+      expect((listed.json() as { treatments: unknown[] }).treatments).toEqual([body]);
+
+      // The row itself: a route that answered 201 without writing would pass every
+      // assertion above and lose the record.
+      const [row] = await sql`
+        select visit_id, treatment_id, tooth, notes from visit_treatment_executions where id = ${body.id}
+      `;
+      expect(row).toMatchObject({
+        visit_id: visitId,
+        treatment_id: treatment,
+        tooth: '16',
+        notes: 'No complications.',
+      });
+    });
+
+    it('drops a blank tooth and blank notes to null, listing what was done with no tooth', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const recorded = await recordTreatment(visitId, {
+        treatmentId: treatment,
+        tooth: '   ',
+        notes: '',
+      });
+
+      expect(recorded.statusCode).toBe(201);
+      const body = recorded.json() as { tooth: string | null; notes: string | null };
+      // "Not on a tooth" and "no notes taken" are facts, and an empty string would be a
+      // field typed and then forgotten.
+      expect(body.tooth).toBeNull();
+      expect(body.notes).toBeNull();
+    });
+
+    it('lists records oldest first, whatever order they were filed in', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      // The earlier record is written straight into the table because this suite's
+      // clock is fixed: two records filed through the API would carry the same
+      // `performed_at`, and the list would then be the id tiebreak's — stable, but not
+      // what "what happened first" claims to be.
+      await sql`
+        insert into visit_treatment_executions (id, visit_id, treatment_id, tooth, performed_at)
+        values ('11111111-9999-4888-8999-000000000042', ${visitId}, ${treatment}, '26', '2026-04-16T09:00:00.000Z')
+      `;
+      const recorded = await recordTreatment(visitId, { treatmentId: treatment, tooth: '36' });
+      expect(recorded.statusCode).toBe(201);
+
+      const listed = await getTreatments(visitId);
+
+      expect(listed.statusCode).toBe(200);
+      const teeth = (listed.json() as { treatments: { tooth: string }[] }).treatments.map(
+        (record) => record.tooth,
+      );
+      expect(teeth).toEqual(['26', '36']);
+    });
+
+    it('refuses a treatment that is not in this clinic’s catalogue, and writes nothing', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      // The row exists — in the *other* clinic. Saying which of those two was wrong
+      // would confirm the id is real somewhere else, so "not offered here" and "no
+      // such treatment" are one answer (ADR 0014).
+      const refused = await recordTreatment(visitId, { treatmentId: foreignTreatment });
+
+      expect(refused.statusCode).toBe(422);
+      expect(refused.json()).toMatchObject({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'That treatment is not in this clinic’s catalogue',
+        },
+      });
+
+      const [count] = await sql`select count(*)::int as total from visit_treatment_executions`;
+      expect((count as { total: number }).total).toBe(0);
+    });
+
+    it('refuses a tooth that is not a real FDI number, with the odontogram’s error', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const refused = await recordTreatment(visitId, { treatmentId: treatment, tooth: '00' });
+
+      expect(refused.statusCode).toBe(422);
+      expect(refused.json()).toMatchObject({
+        error: { code: 'VALIDATION_ERROR', message: '"00" is not a valid FDI tooth number' },
+      });
+
+      const [count] = await sql`select count(*)::int as total from visit_treatment_executions`;
+      expect((count as { total: number }).total).toBe(0);
+    });
+
+    it('answers 404 for a visit another clinic holds, rather than an empty list', async () => {
+      const foreign = await seedVisit({
+        startedAt: `${day}T09:00:00.000Z`,
+        clinic: otherClinicId,
+      });
+      const ours = await seedVisit({ startedAt: `${day}T10:00:00.000Z` });
+
+      const readForeign = await getTreatments(foreign);
+
+      // `visit_treatment_executions` has no clinic column, so a scoped query alone
+      // would answer `[]` here — an empty list reading as "nothing was done". The
+      // visit is the subject, and the subject is not in this clinic (ADR 0014).
+      expect(readForeign.statusCode).toBe(404);
+      expect(readForeign.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+      expect((await recordTreatment(foreign, { treatmentId: foreignTreatment })).statusCode).toBe(
+        404,
+      );
+
+      // And the same visit asked about under the other clinic's header is a different
+      // request: our visit is theirs to read, ours is not theirs to write.
+      expect((await getTreatments(ours, otherClinicId)).statusCode).toBe(404);
+
+      // Nothing was written by either refusal.
+      const [count] = await sql`select count(*)::int as total from visit_treatment_executions`;
+      expect((count as { total: number }).total).toBe(0);
+    });
+
+    it('answers 404 for a visit id that is nowhere, in the same shape', async () => {
+      const response = await getTreatments(missingId);
+
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+    });
+
+    it('answers 422 for a path id that is not a uuid, on both verbs', async () => {
+      for (const method of ['GET', 'POST'] as const) {
+        const response = await app.inject({
+          method,
+          url: '/api/v1/visits/not-a-uuid/treatments',
+          headers: { 'x-clinic-id': clinicId },
+          ...(method === 'POST' ? { payload: { treatmentId: treatment } } : {}),
+        });
+
         expect(response.statusCode).toBe(422);
         expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
       }

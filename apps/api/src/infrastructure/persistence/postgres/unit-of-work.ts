@@ -29,6 +29,8 @@ import { DrizzleClinicalNoteRepository } from '../repositories/clinical-note-rep
 import { DrizzleClinicRepository } from '../repositories/clinic-repository.js';
 import { DrizzleDentistRepository } from '../repositories/dentist-repository.js';
 import { DrizzlePatientRepository } from '../repositories/patient-repository.js';
+import { DrizzleTreatmentRecordRepository } from '../repositories/treatment-record-repository.js';
+import { DrizzleTreatmentRepository } from '../repositories/treatment-repository.js';
 import { DrizzleVisitRepository } from '../repositories/visit-repository.js';
 
 /**
@@ -43,6 +45,8 @@ export function repositoriesFor(db: DentiDatabase): Repositories {
     appointments: new DrizzleAppointmentRepository(db),
     visits: new DrizzleVisitRepository(db),
     clinicalNotes: new DrizzleClinicalNoteRepository(db),
+    treatments: new DrizzleTreatmentRepository(db),
+    treatmentRecords: new DrizzleTreatmentRecordRepository(db),
     clinics: new DrizzleClinicRepository(db),
     dentists: new DrizzleDentistRepository(db),
     chairs: new DrizzleChairRepository(db),

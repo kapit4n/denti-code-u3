@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 29 (clinical notes — the section nav's first new row)
+> Last updated: session 30 (treatment records — the recordings that name the catalogue)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -15,6 +15,19 @@ by an enforced guard, the three write endpoints with the tenant foreign keys tha
 drag/resize/status UI, the bookable-resources endpoints, the rule that an inactive
 clinician or chair cannot be booked (ADR 0020), and a booking dialog reachable from all
 three doors a receptionist starts from.
+
+Session 30 delivered **treatment records** — the third workspace section and the first
+slice that reads and writes a second book beside the visit itself. `recordVisitTreatment`
+and `listTreatmentRecords` sit over two new ports (`treatments` and `treatmentRecords`,
+taking `Repositories` from seven to nine), `GET /api/v1/treatments` names the catalogue,
+`GET`/`POST /api/v1/visits/:visitId/treatments` record what was actually done, and a
+**Treatments** section in the workspace draws a record's name through the live catalogue,
+its tooth and its notes, in the clinic's clock. The record's tenancy comes through the
+visit (a foreign visit is a 404); the treatment it names comes through the catalogue (one
+this clinic does not hold is a 422); both engines share the two repositories, and the seed
+now carries 4 catalogue rows and one booked execution. The write is deliberately not
+linked to the treatment plan (a Milestone 8 concern), written on a closed visit exactly as
+a note can be, and stored with the clinic's clock.
 
 Session 22 delivered the one thing item 5 of the plan below had been waiting for: the
 agenda's filters. `AgendaFilterBar` chooses clinicians and chairs, and the narrowing is
@@ -104,27 +117,27 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 29)
+## Verification log (last run, session 30)
 
-| Command                     | Result                                                               |
-| --------------------------- | -------------------------------------------------------------------- |
-| `pnpm run typecheck`        | 12/12 tasks pass                                                     |
-| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)     |
-| `pnpm run format:check`     | clean                                                                |
-| `pnpm run test`             | 12/12 tasks pass — 622 tests (29 new), 207 integration tests skipped |
-| `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**               |
-| `pnpm run build`            | 5/5 tasks pass                                                       |
-| `pnpm run guard:boundaries` | OK                                                                   |
-| `pnpm run test:e2e`         | 92/92 pass — 2 new notes specs                                       |
+| Command                     | Result                                                                |
+| --------------------------- | --------------------------------------------------------------------- |
+| `pnpm run typecheck`        | 12/12 tasks pass                                                      |
+| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)      |
+| `pnpm run format:check`     | clean                                                                 |
+| `pnpm run test`             | 12/12 tasks pass — 643 tests (21 new), 215+ integration tests skipped |
+| `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                |
+| `pnpm run build`            | 5/5 tasks pass                                                        |
+| `pnpm run guard:boundaries` | OK                                                                    |
+| `pnpm run test:e2e`         | 94/94 pass — 2 new treatments specs                                   |
 
 **The PostgreSQL integration suite could not be executed this session: Docker and every
 PostgreSQL client are absent from this environment** (no `docker`, no `podman`, no
-`psql`, no `/var/run/docker.sock`). The six new route tests in
-`visits-route.integration.test.ts` are written, typecheck and will run wherever
-`TEST_DATABASE_URL` exists; here they report as part of the 207 skipped. What covers
-the same path without a database is the always-on SQLite smoke suite, which gained a
-test that files a note, reads it back through the endpoint and proves both verbs are
-scoped through the visit — and which did run.
+`psql`, no `/var/run/docker.sock`). The new route tests in `visits-route.integration.test.ts`
+(the treatment endpoint suite and their refusals) are written, typecheck and will run
+wherever `TEST_DATABASE_URL` exists; here they report as part of the 215 skipped. What
+covers the same path without a database is the always-on SQLite smoke suite, which gained
+a test that reads the catalogue, records a treatment through the endpoint and reads it
+back — and which did run.
 
 **What session 29's work is verified by.** 29 new passing tests across five files: the
 domain use cases (7 — the subject is read before the write, a foreign visit is a 404
@@ -185,6 +198,61 @@ router — a `<Link>` with no router context renders nothing — and the mock is
 the new suite failed for a reason that had nothing to do with the workspace.
 
 ## Decisions made this session (not yet in ADRs)
+
+### Decisions from session 30 (treatment records)
+
+- **The record is locked to neither the plan nor the status, on purpose.** There is
+  deliberately **no `treatmentPlanItemId`** — linking execution to a planned item is a
+  Milestone 8 concern, and the field was left out rather than scaffolded as a null.
+  There is **no status gate**: a clinician may record a treatment on a closed visit
+  exactly as they write a note, so the completed visit stays a live record. And
+  `isActive` is **not enforced** on the catalogue lookup, because in this clinic rows
+  are hidden by retiring them, and treating an already-submitted treatment as a 422
+  would make history harder to write than to read.
+- **Tenancy is inherited, not restated.** The record references the local `visits` PK,
+  and `treatment_records` carry their own `clinic_id` only because the FK is composite
+  `(visit_id, clinic_id)` — the same pattern as the other visit-scoped tables. The use
+  case reads the visit first and answers 404 for a foreign visit; it reads the treatment
+  second and answers `INVALID_INPUT` ("not part of the current clinic's treatment
+  catalogue") for a foreign or retired treatment. Both repositories translate the
+  foreign-key violation (`23503` / `SQLITE_CONSTRAINT_FOREIGNKEY`) into the same
+  `NOT_FOUND` the visit repositories already use, so a raw statement can never silently
+  write a cross-clinic record.
+- **`Repositories` grew from seven to nine, and every new member is a real
+  implementation.** The policy written beside the set in session 23 worked in both
+  directions: `treatments` and `treatmentRecords` entered the set only once both the
+  PostgreSQL and the SQLite implementations existed, the same rule that once removed
+  three unconstructible repositories.
+- **`TreatmentCatalogueItem` was realigned to what the table says.** The `category`
+  field was dropped (there is no such column), and `code`, `description` and `duration`
+  are nullable, mirroring `treatments`; `code` is a varchar so COMPO-ANT probes and
+  numeric plan-bound codes can coexist. `isActive` stayed. The UI labels a
+  null-or-blank `code` as `id · no code`, keeping the client honest about the shape.
+- **The write is one statement, no transaction, non-optimistic, and invalidates only
+  its own key.** `recordTreatment` takes a single `INSERT`; there is no `UnitOfWork`
+  around it, because the visit and treatment were both just read and the composite FK
+  patrols the boundary. The mutation waits for the server's row (with its server-owned
+  `id` and `performedAt`) and invalidates only `['visits','treatments',visitId]` —
+  never `['visits']`, never the patient's profile key, because a treatment record does
+  not change the visit row or the patient.
+- **The clinic's clock stamps the record, and a blank is a null.** The schema requires
+  `performed_at`; the use case takes it from the `Clock` because only the clinic's zone
+  has the authority to say when a treatment was done (the same `READING_THE_CLINIC_CLOCK`
+  rule the visits already use). Blank-string `tooth` and `notes` are trimmed on the way
+  out and dropped from the POST body; Zod 4 does the same before its own `min(1)`
+  guards.
+- **The client draws a record only through the catalogue.** Names are resolved
+  client-side from `['treatments']` (with a 60-second `staleTime`), never trusted from
+  the record row; a pending catalogue shows `…`, and a code the catalogue has since
+  retired renders as "A treatment no longer in the catalogue" instead of inventing a
+  name. The section's query is mounted only while the section is open — "fetch what you
+  draw" — so not opening the Treatments row issues zero requests, which one e2e asserts.
+- **The refusals keep the form.** `describe-treatment-failure` quotes `ApiClientError`'s
+  message (`VALIDATION_ERROR`/`DOMAIN_RULE_VIOLATION` → the API's sentence, `NOT_FOUND`
+  → "This visit no longer exists in the current clinic.", `NETWORK_ERROR` →
+  "Could not reach the server. The treatment was not recorded."), and the tooth, notes
+  and catalogue choice stay in the controls when the POST is refused — the note panel's
+  rule, applied to a wider form.
 
 ### Decisions from session 29 (clinical notes)
 
@@ -791,9 +859,10 @@ editing. Both sides now go through `PatientRepository`. Remaining:
      restate them wrongly, and the clinical record would then be evidence of something
      that did not happen.
 
-   **Still to do, in order:** treatments, charges and payments. The clinical notes
-   (session 29), the walk-in (session 26), the read side (session 25), closing and
-   reopening (session 24) and the workspace UI (session 28) are done.
+   **Still to do, in order:** charges and payments. The clinical notes (session 29),
+   the treatment records (session 30), the walk-in (session 26), the read side
+   (session 25), closing and reopening (session 24) and the workspace UI (session 28)
+   are done.
 
 **Milestone 6 onward** — the rest of visits, odontogram, treatments, payments,
 inventory, reports, auth: not started.
@@ -1596,6 +1665,21 @@ e2e: **90/90** — 5 new visit-workspace specs, plus the harness-clock fix that 
 the 14 date-drift failures · Playwright chromium reinstalled
 (`pnpm exec playwright install chromium`) after it had been cleared from the machine's
 cache.
+
+Session 30: treatment records — what was actually done, named through the catalogue.
+`recordVisitTreatment` and `listTreatmentRecords` (`visit-treatment-records.ts`) read the
+visit first (404 for a foreign visit) and the treatment second (422 for a foreign or
+retired one), and `TreatmentRecord` is a `TreatmentRecordOutcome` striped with `tooth`,
+`notes` and `performedAt` from the clinic's clock. Two ports, `treatments` and
+`treatmentRecords`, grew `Repositories` from seven to nine once both engines existed.
+The catalogue got `GET /api/v1/treatments`; the workspace's third row got `GET`/`POST
+/api/v1/visits/:visitId/treatments`. `VisitTreatmentsSection` resolves names through a
+60-second-cached catalogue, keeps the whole form when the POST refuses it, and never
+writes optimistically — the row arrives with the server's `id`. The realigned
+`TreatmentCatalogueItem` dropped `category` and made `code`/`description`/`duration`
+nullable, and the seed now carries four treatments plus one recorded execution.
+Two repos per engine, `Repositories` nine, no treatmentPlanItemId (Milestone 8), no
+status gate, no `UnitOfWork`. 21 new tests + 2 e2e; verification green (below).
 
 Session 29: clinical notes — the first row the workspace's section nav gained, and the
 promise session 28's data-driven nav made. `clinical-notes.ts` holds `listClinicalNotes`

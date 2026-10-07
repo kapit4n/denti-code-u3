@@ -688,6 +688,78 @@ export const filedNote = {
 } as const;
 
 /**
+ * The catalogue of procedures this clinic offers, as `GET /api/v1/treatments`
+ * answers for it.
+ *
+ * One item carries a code and one does not, because the picker must be able to draw
+ * both — a fixture where every row had a code would let a client that joined the
+ * code into the label pass against a catalogue that is half-null.
+ */
+export const TREATMENT_CATALOGUE_ID = '11111111-aaaa-4999-8ccc-000000000001';
+export const PROPHYLAXIS_TREATMENT_ID = '11111111-aaaa-4999-8ccc-000000000002';
+
+export const treatmentsCatalogue = {
+  items: [
+    {
+      id: TREATMENT_CATALOGUE_ID,
+      code: 'COMPO-ANT',
+      name: 'Composite restoration — anterior',
+      description: 'Restores a tooth’s shape and function.',
+      defaultDurationMinutes: 45,
+      defaultPriceMinor: 30000,
+      isActive: true,
+    },
+    {
+      id: PROPHYLAXIS_TREATMENT_ID,
+      code: null,
+      name: 'Scaling and prophylaxis',
+      description: null,
+      defaultDurationMinutes: 30,
+      defaultPriceMinor: 0,
+      isActive: true,
+    },
+  ],
+} as const;
+
+/**
+ * What was already done on the open visit, as
+ * `GET /api/v1/visits/:visitId/treatments` answers for it.
+ *
+ * The record carries only the treatment's `id`; the name a spec sees on screen is
+ * resolved against the catalogue, which is exactly the join the workspace performs.
+ * `performedAt` is 13:00Z so a spec can read the clinic's hour (08:00 in Lima) off
+ * the row, the same clock the notes specs read their timestamps from.
+ */
+export const existingVisitTreatment = {
+  id: '11111111-cccc-4ddd-8eee-000000000001',
+  visitId: VISIT_ID,
+  treatmentId: TREATMENT_CATALOGUE_ID,
+  tooth: '16',
+  notes: 'Composite placed on 16, exploring sensitivity.',
+  performedAt: '2026-10-05T13:00:00.000Z',
+} as const;
+
+/**
+ * The row a spec writes, and the row the API answers the POST with.
+ *
+ * Its `id` and `performedAt` are the server's, not the client's: a spec asserting
+ * that the list shows *this* row is asserting that the refetch is what put it on
+ * screen, because nothing in the browser could have produced those two values.
+ */
+export const recordedTreatment = {
+  id: '11111111-cccc-4ddd-8eee-000000000002',
+  visitId: VISIT_ID,
+  treatmentId: PROPHYLAXIS_TREATMENT_ID,
+  tooth: '26',
+  notes: 'Full-mouth cleaning.',
+  performedAt: '2026-10-05T13:35:00.000Z',
+} as const;
+
+export function visitTreatments(treatments: readonly Record<string, unknown>[]): Fixture['body'] {
+  return { treatments };
+}
+
+/**
  * Every endpoint the visit workspace opens, in one call.
  *
  * Separate from `bookingFixtures()` for the usual reason: these are the requests a

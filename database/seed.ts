@@ -19,6 +19,7 @@
  */
 
 import postgres from 'postgres';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import Database from 'better-sqlite3';
 import { drizzle as sqliteDrizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
@@ -51,7 +52,7 @@ const currencyCode = 'USD';
 const now = new Date();
 
 function seedSummary(): string {
-  return `clinic ${DEVELOPMENT_CLINIC_ID}, 3 patients, 2 dentists, 2 rooms, 4 chairs, 4 appointments, 1 visit, 1 plan (2 items), 2 charges, 2 payments`;
+  return `clinic ${DEVELOPMENT_CLINIC_ID}, 3 patients, 2 dentists, 2 rooms, 4 chairs, 4 appointments, 1 visit, 1 plan (2 items), 4 treatments, 1 treatment execution, 2 charges, 2 payments`;
 }
 
 /**
@@ -90,6 +91,7 @@ async function seedPostgres(db: PostgresJsDatabase<typeof pgSchema>): Promise<vo
   await insertRoomsAndChairsPg(db);
   await insertPatientsPg(db);
   await insertAppointmentsPg(db);
+  await insertTreatmentsPg(db);
   await insertVisitsAndPlansPg(db);
   await insertChargesPg(db);
   await insertPaymentsPg(db);
@@ -128,6 +130,7 @@ async function seedSqlite(db: BetterSQLite3Database<typeof sqliteSchema>): Promi
   await insertRoomsAndChairsSqlite(db);
   await insertPatientsSqlite(db);
   await insertAppointmentsSqlite(db);
+  await insertTreatmentsSqlite(db);
   await insertVisitsAndPlansSqlite(db);
   await insertChargesSqlite(db);
   await insertPaymentsSqlite(db);
@@ -313,110 +316,183 @@ async function insertPatientsSqlite(db: BetterSQLite3Database<typeof sqliteSchem
 const at = (dayOffset: number, hour: number, minute: number): Date =>
   new Date(now.getFullYear(), now.getMonth(), now.getDate() + dayOffset, hour, minute, 0, 0);
 
+const APPOINTMENTS = [
+  {
+    id: '11111111-4444-4555-8666-000000000001',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000001',
+    dentistId: '11111111-2222-4333-8444-000000000001',
+    chairId: '11111111-4444-4555-8666-000000000001',
+    roomId: '11111111-3333-4444-8555-000000000001',
+    startsAt: at(0, 9, 0),
+    durationMinutes: 45,
+    status: 'CONFIRMED',
+  },
+  {
+    id: '11111111-4444-4555-8666-000000000002',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000002',
+    dentistId: '11111111-2222-4333-8444-000000000001',
+    // 10:00 follows the 09:00–09:45 above without touching it, so the two can
+    // share `Aula 1` without the room exclusion constraint objecting.
+    chairId: '11111111-4444-4555-8666-000000000002',
+    roomId: '11111111-3333-4444-8555-000000000001',
+    startsAt: at(0, 10, 0),
+    durationMinutes: 60,
+    status: 'SCHEDULED',
+  },
+  {
+    id: '11111111-4444-4555-8666-000000000003',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000001',
+    dentistId: '11111111-2222-4333-8444-000000000002',
+    chairId: '11111111-4444-4555-8666-000000000003',
+    roomId: '11111111-3333-4444-8555-000000000002',
+    startsAt: at(0, 11, 30),
+    durationMinutes: 30,
+    status: 'ARRIVED',
+  },
+  {
+    id: '11111111-4444-4555-8666-000000000004',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000002',
+    dentistId: '11111111-2222-4333-8444-000000000001',
+    chairId: '11111111-4444-4555-8666-000000000001',
+    roomId: '11111111-3333-4444-8555-000000000001',
+    // Three days out, at a normal clinic hour rather than the seed's run time.
+    startsAt: at(3, 9, 0),
+    durationMinutes: 45,
+    status: 'SCHEDULED',
+  },
+] satisfies readonly AppointmentInput[];
+
+type AppointmentInput = typeof pgSchema.appointments.$inferInsert;
+
 async function insertAppointmentsPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
   await db
     .insert(pgSchema.appointments)
+    .values([...APPOINTMENTS])
+    .onConflictDoNothing();
+}
+
+/**
+ * The SQLite twin of `insertAppointmentsPg`, with a pre-filter the PostgreSQL
+ * `ON CONFLICT DO NOTHING` makes unnecessary there.
+ *
+ * SQLite's overlap guard is a `BEFORE INSERT` trigger, which fires *before* the
+ * primary-key conflict is noticed — so a second run of the seed, with the same four
+ * rows already present, would have the guard raise on the very row it is re-inserting
+ * ("appointment overlaps another appointment for this room") and the whole seed would
+ * die. The fix is to not attempt the insert at all for rows the clinic already holds;
+ * `onConflictDoNothing` stays as the belt for a race between the read and the insert.
+ */
+async function insertAppointmentsSqlite(
+  db: BetterSQLite3Database<typeof sqliteSchema>,
+): Promise<void> {
+  const existing = await db
+    .select({ id: sqliteSchema.appointments.id })
+    .from(sqliteSchema.appointments)
+    .where(eq(sqliteSchema.appointments.clinicId, DEVELOPMENT_CLINIC_ID));
+  const existingIds = new Set(existing.map((row) => row.id));
+  const rows = APPOINTMENTS.filter((row) => !existingIds.has(row.id));
+
+  if (rows.length === 0) {
+    return;
+  }
+
+  await db
+    .insert(sqliteSchema.appointments)
+    .values([...rows])
+    .onConflictDoNothing();
+}
+
+// A catalogue the visit workspace and the plan link to. Four rows in fixed order, so
+// the treatment picker has something to draw and the plan's items can name a row.
+async function insertTreatmentsPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
+  await db
+    .insert(pgSchema.treatments)
     .values([
       {
-        id: '11111111-4444-4555-8666-000000000001',
+        id: '11111111-aaaa-4999-8ccc-000000000001',
         clinicId: DEVELOPMENT_CLINIC_ID,
-        patientId: '11111111-3333-4444-8555-000000000001',
-        dentistId: '11111111-2222-4333-8444-000000000001',
-        chairId: '11111111-4444-4555-8666-000000000001',
-        roomId: '11111111-3333-4444-8555-000000000001',
-        startsAt: at(0, 9, 0),
-        durationMinutes: 45,
-        status: 'CONFIRMED',
+        code: 'COMPO-ANTERIOR',
+        name: 'Composite restoration — anterior',
+        description: 'Tooth-coloured filling for incisors and canines.',
+        defaultDurationMinutes: 45,
+        defaultPriceMinor: 12000,
       },
       {
-        id: '11111111-4444-4555-8666-000000000002',
+        id: '11111111-aaaa-4999-8ccc-000000000002',
         clinicId: DEVELOPMENT_CLINIC_ID,
-        patientId: '11111111-3333-4444-8555-000000000002',
-        dentistId: '11111111-2222-4333-8444-000000000001',
-        // 10:00 follows the 09:00–09:45 above without touching it, so the two can
-        // share `Aula 1` without the room exclusion constraint objecting.
-        chairId: '11111111-4444-4555-8666-000000000002',
-        roomId: '11111111-3333-4444-8555-000000000001',
-        startsAt: at(0, 10, 0),
-        durationMinutes: 60,
-        status: 'SCHEDULED',
+        code: 'COMPO-POSTERIOR',
+        name: 'Composite restoration — posterior',
+        description: 'Tooth-coloured filling for premolars and molars.',
+        defaultDurationMinutes: 60,
+        defaultPriceMinor: 15000,
       },
       {
-        id: '11111111-4444-4555-8666-000000000003',
+        id: '11111111-aaaa-4999-8ccc-000000000003',
         clinicId: DEVELOPMENT_CLINIC_ID,
-        patientId: '11111111-3333-4444-8555-000000000001',
-        dentistId: '11111111-2222-4333-8444-000000000002',
-        chairId: '11111111-4444-4555-8666-000000000003',
-        roomId: '11111111-3333-4444-8555-000000000002',
-        startsAt: at(0, 11, 30),
-        durationMinutes: 30,
-        status: 'ARRIVED',
+        code: 'RCT',
+        name: 'Root canal therapy',
+        description: null,
+        defaultDurationMinutes: 75,
+        defaultPriceMinor: 60000,
       },
       {
-        id: '11111111-4444-4555-8666-000000000004',
+        id: '11111111-aaaa-4999-8ccc-000000000004',
         clinicId: DEVELOPMENT_CLINIC_ID,
-        patientId: '11111111-3333-4444-8555-000000000002',
-        dentistId: '11111111-2222-4333-8444-000000000001',
-        chairId: '11111111-4444-4555-8666-000000000001',
-        roomId: '11111111-3333-4444-8555-000000000001',
-        // Three days out, at a normal clinic hour rather than the seed's run time.
-        startsAt: at(3, 9, 0),
-        durationMinutes: 45,
-        status: 'SCHEDULED',
+        code: 'PROPHY',
+        name: 'Scaling and prophylaxis',
+        description: 'Professional cleaning, scaling and polish.',
+        defaultDurationMinutes: 30,
+        defaultPriceMinor: 4500,
       },
     ])
     .onConflictDoNothing();
 }
 
-async function insertAppointmentsSqlite(
+async function insertTreatmentsSqlite(
   db: BetterSQLite3Database<typeof sqliteSchema>,
 ): Promise<void> {
   await db
-    .insert(sqliteSchema.appointments)
+    .insert(sqliteSchema.treatments)
     .values([
       {
-        id: '11111111-4444-4555-8666-000000000001',
+        id: '11111111-aaaa-4999-8ccc-000000000001',
         clinicId: DEVELOPMENT_CLINIC_ID,
-        patientId: '11111111-3333-4444-8555-000000000001',
-        dentistId: '11111111-2222-4333-8444-000000000001',
-        chairId: '11111111-4444-4555-8666-000000000001',
-        roomId: '11111111-3333-4444-8555-000000000001',
-        startsAt: at(0, 9, 0),
-        durationMinutes: 45,
-        status: 'CONFIRMED',
+        code: 'COMPO-ANTERIOR',
+        name: 'Composite restoration — anterior',
+        description: 'Tooth-coloured filling for incisors and canines.',
+        defaultDurationMinutes: 45,
+        defaultPriceMinor: 12000,
       },
       {
-        id: '11111111-4444-4555-8666-000000000002',
+        id: '11111111-aaaa-4999-8ccc-000000000002',
         clinicId: DEVELOPMENT_CLINIC_ID,
-        patientId: '11111111-3333-4444-8555-000000000002',
-        dentistId: '11111111-2222-4333-8444-000000000001',
-        chairId: '11111111-4444-4555-8666-000000000002',
-        roomId: '11111111-3333-4444-8555-000000000001',
-        startsAt: at(0, 10, 0),
-        durationMinutes: 60,
-        status: 'SCHEDULED',
+        code: 'COMPO-POSTERIOR',
+        name: 'Composite restoration — posterior',
+        description: 'Tooth-coloured filling for premolars and molars.',
+        defaultDurationMinutes: 60,
+        defaultPriceMinor: 15000,
       },
       {
-        id: '11111111-4444-4555-8666-000000000003',
+        id: '11111111-aaaa-4999-8ccc-000000000003',
         clinicId: DEVELOPMENT_CLINIC_ID,
-        patientId: '11111111-3333-4444-8555-000000000001',
-        dentistId: '11111111-2222-4333-8444-000000000002',
-        chairId: '11111111-4444-4555-8666-000000000003',
-        roomId: '11111111-3333-4444-8555-000000000002',
-        startsAt: at(0, 11, 30),
-        durationMinutes: 30,
-        status: 'ARRIVED',
+        code: 'RCT',
+        name: 'Root canal therapy',
+        description: null,
+        defaultDurationMinutes: 75,
+        defaultPriceMinor: 60000,
       },
       {
-        id: '11111111-4444-4555-8666-000000000004',
+        id: '11111111-aaaa-4999-8ccc-000000000004',
         clinicId: DEVELOPMENT_CLINIC_ID,
-        patientId: '11111111-3333-4444-8555-000000000002',
-        dentistId: '11111111-2222-4333-8444-000000000001',
-        chairId: '11111111-4444-4555-8666-000000000001',
-        roomId: '11111111-3333-4444-8555-000000000001',
-        startsAt: at(3, 9, 0),
-        durationMinutes: 45,
-        status: 'SCHEDULED',
+        code: 'PROPHY',
+        name: 'Scaling and prophylaxis',
+        description: 'Professional cleaning, scaling and polish.',
+        defaultDurationMinutes: 30,
+        defaultPriceMinor: 4500,
       },
     ])
     .onConflictDoNothing();
@@ -464,6 +540,7 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
       {
         id: '11111111-9999-4aaa-8bbb-000000000001',
         treatmentPlanId: '11111111-8888-4999-8aaa-000000000001',
+        treatmentId: '11111111-aaaa-4999-8ccc-000000000002',
         tooth: '26',
         surfaces: ['MO'],
         quantity: 1,
@@ -472,12 +549,25 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
       {
         id: '11111111-9999-4aaa-8bbb-000000000002',
         treatmentPlanId: '11111111-8888-4999-8aaa-000000000001',
+        treatmentId: '11111111-aaaa-4999-8ccc-000000000002',
         tooth: '36',
         surfaces: ['OC'],
         quantity: 1,
         estimatedPriceMinor: 15000,
       },
     ])
+    .onConflictDoNothing();
+
+  await db
+    .insert(pgSchema.visitTreatmentExecutions)
+    .values({
+      id: '11111111-cccc-4ddd-8eee-000000000001',
+      visitId: '11111111-7777-4888-8999-000000000001',
+      treatmentId: '11111111-aaaa-4999-8ccc-000000000002',
+      tooth: '16',
+      notes: 'No complications.',
+      performedAt: new Date(now.getTime() - 21 * DAY + 20 * 60 * 1000),
+    })
     .onConflictDoNothing();
 }
 
@@ -520,6 +610,7 @@ async function insertVisitsAndPlansSqlite(
       {
         id: '11111111-9999-4aaa-8bbb-000000000001',
         treatmentPlanId: '11111111-8888-4999-8aaa-000000000001',
+        treatmentId: '11111111-aaaa-4999-8ccc-000000000002',
         tooth: '26',
         surfaces: ['MO'],
         quantity: 1,
@@ -528,12 +619,25 @@ async function insertVisitsAndPlansSqlite(
       {
         id: '11111111-9999-4aaa-8bbb-000000000002',
         treatmentPlanId: '11111111-8888-4999-8aaa-000000000001',
+        treatmentId: '11111111-aaaa-4999-8ccc-000000000002',
         tooth: '36',
         surfaces: ['OC'],
         quantity: 1,
         estimatedPriceMinor: 15000,
       },
     ])
+    .onConflictDoNothing();
+
+  await db
+    .insert(sqliteSchema.visitTreatmentExecutions)
+    .values({
+      id: '11111111-cccc-4ddd-8eee-000000000001',
+      visitId: '11111111-7777-4888-8999-000000000001',
+      treatmentId: '11111111-aaaa-4999-8ccc-000000000002',
+      tooth: '16',
+      notes: 'No complications.',
+      performedAt: new Date(now.getTime() - 21 * DAY + 20 * 60 * 1000),
+    })
     .onConflictDoNothing();
 }
 

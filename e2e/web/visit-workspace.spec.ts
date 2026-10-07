@@ -36,11 +36,16 @@ import { expect, test } from './fixtures/frozen-clock.js';
 import {
   ANA_ID,
   COMPLETED_VISIT_ID,
+  PROPHYLAXIS_TREATMENT_ID,
   VISIT_ID,
   anaProfile,
+  existingVisitTreatment,
   filedNote,
   openVisit,
+  recordedTreatment,
+  treatmentsCatalogue,
   visitNote,
+  visitTreatments,
   visitWorkspaceFixtures,
 } from './fixtures/api-responses.js';
 import { watchForConsoleErrors } from './fixtures/console-errors.js';
@@ -74,6 +79,17 @@ function notesReads(
   return recorded.filter(
     (entry) =>
       entry.method === 'GET' && new URL(entry.url).pathname === `/api/v1/visits/${VISIT_ID}/notes`,
+  ).length;
+}
+
+/** How many times this visit's treatments were read — one on open, one after the record. */
+function treatmentsReads(
+  recorded: readonly { readonly method: string; readonly url: string }[],
+): number {
+  return recorded.filter(
+    (entry) =>
+      entry.method === 'GET' &&
+      new URL(entry.url).pathname === `/api/v1/visits/${VISIT_ID}/treatments`,
   ).length;
 }
 
@@ -304,6 +320,118 @@ test.describe('Visit workspace', () => {
     await expect(page.getByRole('alert')).toHaveText(/A note needs a body/);
     await expect(page.getByTestId('note-body')).toHaveValue('Half a thought');
     await expect(page.getByTestId('clinical-note')).toHaveCount(0);
+
+    expect(expectedResourceFailures(errors)).toEqual([]);
+  });
+
+  test('records a treatment and shows it only once the server has stored it', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...visitWorkspaceFixtures({
+        '/api/v1/treatments': { body: treatmentsCatalogue },
+        [`/api/v1/visits/${VISIT_ID}/treatments`]: {
+          body: visitTreatments([existingVisitTreatment]),
+        },
+        [`POST /api/v1/visits/${VISIT_ID}/treatments`]: { body: recordedTreatment, status: 201 },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+
+    // The summary is what the workspace opens on; neither the catalogue nor the
+    // treatments were asked for until somebody asked to see them.
+    await expect(page.getByTestId('visit-workspace')).toBeVisible();
+    expect(treatmentsReads(api.recorded)).toBe(0);
+
+    await page.getByTestId('visit-section-treatments').click();
+
+    // The name on screen is resolved from the catalogue — the record carries an id —
+    // and 13:00Z is 08:00 in Lima: the clinic's clock again, on a row nothing but the
+    // endpoint could have produced.
+    const existing = page
+      .getByTestId('treatment-record')
+      .filter({ hasText: 'Composite placed on 16' });
+    await expect(existing).toContainText('Composite restoration — anterior');
+    await expect(existing).toContainText('Tooth 16');
+    await expect(existing).toContainText('08:00');
+    await expect(existing).not.toContainText('13:00');
+
+    await page.getByTestId('treatment-catalogue').click();
+    await page.getByRole('option', { name: /Scaling and prophylaxis/ }).click();
+    await page.getByTestId('treatment-tooth').fill('26');
+    await page.getByTestId('treatment-notes').fill('Full-mouth cleaning.');
+    await page.getByTestId('record-treatment').click();
+
+    // The server's answer to the POST is installed before the POST can resolve, so
+    // the refetch the mutation triggers reads the records as they now stand. The row
+    // that appears carries the server's own `id` — which is the point: nothing in the
+    // browser could have produced it, so nothing but the refetch could have put it on
+    // screen.
+    await installApi(page, {
+      [`/api/v1/visits/${VISIT_ID}/treatments`]: {
+        body: visitTreatments([existingVisitTreatment, recordedTreatment]),
+      },
+    });
+
+    const filed = page.getByTestId('treatment-record').filter({ hasText: 'Full-mouth cleaning.' });
+    await expect(filed).toContainText('Scaling and prophylaxis');
+    await expect(filed).toContainText('Tooth 26');
+    await expect(filed).toContainText('08:35');
+    await expect(page.getByTestId('treatment-tooth')).toHaveValue('');
+    await expect(page.getByTestId('treatment-notes')).toHaveValue('');
+
+    const post = api.recorded.find(
+      (entry) => entry.method === 'POST' && entry.url.includes(`/visits/${VISIT_ID}/treatments`),
+    );
+    expect(post).toBeTruthy();
+    // Trimmed on the way out, dropped when blank — the writer sends what we store.
+    expect(post?.body).toEqual({
+      treatmentId: PROPHYLAXIS_TREATMENT_ID,
+      tooth: '26',
+      notes: 'Full-mouth cleaning.',
+    });
+
+    // Two reads, not one: the section's own, and the one the invalidation asked for.
+    await expect.poll(() => treatmentsReads(api.recorded)).toBe(2);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('keeps what the clinician chose when the treatment is refused', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    await installApi(page, {
+      ...visitWorkspaceFixtures({
+        '/api/v1/treatments': { body: treatmentsCatalogue },
+        [`/api/v1/visits/${VISIT_ID}/treatments`]: { body: visitTreatments([]) },
+        [`POST /api/v1/visits/${VISIT_ID}/treatments`]: {
+          status: 422,
+          body: {
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: '"99" is not a valid FDI tooth number',
+              requestId: 'e2e',
+            },
+          },
+        },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+    await page.getByTestId('visit-section-treatments').click();
+    await expect(page.getByText('No treatments recorded yet.')).toBeVisible();
+
+    await page.getByTestId('treatment-catalogue').click();
+    await page.getByRole('option', { name: /Scaling and prophylaxis/ }).click();
+    await page.getByTestId('treatment-tooth').fill('99');
+    await page.getByTestId('record-treatment').click();
+
+    // The refusal reaches the screen in the API's own words (the wire code collapses
+    // every refusal, so the message is the only part that says why), and the choice is
+    // still there — a failed request that took the clinician's selection with it would
+    // be the most destructive thing this panel does.
+    await expect(page.getByRole('alert')).toHaveText(/"99" is not a valid FDI tooth number/);
+    await expect(page.getByTestId('treatment-tooth')).toHaveValue('99');
+    await expect(page.getByTestId('treatment-record')).toHaveCount(0);
 
     expect(expectedResourceFailures(errors)).toEqual([]);
   });

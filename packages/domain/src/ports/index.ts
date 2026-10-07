@@ -28,6 +28,7 @@ import type {
   AppointmentWindow,
 } from '../appointment/index.js';
 import type { Visit, VisitStatus, ClinicalNote } from '../visit/index.js';
+import type { TreatmentRecord } from '../treatment/index.js';
 import type {
   EditablePatientDetails,
   Patient,
@@ -64,12 +65,19 @@ export interface UnitOfWork {
  * Session 29 added `clinicalNotes`, the first addition in the other direction: the
  * port arrived with an implementation for both engines (ADR 0025), which is the same
  * policy read forwards — the set holds what can be built, no more and no less.
+ *
+ * Session 30 adds `treatments` and `treatmentRecords` for the same reason: recording
+ * a treatment on a visit needs the clinic's catalogue read and the record written,
+ * and both implementations exist before either name enters this set. The set is nine
+ * now, and every one of its nine is constructible in both engines.
  */
 export interface Repositories {
   readonly patients: PatientRepository;
   readonly appointments: AppointmentRepository & AppointmentWriteRepository;
   readonly visits: VisitRepository;
   readonly clinicalNotes: ClinicalNoteRepository;
+  readonly treatments: TreatmentRepository;
+  readonly treatmentRecords: TreatmentRecordRepository;
   readonly clinics: ClinicRepository;
   readonly dentists: DentistRepository;
   readonly chairs: ChairRepository;
@@ -505,13 +513,29 @@ export interface ClinicRepository {
   getDefault(): Promise<Clinic | undefined>;
 }
 
+/**
+ * One entry in the treatment catalogue, as the table holds it.
+ *
+ * **What this shape lost in session 30.** It used to declare `category`, and no column
+ * supplies one — `treatments` has never had a category column, and the domain's own
+ * `Treatment` type still lists `TREATMENT_CATEGORIES` as an aspiration with nowhere to
+ * store it. A port that describes a table that does not exist is a guess the first
+ * implementer would have to invent a migration for, so `category` is gone until the
+ * catalogue's category column exists (a Milestone 8 question). `code` and
+ * `defaultDurationMinutes` are nullable because the columns are; `description` and
+ * `isActive` are returned because a picker needs to show both without a second query.
+ */
 export interface TreatmentCatalogueItem {
   readonly id: TreatmentId;
-  readonly code: string;
+  /** Unique per clinic, and nullable — a catalogue may have unnamed rows. */
+  readonly code: string | null;
   readonly name: string;
-  readonly category: string;
-  readonly defaultDurationMinutes: number;
+  readonly description: string | null;
+  readonly defaultDurationMinutes: number | null;
+  /** Base price in minor units of the clinic currency. Never a float. */
   readonly defaultPriceMinor: number;
+  /** Returned as a fact; what may still be *performed* is the use case's business. */
+  readonly isActive: boolean;
 }
 
 export interface TreatmentRepository {
@@ -520,6 +544,25 @@ export interface TreatmentRepository {
     clinicId: ClinicId,
     treatmentId: TreatmentId,
   ): Promise<TreatmentCatalogueItem | undefined>;
+}
+
+/**
+ * A treatment performed in a visit — the clinical record, not the catalogue.
+ *
+ * `visit_treatment_executions` has no `clinic_id`, so tenancy comes through `visits`,
+ * exactly as it does for a clinical note: `findForVisit` joins the visit and filters
+ * the clinic in the same statement, because a read has no use case in front of it to
+ * scope with (ADR 0014). Oldest first, the order a clinical record is read in.
+ *
+ * `save` takes no clinic, because the use case has already resolved both the visit and
+ * the treatment. What it cannot know is whether the treatment still exists by the time
+ * the insert lands, so the one refusal it translates is the foreign key — a treatment
+ * deleted between the read and the insert answers the same `INVALID_INPUT` the read
+ * would have, rather than a `23503` reaching the API as a 500.
+ */
+export interface TreatmentRecordRepository {
+  findForVisit(clinicId: ClinicId, visitId: VisitId): Promise<readonly TreatmentRecord[]>;
+  save(record: TreatmentRecord): Promise<void>;
 }
 
 export interface PrescriptionRepository {

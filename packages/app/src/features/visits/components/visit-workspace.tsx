@@ -28,11 +28,12 @@
  * showed "Completed" before the server agreed would be the only screen in the app
  * that could contradict the record.
  *
- * The section nav is data-driven and holds the two sections an endpoint stands
- * behind: `summary` reads the visit, `notes` reads and writes the notes on it. A row
- * is added when — and only when — an endpoint stands behind it, so the nav grows with
- * the milestone (odontogram, treatment, payments) instead of promising panels that
- * render an empty state. Section choice is component state, not a search param, for
+ * The section nav is data-driven and holds the three sections an endpoint stands
+ * behind: `summary` reads the visit, `notes` reads and writes the notes on it,
+ * `treatments` reads and writes what was performed. A row is added when — and only
+ * when — an endpoint stands behind it, so the nav grows with the milestone
+ * (odontogram, files, payments) instead of promising panels that render an empty
+ * state. Section choice is component state, not a search param, for
  * the same reason list state on the patients route is: file-route search params are
  * typed `any` today (technical question T2), and a state the URL could not describe
  * honestly is worse than one held here.
@@ -41,7 +42,7 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
-import type { Visit } from '@denti-code-u3/domain';
+import type { TreatmentRecord, Visit } from '@denti-code-u3/domain';
 
 import {
   Button,
@@ -51,6 +52,11 @@ import {
   CardHeader,
   CardTitle,
   Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   cn,
 } from '@denti-code-u3/ui';
 
@@ -59,9 +65,12 @@ import { useClinicSettings } from '../../clinic/queries/clinic-settings-query.js
 import { usePatient } from '../../patients/hooks/use-patients.js';
 import { useChairs, useDentists } from '../../agenda/queries/bookable-resources-query.js';
 import { describeNoteFailure } from '../describe-note-failure.js';
+import { describeTreatmentFailure } from '../describe-treatment-failure.js';
 import { describeVisitFailure } from '../describe-visit-failure.js';
 import { useCreateClinicalNote } from '../mutations/use-create-clinical-note.js';
+import { useRecordVisitTreatment } from '../mutations/use-record-visit-treatment.js';
 import { useVisitClosure } from '../mutations/use-visit-closure.js';
+import { useTreatments, useVisitTreatments } from '../queries/treatments-query.js';
 import { useVisitNotes } from '../queries/visit-notes-query.js';
 import { useVisit } from '../queries/visit-query.js';
 import {
@@ -78,16 +87,17 @@ export interface VisitWorkspaceProps {
 /**
  * The sections this workspace can draw.
  *
- * Two rows today, each with an endpoint behind it. `odontogram`, `treatment`, `files`
- * and `payments` from the brief each arrive with their own endpoint and their own row
+ * Three rows today, each with an endpoint behind it. `odontogram`, `files` and
+ * `payments` from the brief each arrive with their own endpoint and their own row
  * here — a nav entry with nothing behind it is the "control that looks live and is
  * not" this project refuses to ship.
  */
-type VisitSectionId = 'summary' | 'notes';
+type VisitSectionId = 'summary' | 'notes' | 'treatments';
 
 const VISIT_SECTIONS: readonly { readonly id: VisitSectionId; readonly label: string }[] = [
   { id: 'summary', label: 'Summary' },
   { id: 'notes', label: 'Notes' },
+  { id: 'treatments', label: 'Treatments' },
 ];
 
 export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
@@ -261,6 +271,9 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
           ) : null}
           {section === 'notes' ? (
             <VisitNotesSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
+          ) : null}
+          {section === 'treatments' ? (
+            <VisitTreatmentsSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
           ) : null}
         </div>
       </div>
@@ -465,6 +478,220 @@ function VisitNotesSection({ visitId, clinicTimeZone }: VisitNotesSectionProps) 
       </CardContent>
     </Card>
   );
+}
+
+/**
+ * What was actually done in this visit, and the door to record more.
+ *
+ * Mounted only while the section is open, which is what keeps both requests — the
+ * catalogue and this visit's records — answers to something on screen (see
+ * `treatments-query.ts`). It owns its own hooks rather than taking them as props
+ * for the same reason the notes section does: this is a feature with a picker, a
+ * draft and a mutation of its own.
+ *
+ * The catalogue is fetched here, not at the workspace: the picker is the only
+ * place on this screen that needs it, and a clinic list hanging in a page that
+ * does not draw it is a request waiting to be stale.
+ *
+ * **Nothing is written optimistically, and the form stays filled until the server
+ * answers.** The recorded treatment appears in the list because the invalidation
+ * refetched it — a treatment shown before the API accepted it is a clinical record
+ * the record does not contain. The form clears on success, and only there: a
+ * refused record is still the clinician's selection, and taking it back after a
+ * network error would be the one destructive thing this panel does.
+ *
+ * The list shows the *name* a record's treatment gained here, resolved against
+ * the catalogue rather than trusted to arrive on the record: the ending is
+ * presentation, and a name stored with the record would be a second source that
+ * could drift. A treatment retired from the catalogue still names the records it
+ * performed — the offer and the fact are different things, and the offer does not
+ * get to rewrite what was done.
+ */
+interface VisitTreatmentsSectionProps {
+  readonly visitId: string;
+  /** Absent while the clinic is still being fetched; the times then wait for it. */
+  readonly clinicTimeZone: string | undefined;
+}
+
+function VisitTreatmentsSection({ visitId, clinicTimeZone }: VisitTreatmentsSectionProps) {
+  const catalogueQuery = useTreatments();
+  const recordsQuery = useVisitTreatments(visitId);
+  const record = useRecordVisitTreatment();
+  const [treatmentId, setTreatmentId] = useState('');
+  const [tooth, setTooth] = useState('');
+  const [draft, setDraft] = useState('');
+
+  const failure = describeTreatmentFailure(record.error, 'The treatment could not be recorded.');
+  const ready = treatmentId.length > 0;
+  const catalogue = catalogueQuery.data?.items ?? [];
+
+  return (
+    <Card data-testid="visit-treatments">
+      <CardHeader>
+        <CardTitle>Treatments</CardTitle>
+        <CardDescription>What was performed during this visit</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {recordsQuery.isPending ? (
+          <p className="text-sm text-muted-foreground">Loading the treatments…</p>
+        ) : recordsQuery.error ? (
+          <p className="text-sm text-destructive" role="alert">
+            The treatments could not be loaded.
+          </p>
+        ) : (recordsQuery.data?.treatments.length ?? 0) === 0 ? (
+          <p className="text-sm text-muted-foreground">No treatments recorded yet.</p>
+        ) : (
+          <ul className="space-y-3">
+            {recordsQuery.data?.treatments.map((performed) => (
+              <li
+                key={performed.id}
+                className="rounded-md border p-3 text-sm"
+                data-testid="treatment-record"
+              >
+                <p className="mb-1 text-xs text-muted-foreground">
+                  {clinicTimeZone ? (
+                    formatClinicDayTime(performed.performedAt, clinicTimeZone)
+                  ) : (
+                    <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+                  )}
+                </p>
+                <p className="font-medium">{resolveTreatmentName(performed, catalogueQuery)}</p>
+                {performed.tooth ? <p>Tooth {performed.tooth}</p> : null}
+                {/* Whitespace is preserved because the textarea offers it, the same
+                    rule as a note. */}
+                {performed.notes ? (
+                  <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
+                    {performed.notes}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form
+          className="space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!ready) {
+              return;
+            }
+            record.mutate(
+              { visitId, treatmentId, tooth, notes: draft },
+              {
+                onSuccess: () => {
+                  setTreatmentId('');
+                  setTooth('');
+                  setDraft('');
+                },
+              },
+            );
+          }}
+        >
+          <div className="space-y-1">
+            <Label htmlFor="treatment-catalogue">Treatment</Label>
+            <Select value={treatmentId} onValueChange={setTreatmentId} disabled={record.isPending}>
+              <SelectTrigger id="treatment-catalogue" data-testid="treatment-catalogue">
+                <SelectValue placeholder="Choose a treatment" />
+              </SelectTrigger>
+              <SelectContent>
+                {catalogue.map((treatment) => (
+                  <SelectItem key={treatment.id} value={treatment.id}>
+                    {treatment.code ? `${treatment.code} · ${treatment.name}` : treatment.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {catalogueQuery.isPending ? (
+              <p className="text-xs text-muted-foreground" role="status">
+                Loading the catalogue…
+              </p>
+            ) : null}
+            {!catalogueQuery.isPending && catalogue.length === 0 ? (
+              // Said out loud rather than showing an empty dropdown: a clinic with
+              // no catalogue cannot record anything, and a silent select looks like
+              // a form that has not loaded.
+              <p className="text-xs text-muted-foreground">
+                This clinic has no treatments in its catalogue yet, so nothing can be recorded.
+              </p>
+            ) : null}
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="treatment-tooth">Tooth (optional)</Label>
+            <input
+              id="treatment-tooth"
+              data-testid="treatment-tooth"
+              value={tooth}
+              onChange={(event) => setTooth(event.target.value)}
+              maxLength={2}
+              disabled={record.isPending}
+              className="w-full rounded-md border bg-background p-2 text-sm"
+              placeholder="FDI number, e.g. 16"
+              inputMode="numeric"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="treatment-notes">Notes (optional)</Label>
+            <textarea
+              id="treatment-notes"
+              data-testid="treatment-notes"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              rows={2}
+              disabled={record.isPending}
+              className="w-full rounded-md border bg-background p-2 text-sm"
+              placeholder="What was done"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="submit"
+              data-testid="record-treatment"
+              disabled={record.isPending || !ready}
+            >
+              Record treatment
+            </Button>
+            {record.isPending ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
+                Saving…
+              </p>
+            ) : null}
+          </div>
+        </form>
+
+        {failure ? (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
+            <span>{failure}</span>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * The treatment a record performed, through the live catalogue, or a sentence for
+ * every way it can be unknown.
+ */
+function resolveTreatmentName(
+  performed: TreatmentRecord,
+  query: ReturnType<typeof useTreatments>,
+): string {
+  const match = query.data?.items.find((item) => item.id === performed.treatmentId);
+  if (match) {
+    return match.name;
+  }
+  // Distinguish "still reading the catalogue" from "a treatment the offer no
+  // longer holds": the record is what was done, and the offer may move on.
+  return query.isPending ? '…' : 'A treatment no longer in the catalogue';
 }
 
 /**

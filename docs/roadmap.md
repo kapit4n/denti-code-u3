@@ -215,6 +215,14 @@ same reason — nothing can put an appointment in a room yet.
   - **Not done:** an author (`authorId` is null; there is no user model — ADR 0022's
     question 18) and any edit or delete of a filed note.
 - Treatment records per visit
+  - **Done (session 30).** `recordVisitTreatment` / `listTreatmentRecords` over two new
+    ports (`treatments`, `treatmentRecords`). Scope comes through the visit (a foreign
+    visit is a 404) and the treatment through the catalogue (one this clinic does not
+    hold is a 422); `performedAt` is the clinic's clock, `treatmentPlanItemId` is
+    deliberately absent (a Milestone 8 concern) and recording on a closed visit is
+    allowed, like a note. The catalogue's read side shipped early: `GET /api/v1/
+treatments` names it so the workspace's third row can resolve a record's name
+    client-side. Charges remain the next "per visit" book.
 - Prescriptions per visit
 - Charges per visit
 - Files/attachments (platform capability)
@@ -250,6 +258,11 @@ validity rules, not a drawing hack.
 ## Milestone 8 — TREATMENTS
 
 - Treatment catalogue (codes, categories, durations, prices)
+  - **Read side delivered early (session 30):** `GET /api/v1/treatments` names the
+    catalogue and drives the workspace's Treatments section. Categories remain
+    unmodelled — the `treatments` table has no category column, and
+    `TreatmentCatalogueItem` reflects that honestly (nullable `code`,
+    `description`, `duration`). Prices and the write side land with this milestone.
 - Treatment plans with ordered items
 - Progress tracking (pending treatments)
 - Link plan items → visits → charges

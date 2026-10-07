@@ -1953,3 +1953,99 @@ order the roadmap holds them. A note's `authorId` stays null until there is an
 authenticated user (ADR 0022's question 18). The notes section has no edit or delete:
 an append-only clinical record was the simplest honest rule, and revising history is a
 product decision, not a missing button.
+
+## Session 30 — treatment records (the recordings that name the catalogue)
+
+**Started from:** clean tree at session 29's end. Next roadmap item: "Treatments" — the
+third row of the workspace's section nav, and the first slice that reads and writes a
+second book beside the visit itself.
+
+**Work performed**
+
+- **Types** (`packages/types`): `VisitTreatmentExecutionId` brand; `TreatmentRecord` and
+  `TreatmentRecordOutcome` moved into the shared types; `TreatmentCatalogueItem`
+  **realigned** — `category` dropped (no such column), `code`/`description`/`duration`
+  nullable, `isActive` kept.
+- **Domain** (`packages/domain/src/treatment/visit-treatment-records.ts`, + tests):
+  `listTreatmentRecords` and `recordVisitTreatment`. Both read the visit first (a foreign
+  visit is `NOT_FOUND` for both verbs); the writer reads the treatment second and answers
+  `INVALID_INPUT` ("not part of the current clinic's treatment catalogue") for a foreign
+  or retired one. Optional `tooth` (FDI) and `notes` ≤2000, blank→null, `performedAt`
+  taken from the `Clock` — **no** `treatmentPlanItemId` (Milestone 8), **no** status gate
+  (recording on a closed visit is allowed, like notes), **no** `UnitOfWork` (one `save`).
+- **Ports**: `TreatmentRepository` (`findActiveById` + `listActive`) and
+  `TreatmentRecordRepository` (`findForVisit` + `save`); `Repositories` grew from seven
+  to nine — both entries added only once the two implementations existed, per the
+  session-23 policy.
+- **Validation** (`packages/validation/src/visits/index.ts`, + tests):
+  `recordVisitTreatmentSchema` — `treatmentId` required, tooth 1–2 digits,
+  `notes` trimmed, ≤2000, blanks dropped.
+- **API**: `Drizzle{Treatment,TreatmentRecord}Repository` and the SQLite twins, all
+  translating the foreign-key violation (`23503` / `SQLITE_CONSTRAINT_FOREIGNKEY`) into
+  `NOT_FOUND`; `GET /api/v1/treatments` (`{ items }`); `GET` and
+  `POST /api/v1/visits/:visitId/treatments` (`{ treatments }`), the write failing with
+  422 when the catalogue refuses and 404 when the visit is foreign. Route tests in
+  `visits-route.integration.test.ts` (PostgreSQL, written and typechecked),
+  +1 always-on SQLite smoke test that reads the catalogue, records a treatment through
+  the endpoint and reads it back.
+- **Seed** (`database/seed.ts`): four catalogue rows (COMPO-ANT with a code, three with
+  `code`  null: PROPHYLAXIS, EXTRACTION, LOCAL-ANESTHESIA), one recorded execution row,
+  and a SQLite appointment-overlap-trigger idempotency fix so re-seeding a live SQLite
+  file does not crash.
+- **App** (`packages/app/src/features/visits`):
+  - `queries/treatments-query.ts` — `useTreatments` (`['treatments']`, `staleTime`
+    60_000) and `useVisitTreatments` (`['visits','treatments',visitId]`).
+  - `mutations/use-record-visit-treatment.ts` — non-optimistic; trims `tooth`/`notes`,
+    drops blanks; invalidates **only** the records key.
+  - `describe-treatment-failure.ts` — `NOT_FOUND` → "This visit no longer exists in the
+    current clinic.", `VALIDATION_ERROR`/`DOMAIN_RULE_VIOLATION` → the API's message,
+    `NETWORK_ERROR` → "Could not reach the server. The treatment was not recorded."
+  - `visit-workspace.tsx` → `VisitTreatmentsSection`: a Radix Select fed by the
+    catalogue (labels `code · name`, "no code" honoured), tooth input, notes textarea,
+    failure alert, "No treatments recorded yet." / "This clinic has no treatments in its
+    catalogue yet" states, `resolveTreatmentName` ("…" while pending; "A treatment no
+    longer in the catalogue" when retired). 17 tests in the workspace suite (4 new).
+- **E2E** (`e2e/web`): `treatmentsCatalogue`, `existingVisitTreatment`, `recordedTreatment`
+  and `visitTreatments()` fixtures; two specs — one that records a treatment and shows it
+  only once the server has stored it (asserting the POST body, the 08:00 clinic clock,
+  the cleared form, and that the records were read exactly twice), one that the refusals
+  keep the clinician's choices.
+
+**Decisions** (written up under "Decisions from session 30" in `STATE.md`)
+
+- The record is deliberately **not** linked to the treatment plan (`treatmentPlanItemId`
+  left out, not scaffolded as null), **not** gated on visit status, and `isActive` is not
+  enforced on the catalogue lookup: closed visits stay live clinical records, and history
+  stays readable.
+- Tenancy is inherited: the use case reads the visit first (404) and the treatment second
+  (422); both repositories translate the FK violation into the same `NOT_FOUND` the visit
+  repos use, so a raw statement cannot write a cross-clinic row.
+- The clinic's clock stamps `performedAt`; blanks are trimmed away and never POSTed.
+- The client names records only through the live catalogue and invalidates only the
+  records key; nothing is optimistic, the section fetches only when open ("fetch what you
+  draw").
+
+**Harness lesson (do not repeat).** Playwright's `webServer` serves
+`apps/web/dist` via `pnpm --filter @denti-code-u3/web preview` with
+`reuseExistingServer: true`; after app code changes the bundle must be rebuilt
+(`pnpm run build --filter @denti-code-u3/web`) or e2e runs a stale build. Symptom this
+session: `visit-section-treatments` withheld, and one unrelated-looking "completes a
+visit" failure was the same stale bundle. Rebuilding fixed all three.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean (2 e2e files prettier-fixed; full pnpm run format earlier)
+pnpm run guard:boundaries OK (one pre-existing warning)
+pnpm run build            5/5 successful
+pnpm run test             12/12 tasks — 643 passed (21 new), 215 integration skipped
+pnpm run test:integration not run — no Docker/PostgreSQL in this environment
+pnpm run test:e2e         94 passed, 0 failed (2 new treatment specs)
+```
+
+**NOT done and deliberately.** `treatmentPlanItemId` (Milestone 8), a status gate,
+recording by an authenticated clinician (no user model — ADR 0022), and the treatment
+plan → execution → charges → payments chain that the roadmap holds next. Charges and
+payments are the remaining "Still to do" under the visits milestone.

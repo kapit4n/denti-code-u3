@@ -22,6 +22,7 @@ import { registerAppointmentsRoutes } from './http/routes/appointments.js';
 import { registerClinicRoutes } from './http/routes/clinic.js';
 import { registerDentistsRoutes } from './http/routes/dentists.js';
 import { registerChairsRoutes } from './http/routes/chairs.js';
+import { registerTreatmentsRoutes } from './http/routes/treatments.js';
 import { registerVisitsRoutes } from './http/routes/visits.js';
 import { registerPatientsRoutes } from './http/routes/patients.js';
 import { systemClock } from './infrastructure/clock/system-clock.js';
@@ -90,7 +91,8 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   // book" each have one implementation — the connection builds them once, behind
   // whichever engine answered. Two instances of one repository would be two
   // answers to one question.
-  const { appointments, clinics, dentists, chairs, clinicalNotes } = connection.repositories;
+  const { appointments, clinics, dentists, chairs, clinicalNotes, treatmentRecords, treatments } =
+    connection.repositories;
 
   await registerDashboardRoutes(app, {
     // The dashboard's aggregates answer through the connection's read store;
@@ -127,6 +129,11 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   await registerDentistsRoutes(app, { dentists });
   await registerChairsRoutes(app, { chairs });
 
+  // The catalogue a visit record names. Its own route because it has its own address —
+  // a procedure is not a visit's property, and neither `GET /visits/:id/treatments`
+  // (the visit's *records*) nor a nested `GET /visits/:id/...` would say so.
+  await registerTreatmentsRoutes(app, { treatments });
+
   // The bridge from scheduling to clinical, and the walk-in that has no bridge. It is
   // given a transaction rather than the two repositories, because starting a visit from
   // a booking writes both rows and a route wired with repositories could be handed them
@@ -142,6 +149,10 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     // this clinic before it writes — a read-then-write pair of statements has no
     // atomicity to protect (ADR 0014).
     clinicalNotes,
+    // What was done, and the catalogue that names it — the same read-then-write
+    // shape as the notes, and a plain repository for the same reason (ADR 0014).
+    treatmentRecords,
+    treatments,
     // The two resources a walk-in names, because it has no booking to read them from.
     // The same instances the agenda's filters and the booking rule use: one question,
     // one implementation.

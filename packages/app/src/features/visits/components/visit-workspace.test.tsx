@@ -23,8 +23,8 @@ import {
   RouterProvider,
 } from '@tanstack/react-router';
 import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import userEvent, { type UserEvent } from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiClientProvider } from '../../../query/api-client-provider.js';
 import { VisitWorkspace } from './visit-workspace.js';
@@ -79,6 +79,27 @@ const CHAIRS = {
   ],
 };
 
+const TREATMENTS_ITEMS: Record<string, unknown>[] = [
+  {
+    id: 'treatment-1',
+    code: 'COMPO',
+    name: 'Composite filling',
+    description: null,
+    defaultDurationMinutes: 45,
+    defaultPriceMinor: 25000,
+    isActive: true,
+  },
+  {
+    id: 'treatment-2',
+    code: null,
+    name: 'Scaling and prophylaxis',
+    description: 'Deep cleaning of the teeth and gums.',
+    defaultDurationMinutes: 30,
+    defaultPriceMinor: 40000,
+    isActive: true,
+  },
+];
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -111,6 +132,17 @@ interface HarnessOptions {
    * optimistically" has no moment to be observed at.
    */
   readonly noteGate?: Promise<void>;
+  /** The catalogue the `/treatments` read answers with when the section opens. */
+  readonly catalogue?: Record<string, unknown>[];
+  /** The treatments the API answers with when the treatments section is opened. */
+  readonly visitTreatments?: Record<string, unknown>[];
+  /** When set, recording a treatment is refused with this envelope. */
+  readonly treatmentRefusal?: { readonly status: number; readonly body: unknown };
+  /**
+   * A promise the treatment POST waits on before it answers, so a test can look at
+   * the screen while the request is still in flight.
+   */
+  readonly treatmentGate?: Promise<void>;
 }
 
 function renderWorkspace({
@@ -122,8 +154,12 @@ function renderWorkspace({
   notes = [],
   noteRefusal,
   noteGate,
+  catalogue = TREATMENTS_ITEMS,
+  visitTreatments = [],
+  treatmentRefusal,
+  treatmentGate,
 }: HarnessOptions = {}) {
-  const state = { visit, notes: [...notes] };
+  const state = { visit, notes: [...notes], visitTreatments: [...visitTreatments] };
 
   const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
     const url = new URL(String(input));
@@ -156,6 +192,37 @@ function renderWorkspace({
       // not been told about it yet.
       await noteGate;
       return jsonResponse(note, 201);
+    }
+    // The catalogue is its own read; the visit's treatments are routed by their own
+    // path before the closure branch below, which matches any path under the visit.
+    if (method === 'GET' && path === '/api/v1/treatments') {
+      return jsonResponse({ items: catalogue });
+    }
+    if (path === `/api/v1/visits/${VISIT_ID}/treatments` && method === 'GET') {
+      return jsonResponse({ treatments: state.visitTreatments });
+    }
+    if (path === `/api/v1/visits/${VISIT_ID}/treatments` && method === 'POST') {
+      if (treatmentRefusal) {
+        return jsonResponse(treatmentRefusal.body, treatmentRefusal.status);
+      }
+      const written = JSON.parse(String(init?.body)) as {
+        treatmentId: string;
+        tooth?: string;
+        notes?: string;
+      };
+      const performed = {
+        id: `treatment-${state.visitTreatments.length + 1}`,
+        visitId: VISIT_ID,
+        treatmentId: written.treatmentId,
+        tooth: written.tooth ?? null,
+        notes: written.notes ?? null,
+        performedAt: '2026-10-05T14:35:00.000Z',
+      };
+      state.visitTreatments = [...state.visitTreatments, performed];
+      // The answer waits on the gate: the request has been made, and the screen has
+      // not been told about it yet.
+      await treatmentGate;
+      return jsonResponse(performed, 201);
     }
     if (method === 'GET' && path === `/api/v1/patients/${PATIENT_ID}`) {
       return profile === null
@@ -230,6 +297,47 @@ function renderWorkspace({
 }
 
 describe('VisitWorkspace', () => {
+  /**
+   * Radix sets `body { pointer-events: none }` while one of its dropdowns is open, and
+   * user-event honours it — refusing to click anything afterwards. jsdom never runs the
+   * close animation that takes the attribute back off, so the setting survives the
+   * interaction that caused it and every later click in the test is refused. The check
+   * is turned off for the whole block, the same trade the booking dialog makes.
+   */
+  let user: UserEvent;
+
+  beforeEach(() => {
+    user = userEvent.setup({ pointerEventsCheck: 0 });
+
+    // Radix positions its content with these, and jsdom implements neither. The
+    // workspace's own behaviour does not depend on either, so a stub is honest
+    // here rather than a workaround — the same trade the booking dialog makes.
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    Element.prototype.scrollIntoView = vi.fn();
+    Element.prototype.hasPointerCapture = () => false;
+    Element.prototype.releasePointerCapture = vi.fn();
+    // Radix scrolls the chosen option into view with the window handle; jsdom
+    // reports it as unimplemented for every open, which is noise, not a defect.
+    vi.stubGlobal('scrollTo', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** Picks an option from a Radix select. */
+  async function chooseFrom(trigger: string, optionName: RegExp): Promise<void> {
+    await user.click(screen.getByTestId(trigger));
+    await user.click(await screen.findByRole('option', { name: optionName }));
+  }
+
   it('says who was treated, when, by whom and where — in the clinic’s timezone', async () => {
     renderWorkspace();
 
@@ -262,7 +370,6 @@ describe('VisitWorkspace', () => {
   });
 
   it('completes a visit and redraws from the server’s answer', async () => {
-    const user = userEvent.setup();
     const { fetchImplementation } = renderWorkspace({ visitAfterClosure: COMPLETED_VISIT });
 
     await user.click(await screen.findByTestId('complete-visit'));
@@ -293,7 +400,6 @@ describe('VisitWorkspace', () => {
   });
 
   it('keeps the visit on screen and says why when the server refuses', async () => {
-    const user = userEvent.setup();
     const { fetchImplementation } = renderWorkspace({
       closureRefusal: {
         status: 409,
@@ -369,7 +475,6 @@ describe('VisitWorkspace', () => {
   });
 
   it('lists the notes on the visit, in the clinic’s clock, only once the section is open', async () => {
-    const user = userEvent.setup();
     const { fetchImplementation } = renderWorkspace({
       notes: [
         {
@@ -403,7 +508,6 @@ describe('VisitWorkspace', () => {
   });
 
   it('says there are no notes rather than showing an empty list as an error', async () => {
-    const user = userEvent.setup();
     renderWorkspace({ notes: [] });
 
     await user.click(await screen.findByTestId('visit-section-notes'));
@@ -413,7 +517,6 @@ describe('VisitWorkspace', () => {
   });
 
   it('files a note and shows it only once the server has answered', async () => {
-    const user = userEvent.setup();
     let release: () => void = () => {};
     const noteGate = new Promise<void>((resolve) => {
       release = resolve;
@@ -461,7 +564,6 @@ describe('VisitWorkspace', () => {
   });
 
   it('keeps what the clinician typed and says why when the note is refused', async () => {
-    const user = userEvent.setup();
     const { fetchImplementation } = renderWorkspace({
       noteRefusal: {
         status: 422,
@@ -482,5 +584,139 @@ describe('VisitWorkspace', () => {
     expect(screen.getByTestId('note-body')).toHaveValue('Half a thought');
     expect(fetchImplementation).toHaveBeenCalled();
     expect(screen.queryByTestId('clinical-note')).toBeNull();
+  });
+
+  it('lists the treatments recorded on the visit, in the clinic’s clock, only once the section is open', async () => {
+    const { fetchImplementation } = renderWorkspace({
+      visitTreatments: [
+        {
+          id: 'treatment-record-1',
+          visitId: VISIT_ID,
+          treatmentId: 'treatment-1',
+          tooth: '16',
+          notes: 'Sensitivity to cold on 16.',
+          performedAt: '2026-10-05T14:00:00.000Z',
+        },
+      ],
+    });
+
+    // The summary is what the workspace opens on, and neither the catalogue nor the
+    // treatments were asked for: a request whose answer no pixel can show is a
+    // request waiting to be stale.
+    await screen.findByTestId('visit-workspace');
+    expect(
+      fetchImplementation.mock.calls.filter(([url]) => String(url).endsWith('/api/v1/treatments')),
+    ).toHaveLength(0);
+    expect(
+      fetchImplementation.mock.calls.filter(([url]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}/treatments`),
+      ),
+    ).toHaveLength(0);
+
+    await user.click(screen.getByTestId('visit-section-treatments'));
+
+    // The name comes from the catalogue — the record carries an id, and a name is
+    // the offer's to give — and the tooth and notes travel with the record.
+    expect(await screen.findByTestId('treatment-record')).toHaveTextContent('Composite filling');
+    expect(screen.getByTestId('treatment-record')).toHaveTextContent('Tooth 16');
+    expect(screen.getByTestId('treatment-record')).toHaveTextContent('Sensitivity to cold on 16.');
+    // 14:00Z is 09:00 in Lima — the clinic's hour again, on a record this time.
+    expect(screen.getByTestId('treatment-record')).toHaveTextContent('09:00');
+    expect(screen.getByTestId('treatment-record')).not.toHaveTextContent('14:00');
+    expect(screen.queryByText('No treatments recorded yet.')).toBeNull();
+  });
+
+  it('says there are no recorded treatments rather than showing an empty list as an error', async () => {
+    renderWorkspace({ visitTreatments: [] });
+
+    await user.click(await screen.findByTestId('visit-section-treatments'));
+
+    expect(await screen.findByText('No treatments recorded yet.')).toBeTruthy();
+    expect(screen.queryByTestId('treatment-record')).toBeNull();
+  });
+
+  it('records a treatment and shows it only once the server has answered', async () => {
+    let release: () => void = () => {};
+    const treatmentGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { fetchImplementation } = renderWorkspace({ visitTreatments: [], treatmentGate });
+
+    await user.click(await screen.findByTestId('visit-section-treatments'));
+    await screen.findByText('No treatments recorded yet.');
+
+    await chooseFrom('treatment-catalogue', /Composite filling/);
+    await user.type(screen.getByTestId('treatment-tooth'), '16');
+    await user.type(screen.getByTestId('treatment-notes'), '  Composite on 16.  ');
+    await user.click(screen.getByTestId('record-treatment'));
+
+    // The POST is on the wire and the treatment is not on screen: nothing is written
+    // optimistically, because a treatment the API has not accepted is not a clinical
+    // record.
+    expect(screen.queryByTestId('treatment-record')).toBeNull();
+    const post = fetchImplementation.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}/treatments`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'POST',
+    );
+    expect(post).toBeTruthy();
+    // Trimmed on the way out, so the server is not asked to store what the boxes'
+    // edges happen to hold.
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      treatmentId: 'treatment-1',
+      tooth: '16',
+      notes: 'Composite on 16.',
+    });
+
+    release();
+
+    // The invalidation refetched the list, and the server's row is what is on screen.
+    expect(await screen.findByTestId('treatment-record')).toHaveTextContent('Composite filling');
+    expect(screen.getByTestId('treatment-record')).toHaveTextContent('Tooth 16');
+
+    // The form clears on success, and only there.
+    expect(screen.getByTestId('treatment-tooth')).toHaveValue('');
+    expect(screen.getByTestId('treatment-notes')).toHaveValue('');
+    expect(screen.getByTestId('treatment-catalogue')).toHaveTextContent('Choose a treatment');
+
+    // Recording a treatment changes nothing about the visit itself, so neither the
+    // visit nor the patient's profile was refetched — invalidating `['visits']`
+    // wholesale would have done both for pixels that cannot differ.
+    const visitReads = fetchImplementation.mock.calls.filter(
+      ([url, init]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'GET',
+    );
+    expect(visitReads).toHaveLength(1);
+  });
+
+  it('keeps the form the clinician filled and says why when the treatment is refused', async () => {
+    const { fetchImplementation } = renderWorkspace({
+      treatmentRefusal: {
+        status: 422,
+        body: {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: '"99" is not a valid FDI tooth number',
+            requestId: 'test',
+          },
+        },
+      },
+    });
+
+    await user.click(await screen.findByTestId('visit-section-treatments'));
+    await chooseFrom('treatment-catalogue', /Composite filling/);
+    await user.type(screen.getByTestId('treatment-tooth'), '99');
+    await user.click(screen.getByTestId('record-treatment'));
+
+    // The refusal reaches the screen in the API's own words, and the selection is
+    // still there: a network error that took the clinician's choice with it would be
+    // the most destructive thing this panel does.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '"99" is not a valid FDI tooth number',
+    );
+    expect(screen.getByTestId('treatment-tooth')).toHaveValue('99');
+    expect(fetchImplementation).toHaveBeenCalled();
+    expect(screen.queryByTestId('treatment-record')).toBeNull();
   });
 });

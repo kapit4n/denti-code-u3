@@ -43,6 +43,8 @@ import type {
   Clock,
   DentistRepository,
   IdGenerator,
+  TreatmentRecordRepository,
+  TreatmentRepository,
   UnitOfWork,
 } from '@denti-code-u3/domain';
 import {
@@ -50,7 +52,9 @@ import {
   completeVisitRecord,
   getVisit,
   listClinicalNotes,
+  listTreatmentRecords,
   listVisitsForPatient,
+  recordVisitTreatment,
   reopenVisitRecord,
   startVisit,
   startWalkInVisit,
@@ -58,6 +62,7 @@ import {
 } from '@denti-code-u3/domain';
 import {
   createClinicalNoteSchema,
+  recordVisitTreatmentSchema,
   startVisitSchema,
   startWalkInVisitSchema,
   uuidSchema,
@@ -68,7 +73,9 @@ import {
   asClinicalNoteId,
   asDentistId,
   asPatientId,
+  asTreatmentId,
   asVisitId,
+  asVisitTreatmentExecutionId,
   type ClinicId,
   type PatientId,
   type VisitId,
@@ -112,6 +119,18 @@ export interface VisitsDependencies {
   readonly clinicalNotes: ClinicalNoteRepository;
 
   /**
+   * The treatment records written on a visit, and the catalogue they name.
+   *
+   * Both are plain repositories rather than the transaction, for the same reason the
+   * notes are: the use case reads the visit and the treatment in this clinic before it
+   * writes, so each write is one row guarded by a read-then-write pair of statements
+   * (ADR 0014). That is safe for a record the way it is safe for a note — nothing about
+   * the pair needs atomicity a transaction could buy.
+   */
+  readonly treatmentRecords: TreatmentRecordRepository;
+  readonly treatments: TreatmentRepository;
+
+  /**
    * The two resources a walk-in names, because there is no booking to name them from.
    *
    * Required rather than optional for the same reason the appointment routes require
@@ -129,7 +148,17 @@ export interface VisitsDependencies {
 
 export async function registerVisitsRoutes(
   app: FastifyInstance,
-  { unitOfWork, visits, clinicalNotes, dentists, chairs, clock, ids }: VisitsDependencies,
+  {
+    unitOfWork,
+    visits,
+    clinicalNotes,
+    treatmentRecords,
+    treatments,
+    dentists,
+    chairs,
+    clock,
+    ids,
+  }: VisitsDependencies,
 ): Promise<void> {
   /**
    * `POST /api/v1/visits` — start a visit from an appointment.
@@ -379,6 +408,92 @@ export async function registerVisitsRoutes(
       });
 
       return reply.status(201).send(note);
+    } catch (error) {
+      return sendProblem(reply, request, error);
+    }
+  });
+
+  /**
+   * `GET /api/v1/visits/:visitId/treatments` — what was actually done in this visit.
+   *
+   * 200 with `{ treatments: [...] }`, oldest first, and `[]` for a visit that recorded
+   * none. Each record names its catalogue treatment but carries the *fact*, not the
+   * catalogue: the price and duration of a procedure as it stands today say nothing
+   * about the one performed on this visit, and the clinical record is not where money
+   * is argued about.
+   *
+   * **404 for a visit this clinic does not hold, for the same reason the notes list
+   * 404s.** `visit_treatment_executions` has no clinic column, so a scoped query alone
+   * would answer `[]` for another clinic's visit — an empty list that reads as "nothing
+   * was done" (ADR 0014).
+   */
+  app.get('/api/v1/visits/:visitId/treatments', async (request, reply) => {
+    const path = readVisitId(request.params, request.clinicId as ClinicId);
+
+    if (!path.valid) {
+      return sendInvalidVisitId(reply, request);
+    }
+
+    try {
+      const treatments = await listTreatmentRecords(path.clinicId, path.visitId, {
+        visits,
+        treatmentRecords,
+      });
+
+      return reply.status(200).send({ treatments });
+    } catch (error) {
+      return sendProblem(reply, request, error);
+    }
+  });
+
+  /**
+   * `POST /api/v1/visits/:visitId/treatments` — record a treatment performed.
+   *
+   * 201 with the record as it was written. The body carries `treatmentId` and the two
+   * optional clinical fields; the visit is the path, the clinic is the request scope,
+   * and the time is the clock's — a record of *when* is not the caller's to say.
+   *
+   * 422 when the treatment is not in this clinic's catalogue, judged by the use case's
+   * read and translated from the foreign key for the race where the treatment vanishes
+   * between that read and the insert. A blank tooth or notes is dropped to `null`; a
+   * tooth that is not a real FDI number is refused with the odontogram's own error.
+   *
+   * 404 for a visit this clinic does not hold — and for the race where the visit is
+   * deleted between the read and the insert, answered by the domain the way its read
+   * would.
+   */
+  app.post('/api/v1/visits/:visitId/treatments', async (request, reply) => {
+    const path = readVisitId(request.params, request.clinicId as ClinicId);
+
+    if (!path.valid) {
+      return sendInvalidVisitId(reply, request);
+    }
+
+    const parsed = recordVisitTreatmentSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return sendInvalidBody(reply, request, 'The treatment could not be recorded', parsed.error);
+    }
+
+    try {
+      const recorded = await recordVisitTreatment(
+        path.clinicId,
+        path.visitId,
+        {
+          treatmentId: asTreatmentId(parsed.data.treatmentId),
+          ...(parsed.data.tooth !== undefined ? { tooth: parsed.data.tooth } : {}),
+          ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes } : {}),
+        },
+        {
+          visits,
+          treatments,
+          treatmentRecords,
+          clock,
+          newId: () => asVisitTreatmentExecutionId(ids.nextId()),
+        },
+      );
+
+      return reply.status(201).send(recorded);
     } catch (error) {
       return sendProblem(reply, request, error);
     }

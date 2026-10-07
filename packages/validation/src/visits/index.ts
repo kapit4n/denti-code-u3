@@ -78,6 +78,32 @@ export const createClinicalNoteSchema = z.object({
 export type CreateClinicalNoteInput = z.infer<typeof createClinicalNoteSchema>;
 
 /**
+ * Record a treatment performed in a visit.
+ *
+ * `treatmentId` is required — a treatment record with no treatment is a record of
+ * nothing. The 2,000-character ceiling for `notes` is the same number
+ * `createClinicalNoteSchema` uses, one spelling for "a note" across the product.
+ *
+ * `tooth` and `notes` are trimmed and then judged by the domain: a blank tooth or note
+ * is dropped to `null` there (a treatment is not necessarily on a tooth), and only the
+ * *domain* can say whether digits name a real FDI tooth — its error is the one every
+ * door in this product already speaks. The schema's one restraint is a ceiling on the
+ * tooth's length, so a request cannot arrive with a field masquerading as a tooth.
+ */
+export const recordVisitTreatmentSchema = z.object({
+  treatmentId: uuidSchema,
+  tooth: z
+    .string()
+    .trim()
+    .max(2, 'A tooth is an FDI number, like "36" or "75"')
+    .optional()
+    .nullable(),
+  notes: z.string().trim().max(2_000, 'Treatment notes are too long').optional().nullable(),
+});
+
+export type RecordVisitTreatmentInput = z.infer<typeof recordVisitTreatmentSchema>;
+
+/**
  * Deliberately not here: a `visitStatusSchema` mirroring the domain's three statuses.
  *
  * The appointment package mirrors its enum and the API has a startup check that the

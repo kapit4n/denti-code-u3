@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { createClinicalNoteSchema, startVisitSchema, startWalkInVisitSchema } from './index.js';
+import {
+  createClinicalNoteSchema,
+  recordVisitTreatmentSchema,
+  startVisitSchema,
+  startWalkInVisitSchema,
+} from './index.js';
 
 const APPOINTMENT_ID = '44444444-4444-4444-8444-444444444444';
 const PATIENT_ID = '11111111-1111-4111-8111-111111111111';
 const DENTIST_ID = '33333333-3333-4333-8333-333333333333';
 const CHAIR_ID = '77777777-7777-4777-8777-777777777777';
+const TREATMENT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 describe('startVisitSchema', () => {
   it('accepts an appointment id and nothing else', () => {
@@ -117,6 +123,80 @@ describe('startWalkInVisitSchema', () => {
 
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ patientId: PATIENT_ID, dentistId: DENTIST_ID });
+  });
+});
+
+describe('recordVisitTreatmentSchema', () => {
+  it('accepts a treatment id, with a tooth and notes optional', () => {
+    expect(recordVisitTreatmentSchema.safeParse({ treatmentId: TREATMENT_ID })).toEqual({
+      success: true,
+      data: { treatmentId: TREATMENT_ID },
+    });
+    expect(
+      recordVisitTreatmentSchema.safeParse({
+        treatmentId: TREATMENT_ID,
+        tooth: '36',
+        notes: 'No complications.',
+      }),
+    ).toEqual({
+      success: true,
+      data: { treatmentId: TREATMENT_ID, tooth: '36', notes: 'No complications.' },
+    });
+  });
+
+  it('trims the tooth and notes rather than storing the spaces around them', () => {
+    const result = recordVisitTreatmentSchema.safeParse({
+      treatmentId: TREATMENT_ID,
+      tooth: ' 36 ',
+      notes: '  Clear.  ',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ treatmentId: TREATMENT_ID, tooth: '36', notes: 'Clear.' });
+  });
+
+  it('accepts a blank tooth or notes, because blank means "not recorded" here', () => {
+    // The clinical-note counter refuses a blank body; a tooth and notes are the
+    // opposite: optional, so a blank one is the domain's to drop to null, not a lie.
+    for (const body of [
+      { treatmentId: TREATMENT_ID, tooth: '' },
+      { treatmentId: TREATMENT_ID, notes: '', tooth: '36' },
+    ]) {
+      expect(recordVisitTreatmentSchema.safeParse(body).success).toBe(true);
+    }
+  });
+
+  it('refuses a missing treatment id rather than defaulting to a null record', () => {
+    const result = recordVisitTreatmentSchema.safeParse({});
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(['treatmentId']);
+  });
+
+  it('refuses a treatment id that is not a uuid', () => {
+    for (const body of [{ treatmentId: '1' }, { treatmentId: null }, { treatmentId: '' }]) {
+      expect(recordVisitTreatmentSchema.safeParse(body).success).toBe(false);
+    }
+  });
+
+  it('refuses a tooth longer than two digits, leaving the meaning of two digits to the domain', () => {
+    // "36" is the whole vocabulary of an FDI number; long enough to be mistaken for
+    // one is refused here, and whether valid digits name a real tooth is the domain's
+    // call — its error is the one the API already speaks.
+    for (const tooth of ['16.5', ' 999']) {
+      expect(
+        recordVisitTreatmentSchema.safeParse({ treatmentId: TREATMENT_ID, tooth }).success,
+      ).toBe(false);
+    }
+  });
+
+  it('refuses notes longer than the ceiling a notes field shares here', () => {
+    expect(
+      recordVisitTreatmentSchema.safeParse({
+        treatmentId: TREATMENT_ID,
+        notes: 'x'.repeat(2_001),
+      }).success,
+    ).toBe(false);
   });
 });
 
