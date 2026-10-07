@@ -59,6 +59,25 @@ export const startWalkInVisitSchema = z.object({
 export type StartWalkInVisitInput = z.infer<typeof startWalkInVisitSchema>;
 
 /**
+ * File a clinical note on a visit.
+ *
+ * `body` is the whole request: who wrote it and when are facts the server owns, so
+ * neither is in a body a client could send (the clock and the id generator are the use
+ * case's dependencies, and `authorId` waits on a user model — ADR 0022). `visitId` is
+ * the path, not the body, for the same reason the clinic is neither.
+ *
+ * Trimmed and then required to be non-empty: a note of nothing is not a note, and the
+ * refusal belongs here so a client is told so rather than filing a row nobody can
+ * read. The 2,000-character ceiling matches the appointment's `notes` field — one
+ * number for "a note" in this product, rather than one per table that holds one.
+ */
+export const createClinicalNoteSchema = z.object({
+  body: z.string().trim().min(1, 'A note needs a body').max(2_000, 'A note is too long'),
+});
+
+export type CreateClinicalNoteInput = z.infer<typeof createClinicalNoteSchema>;
+
+/**
  * Deliberately not here: a `visitStatusSchema` mirroring the domain's three statuses.
  *
  * The appointment package mirrors its enum and the API has a startup check that the

@@ -101,6 +101,16 @@ interface HarnessOptions {
   readonly closureRefusal?: { readonly status: number; readonly body: unknown };
   /** `null` makes the patient profile 404, as an anonymised record does. */
   readonly profile?: Record<string, unknown> | null;
+  /** The notes the API answers with when the notes section is opened. */
+  readonly notes?: Record<string, unknown>[];
+  /** When set, filing a note is refused with this envelope. */
+  readonly noteRefusal?: { readonly status: number; readonly body: unknown };
+  /**
+   * A promise the note POST waits on before it answers, so a test can look at the
+   * screen while the request is still in flight. Without it, "not written
+   * optimistically" has no moment to be observed at.
+   */
+  readonly noteGate?: Promise<void>;
 }
 
 function renderWorkspace({
@@ -109,8 +119,11 @@ function renderWorkspace({
   visitAfterClosure,
   closureRefusal,
   profile = PROFILE,
+  notes = [],
+  noteRefusal,
+  noteGate,
 }: HarnessOptions = {}) {
-  const state = { visit };
+  const state = { visit, notes: [...notes] };
 
   const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
     const url = new URL(String(input));
@@ -119,6 +132,30 @@ function renderWorkspace({
 
     if (method === 'GET' && path === `/api/v1/visits/${VISIT_ID}`) {
       return jsonResponse(state.visit, visitStatus);
+    }
+    // The notes are routed before the closure branch below, which matches any path
+    // under the visit — `/notes` would otherwise be read as a closure and answered
+    // with the visit itself.
+    if (path === `/api/v1/visits/${VISIT_ID}/notes` && method === 'GET') {
+      return jsonResponse({ notes: state.notes });
+    }
+    if (path === `/api/v1/visits/${VISIT_ID}/notes` && method === 'POST') {
+      if (noteRefusal) {
+        return jsonResponse(noteRefusal.body, noteRefusal.status);
+      }
+      const written = JSON.parse(String(init?.body)) as { body: string };
+      const note = {
+        id: `note-${state.notes.length + 1}`,
+        visitId: VISIT_ID,
+        authorId: null,
+        body: written.body,
+        createdAt: '2026-10-05T14:35:00.000Z',
+      };
+      state.notes = [...state.notes, note];
+      // The answer waits on the gate: the request has been made, and the screen has
+      // not been told about it yet.
+      await noteGate;
+      return jsonResponse(note, 201);
     }
     if (method === 'GET' && path === `/api/v1/patients/${PATIENT_ID}`) {
       return profile === null
@@ -329,5 +366,121 @@ describe('VisitWorkspace', () => {
     const summary = await screen.findByTestId('visit-section-summary');
     expect(summary).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('navigation', { name: 'Visit sections' })).toBeTruthy();
+  });
+
+  it('lists the notes on the visit, in the clinic’s clock, only once the section is open', async () => {
+    const user = userEvent.setup();
+    const { fetchImplementation } = renderWorkspace({
+      notes: [
+        {
+          id: 'note-1',
+          visitId: VISIT_ID,
+          authorId: null,
+          body: 'Sensitivity reported on the upper right quadrant.',
+          createdAt: '2026-10-05T14:00:00.000Z',
+        },
+      ],
+    });
+
+    // The summary is what the workspace opens on, and the notes were not asked for:
+    // a request whose answer no pixel can show is a request waiting to be stale.
+    await screen.findByTestId('visit-workspace');
+    expect(
+      fetchImplementation.mock.calls.filter(([url]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}/notes`),
+      ),
+    ).toHaveLength(0);
+
+    await user.click(screen.getByTestId('visit-section-notes'));
+
+    expect(await screen.findByTestId('clinical-note')).toHaveTextContent(
+      'Sensitivity reported on the upper right quadrant.',
+    );
+    // 14:00Z is 09:00 in Lima — the clinic's hour again, on a note this time.
+    expect(screen.getByTestId('clinical-note')).toHaveTextContent('09:00');
+    expect(screen.getByTestId('clinical-note')).not.toHaveTextContent('14:00');
+    expect(screen.queryByText('No notes yet.')).toBeNull();
+  });
+
+  it('says there are no notes rather than showing an empty list as an error', async () => {
+    const user = userEvent.setup();
+    renderWorkspace({ notes: [] });
+
+    await user.click(await screen.findByTestId('visit-section-notes'));
+
+    expect(await screen.findByText('No notes yet.')).toBeTruthy();
+    expect(screen.queryByTestId('clinical-note')).toBeNull();
+  });
+
+  it('files a note and shows it only once the server has answered', async () => {
+    const user = userEvent.setup();
+    let release: () => void = () => {};
+    const noteGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { fetchImplementation } = renderWorkspace({ notes: [], noteGate });
+
+    await user.click(await screen.findByTestId('visit-section-notes'));
+    await screen.findByText('No notes yet.');
+
+    await user.type(screen.getByTestId('note-body'), 'Sensitivity to cold on 16.');
+    await user.click(screen.getByTestId('add-note'));
+
+    // The POST is on the wire and the note is not on screen: nothing is written
+    // optimistically, because a note the API has not accepted is not a clinical
+    // record.
+    expect(screen.queryByTestId('clinical-note')).toBeNull();
+    const post = fetchImplementation.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}/notes`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'POST',
+    );
+    expect(post).toBeTruthy();
+    // Trimmed on the way out, so the server is not asked to store what the box's
+    // edges happen to hold.
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ body: 'Sensitivity to cold on 16.' });
+
+    release();
+
+    // The invalidation refetched the list, and the server's row is what is on screen.
+    expect(await screen.findByTestId('clinical-note')).toHaveTextContent(
+      'Sensitivity to cold on 16.',
+    );
+    // The draft is cleared on success, and only there.
+    expect(screen.getByTestId('note-body')).toHaveValue('');
+
+    // Filing a note changes nothing about the visit itself, so neither the visit nor
+    // the patient's profile was refetched — invalidating `['visits']` wholesale would
+    // have done both for pixels that cannot differ.
+    const visitReads = fetchImplementation.mock.calls.filter(
+      ([url, init]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'GET',
+    );
+    expect(visitReads).toHaveLength(1);
+  });
+
+  it('keeps what the clinician typed and says why when the note is refused', async () => {
+    const user = userEvent.setup();
+    const { fetchImplementation } = renderWorkspace({
+      noteRefusal: {
+        status: 422,
+        body: {
+          error: { code: 'VALIDATION_ERROR', message: 'A note needs a body', requestId: 'test' },
+        },
+      },
+    });
+
+    await user.click(await screen.findByTestId('visit-section-notes'));
+    await user.type(screen.getByTestId('note-body'), 'Half a thought');
+    await user.click(screen.getByTestId('add-note'));
+
+    // The refusal reaches the screen in the API's own words, and the text is still
+    // there: a network error that took the clinician's paragraph with it would be the
+    // most destructive thing this panel does.
+    expect(await screen.findByRole('alert')).toHaveTextContent('A note needs a body');
+    expect(screen.getByTestId('note-body')).toHaveValue('Half a thought');
+    expect(fetchImplementation).toHaveBeenCalled();
+    expect(screen.queryByTestId('clinical-note')).toBeNull();
   });
 });

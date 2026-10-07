@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { startVisitSchema, startWalkInVisitSchema } from './index.js';
+import { createClinicalNoteSchema, startVisitSchema, startWalkInVisitSchema } from './index.js';
 
 const APPOINTMENT_ID = '44444444-4444-4444-8444-444444444444';
 const PATIENT_ID = '11111111-1111-4111-8111-111111111111';
@@ -117,5 +117,50 @@ describe('startWalkInVisitSchema', () => {
 
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ patientId: PATIENT_ID, dentistId: DENTIST_ID });
+  });
+});
+
+describe('createClinicalNoteSchema', () => {
+  it('accepts a body and nothing else', () => {
+    const result = createClinicalNoteSchema.safeParse({
+      body: 'Composite restoration on tooth 16.',
+      // Extras are stripped rather than refused, as every door here does: the author
+      // and the time belong to the server, and a body that offered them would be a
+      // body a client could answer itself.
+      authorId: '11111111-1111-4111-8111-111111111111',
+      createdAt: '2020-01-01T00:00:00.000Z',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ body: 'Composite restoration on tooth 16.' });
+  });
+
+  it('trims the note rather than storing the spaces around it', () => {
+    const result = createClinicalNoteSchema.safeParse({ body: '  Sensitivity reported.  ' });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ body: 'Sensitivity reported.' });
+  });
+
+  it('refuses a note of nothing, including one that only looks empty', () => {
+    // Whitespace is the interesting case: a `.min(1)` on the untrimmed string passes
+    // `'   '` and files a row that reads as a note until somebody scrolls past it.
+    for (const body of ['', '   ', '\n\t ']) {
+      expect(createClinicalNoteSchema.safeParse({ body }).success).toBe(false);
+    }
+  });
+
+  it('refuses a missing body rather than defaulting to an empty note', () => {
+    const result = createClinicalNoteSchema.safeParse({});
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(['body']);
+  });
+
+  it('refuses a body longer than the ceiling a note shares with the booking’s notes', () => {
+    // 2,000, the same number `createAppointmentSchema` allows: one figure for "a note"
+    // in this product rather than one per table that holds one.
+    expect(createClinicalNoteSchema.safeParse({ body: 'x'.repeat(2_000) }).success).toBe(true);
+    expect(createClinicalNoteSchema.safeParse({ body: 'x'.repeat(2_001) }).success).toBe(false);
   });
 });

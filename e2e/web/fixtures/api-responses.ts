@@ -657,6 +657,37 @@ export const completedVisit = {
 } as const;
 
 /**
+ * A note already on the open visit, as `GET /api/v1/visits/:visitId/notes` answers
+ * for it.
+ *
+ * `authorId` is null because the API writes it that way — there is no user model to
+ * attribute a note to yet — and a fixture that invented an author would let a spec
+ * pass against a client that rendered one.
+ */
+export const visitNote = {
+  id: '11111111-7777-4888-8999-000000000043',
+  visitId: VISIT_ID,
+  authorId: null,
+  body: 'Sensitivity reported on the upper right quadrant.',
+  createdAt: '2026-10-05T13:00:00.000Z',
+} as const;
+
+/**
+ * The note a spec writes, and the row the API answers the POST with.
+ *
+ * Its `id` and `createdAt` are the server's, not the client's: a spec asserting that
+ * the second list shows *this* row is asserting that the refetch is what put it on
+ * screen, because nothing in the browser could have produced those two values.
+ */
+export const filedNote = {
+  id: '11111111-7777-4888-8999-000000000044',
+  visitId: VISIT_ID,
+  authorId: null,
+  body: 'Referred for endodontic assessment.',
+  createdAt: '2026-10-05T13:00:00.000Z',
+} as const;
+
+/**
  * Every endpoint the visit workspace opens, in one call.
  *
  * Separate from `bookingFixtures()` for the usual reason: these are the requests a

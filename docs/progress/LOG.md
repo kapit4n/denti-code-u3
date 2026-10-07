@@ -1866,3 +1866,78 @@ the walk-in form) have no UI — not on this phase's ordered list. The sidebar's
 `/visits` link is a 404: ADR 0023 has no filterable visits collection, so a list is its
 own decision. The clinical-notes section row waits for its endpoint. Integration tests
 were skipped because nothing behind them changed.
+
+---
+
+## Session 29 — clinical notes (the section nav's first new row)
+
+**Started from:** clean tree at `13781e0` (session 28). Next roadmap item: "Clinical
+notes" — the first thing the workspace's data-driven section nav was designed to grow
+for.
+
+**Work performed**
+
+- **Domain** (`packages/domain/src/visit/clinical-notes.ts`, 7 tests): `ClinicalNote`,
+  `listClinicalNotes`, `addClinicalNote`. Both read the visit first, so an unknown or
+  foreign visit is a 404 for both verbs and only a visit this clinic holds answers with
+  `[]`; a blank body is `INVALID_INPUT` before any repository is touched, and what is
+  stored is trimmed.
+- **Ports**: `ClinicalNoteRepository` (`findForVisit(clinicId, visitId)` + `save(note)`)
+  and `Repositories.clinicalNotes` — the set's first addition since session 23 narrowed
+  it to six.
+- **Types**: `ClinicalNoteId` brand, added to the `ClinicIdentifier` union.
+- **Validation**: `createClinicalNoteSchema` — trimmed, min 1, max 2000 (the
+  appointment's own `notes` limit), 5 tests.
+- **API**: `DrizzleClinicalNoteRepository` and `SQLiteClinicalNoteRepository` (both
+  translating the note's foreign-key violation into `NOT_FOUND`), wired into
+  `repositoriesFor` and `sqliteRepositoriesFor`; `GET` and
+  `POST /api/v1/visits/:visitId/notes` behind the existing `readVisitId` guard;
+  `VisitsDependencies.clinicalNotes` passed from `app.ts`. **No migration**: the
+  `clinical_notes` table was already in both baseline migrations exactly as needed.
+- **App**: `queries/visit-notes-query.ts` (fetched when the section mounts, no
+  `enabled` flag), `mutations/use-create-clinical-note.ts` (invalidates only the notes
+  key), `describe-note-failure.ts` (+6 tests), and `VisitNotesSection` in
+  `visit-workspace.tsx` — the nav's second row, with the draft preserved when the API
+  refuses (4 tests).
+- **Tests**: 6 route tests in `visits-route.integration.test.ts` (PostgreSQL), +1
+  always-on SQLite smoke test that files a note through the endpoint and proves both
+  verbs scope through the visit, and 2 e2e specs with the `visitNote` / `filedNote`
+  fixtures.
+
+**Decisions** (written up under "Decisions from session 29" in `STATE.md`)
+
+- Scoping comes through `visits`, because `clinical_notes` has no `clinic_id`: the use
+  case reads the visit before it lists or writes, and `save` takes no clinic id. One
+  row, one statement — no `UnitOfWork`.
+- `Repositories` grew to seven only when both implementations existed: the set holds
+  what can be built, tested in the direction the rule had not yet been used.
+- `authorId` is always `null` — there is no user model to attribute a note to.
+- The mutation invalidates nothing but `['visits','notes',visitId]`: a note does not
+  change the visit row, so re-reading the visit would be the client implying it did.
+- The e2e asserts the server's `id` and `createdAt` in the clinic's zone rather than
+  the text it typed, because that is the part no browser could have produced.
+
+**Environment finding.** Docker and every PostgreSQL client are absent from this
+environment (no `docker`, `podman`, `psql`, or `/var/run/docker.sock`), so the
+PostgreSQL integration suite — including the six new route tests — could not be
+executed. They typecheck and are written for `TEST_DATABASE_URL`; the always-on SQLite
+smoke test covers the same path here.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run guard:boundaries OK (one pre-existing warning)
+pnpm run build            5/5 successful
+pnpm run test             12/12 tasks — 616 passed (23 new), 207 integration skipped
+pnpm run test:integration not run — no Docker/PostgreSQL in this environment
+pnpm run test:e2e         92 passed, 0 failed (2 new notes specs)
+```
+
+**NOT done and deliberately.** Treatments, charges and payments come next, in the
+order the roadmap holds them. A note's `authorId` stays null until there is an
+authenticated user (ADR 0022's question 18). The notes section has no edit or delete:
+an append-only clinical record was the simplest honest rule, and revising history is a
+product decision, not a missing button.

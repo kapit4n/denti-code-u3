@@ -28,9 +28,10 @@
  * showed "Completed" before the server agreed would be the only screen in the app
  * that could contradict the record.
  *
- * The section nav is data-driven and currently holds one row on purpose: a section
- * is added when — and only when — an endpoint stands behind it, so the nav grows
- * with the milestone (notes, treatment, payments) instead of promising panels that
+ * The section nav is data-driven and holds the two sections an endpoint stands
+ * behind: `summary` reads the visit, `notes` reads and writes the notes on it. A row
+ * is added when — and only when — an endpoint stands behind it, so the nav grows with
+ * the milestone (odontogram, treatment, payments) instead of promising panels that
  * render an empty state. Section choice is component state, not a search param, for
  * the same reason list state on the patients route is: file-route search params are
  * typed `any` today (technical question T2), and a state the URL could not describe
@@ -49,6 +50,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Label,
   cn,
 } from '@denti-code-u3/ui';
 
@@ -56,8 +58,11 @@ import { formatClinicDayTime, READING_THE_CLINIC_CLOCK } from '../../clinic/form
 import { useClinicSettings } from '../../clinic/queries/clinic-settings-query.js';
 import { usePatient } from '../../patients/hooks/use-patients.js';
 import { useChairs, useDentists } from '../../agenda/queries/bookable-resources-query.js';
+import { describeNoteFailure } from '../describe-note-failure.js';
 import { describeVisitFailure } from '../describe-visit-failure.js';
+import { useCreateClinicalNote } from '../mutations/use-create-clinical-note.js';
 import { useVisitClosure } from '../mutations/use-visit-closure.js';
+import { useVisitNotes } from '../queries/visit-notes-query.js';
 import { useVisit } from '../queries/visit-query.js';
 import {
   visitClosureLabel,
@@ -73,15 +78,16 @@ export interface VisitWorkspaceProps {
 /**
  * The sections this workspace can draw.
  *
- * One row today. `notes`, `odontogram`, `treatment`, `files` and `payments` from the
- * brief each arrive with their own endpoint and their own row here — a nav entry
- * with nothing behind it is the "control that looks live and is not" this project
- * refuses to ship.
+ * Two rows today, each with an endpoint behind it. `odontogram`, `treatment`, `files`
+ * and `payments` from the brief each arrive with their own endpoint and their own row
+ * here — a nav entry with nothing behind it is the "control that looks live and is
+ * not" this project refuses to ship.
  */
-type VisitSectionId = 'summary';
+type VisitSectionId = 'summary' | 'notes';
 
 const VISIT_SECTIONS: readonly { readonly id: VisitSectionId; readonly label: string }[] = [
   { id: 'summary', label: 'Summary' },
+  { id: 'notes', label: 'Notes' },
 ];
 
 export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
@@ -240,9 +246,10 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
 
         <div className="min-w-0 space-y-4">
           {/*
-            The only section that exists. When a second one lands it arrives with the
-            endpoint behind it and this becomes a real switch — a `null` here is the
-            honest answer for a section nobody can open yet.
+            The two sections that exist, and only those: each has an endpoint behind it
+            and a row in the nav above. A `null` here would be the honest answer for a
+            section nobody can open yet — but the nav cannot offer one, so nothing
+            reaches this switch without a panel to draw.
           */}
           {section === 'summary' ? (
             <VisitSummarySection
@@ -251,6 +258,9 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
               clinicianName={resolveClinician(visit, dentistsQuery)}
               chairLabel={resolveChair(visit, chairsQuery)}
             />
+          ) : null}
+          {section === 'notes' ? (
+            <VisitNotesSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
           ) : null}
         </div>
       </div>
@@ -332,6 +342,128 @@ function VisitSummarySection({
         </CardContent>
       </Card>
     </>
+  );
+}
+
+/**
+ * The clinician's notes on this visit: what was written, and the door to write more.
+ *
+ * Mounted only while the section is open, which is what keeps the notes request an
+ * answer to something on screen (see `visit-notes-query.ts`). It owns its own hooks
+ * rather than taking them as props for the reason the summary takes data as props: the
+ * summary is facts the workspace already holds, and this is a feature with a draft, a
+ * mutation and a list of its own.
+ *
+ * **Nothing is written optimistically, and the empty box stays until the server
+ * answers.** The note appears in the list because the invalidation refetched it — a
+ * note shown before the API accepted it is a clinical record the record does not
+ * contain. The draft is cleared on success, and only there: a refused note is still
+ * the clinician's text, and taking it back after a network error would be the one
+ * destructive thing this screen does.
+ */
+interface VisitNotesSectionProps {
+  readonly visitId: string;
+  /** Absent while the clinic is still being fetched; the times then wait for it. */
+  readonly clinicTimeZone: string | undefined;
+}
+
+function VisitNotesSection({ visitId, clinicTimeZone }: VisitNotesSectionProps) {
+  const notesQuery = useVisitNotes(visitId);
+  const createNote = useCreateClinicalNote();
+  const [draft, setDraft] = useState('');
+
+  const failure = describeNoteFailure(createNote.error, 'The note could not be saved.');
+  const ready = draft.trim().length > 0;
+
+  return (
+    <Card data-testid="visit-notes">
+      <CardHeader>
+        <CardTitle>Clinical notes</CardTitle>
+        <CardDescription>What was written during this visit</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {notesQuery.isPending ? (
+          <p className="text-sm text-muted-foreground">Loading the notes…</p>
+        ) : notesQuery.error ? (
+          <p className="text-sm text-destructive" role="alert">
+            The notes could not be loaded.
+          </p>
+        ) : notesQuery.data.notes.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No notes yet.</p>
+        ) : (
+          <ul className="space-y-3">
+            {notesQuery.data.notes.map((note) => (
+              <li
+                key={note.id}
+                className="rounded-md border p-3 text-sm"
+                data-testid="clinical-note"
+              >
+                <p className="mb-1 text-xs text-muted-foreground">
+                  {clinicTimeZone ? (
+                    formatClinicDayTime(note.createdAt, clinicTimeZone)
+                  ) : (
+                    <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+                  )}
+                </p>
+                {/* Whitespace is preserved because the textarea offers it: a note that
+                    swallowed its line breaks would read as one sentence the clinician
+                    did not write. React escapes the text itself. */}
+                <p className="whitespace-pre-wrap">{note.body}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form
+          className="space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!ready) {
+              return;
+            }
+            createNote.mutate(
+              { visitId, body: draft },
+              {
+                onSuccess: () => setDraft(''),
+              },
+            );
+          }}
+        >
+          <Label htmlFor="visit-note-body">New note</Label>
+          <textarea
+            id="visit-note-body"
+            data-testid="note-body"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            rows={4}
+            disabled={createNote.isPending}
+            className="w-full rounded-md border bg-background p-2 text-sm"
+            placeholder="What was seen, said or done"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" data-testid="add-note" disabled={createNote.isPending || !ready}>
+              Add note
+            </Button>
+            {createNote.isPending ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
+                Saving…
+              </p>
+            ) : null}
+          </div>
+        </form>
+
+        {failure ? (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
+            <span>{failure}</span>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 

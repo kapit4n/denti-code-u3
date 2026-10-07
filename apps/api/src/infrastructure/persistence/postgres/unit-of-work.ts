@@ -17,7 +17,7 @@
  * **The set is built fresh rather than passed in,** because the alternative is a
  * `Repositories` object assembled once from the outer connection and then handed to
  * every callback, and that object would hold the wrong handles. The cost is that each
- * transaction constructs six wrappers, which is nothing next to the round trip it is
+ * transaction constructs seven wrappers, which is nothing next to the round trip it is
  * about to make.
  */
 import type { Repositories, UnitOfWork } from '@denti-code-u3/domain';
@@ -25,6 +25,7 @@ import type { Repositories, UnitOfWork } from '@denti-code-u3/domain';
 import type { DentiDatabase } from './connection.js';
 import { DrizzleAppointmentRepository } from '../repositories/appointment-repository.js';
 import { DrizzleChairRepository } from '../repositories/chair-repository.js';
+import { DrizzleClinicalNoteRepository } from '../repositories/clinical-note-repository.js';
 import { DrizzleClinicRepository } from '../repositories/clinic-repository.js';
 import { DrizzleDentistRepository } from '../repositories/dentist-repository.js';
 import { DrizzlePatientRepository } from '../repositories/patient-repository.js';
@@ -41,6 +42,7 @@ export function repositoriesFor(db: DentiDatabase): Repositories {
     patients: new DrizzlePatientRepository(db),
     appointments: new DrizzleAppointmentRepository(db),
     visits: new DrizzleVisitRepository(db),
+    clinicalNotes: new DrizzleClinicalNoteRepository(db),
     clinics: new DrizzleClinicRepository(db),
     dentists: new DrizzleDentistRepository(db),
     chairs: new DrizzleChairRepository(db),

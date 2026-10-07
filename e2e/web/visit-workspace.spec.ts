@@ -21,6 +21,10 @@
  *  4. **The record is the door.** The patient profile's "Recent visits" card links
  *     into the workspace; a visit with no way to reach it is a page only a person
  *     who knows the id could open.
+ *  5. **Notes are asked for when their section opens, and a filed note arrives by
+ *     refetch.** The list shows the server's `id` and `createdAt` — values no browser
+ *     could invent — which is what makes "not optimistic" observable rather than
+ *     asserted; and a refused note keeps the clinician's text on screen.
  *
  * What is *not* here: the rules. Which moves are legal is the domain's, tested
  * against the domain and against a real API elsewhere. This file asserts that
@@ -34,7 +38,9 @@ import {
   COMPLETED_VISIT_ID,
   VISIT_ID,
   anaProfile,
+  filedNote,
   openVisit,
+  visitNote,
   visitWorkspaceFixtures,
 } from './fixtures/api-responses.js';
 import { watchForConsoleErrors } from './fixtures/console-errors.js';
@@ -59,6 +65,16 @@ const CLOSED_VISIT = { ...openVisit, status: 'COMPLETED', endedAt: '2026-10-06T1
 /** How many times the workspace has asked for its own visit (the POST is a different path). */
 function visitReads(requests: readonly string[]): number {
   return requests.filter((url) => new URL(url).pathname === `/api/v1/visits/${VISIT_ID}`).length;
+}
+
+/** How many times the notes were read — one when the section opened, one after the mutation. */
+function notesReads(
+  recorded: readonly { readonly method: string; readonly url: string }[],
+): number {
+  return recorded.filter(
+    (entry) =>
+      entry.method === 'GET' && new URL(entry.url).pathname === `/api/v1/visits/${VISIT_ID}/notes`,
+  ).length;
 }
 
 test.describe('Visit workspace', () => {
@@ -197,5 +213,98 @@ test.describe('Visit workspace', () => {
     await expect(page.getByTestId('reopen-visit')).toBeVisible();
 
     expect(errors).toEqual([]);
+  });
+
+  test('files a clinical note, and shows it only once the server has stored it', async ({
+    page,
+  }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...visitWorkspaceFixtures({
+        [`/api/v1/visits/${VISIT_ID}/notes`]: { body: { notes: [visitNote] } },
+        [`POST /api/v1/visits/${VISIT_ID}/notes`]: { body: filedNote, status: 201 },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+
+    // The summary is what the workspace opens on, and the notes were not asked for
+    // until somebody asked to see them.
+    await expect(page.getByTestId('visit-workspace')).toBeVisible();
+    expect(notesReads(api.recorded)).toBe(0);
+
+    await page.getByTestId('visit-section-notes').click();
+
+    // 13:00Z is 08:00 in Lima: a note's time is the clinic's clock again, on a row
+    // nothing but the endpoint could have produced.
+    await expect(page.getByTestId('clinical-note').first()).toContainText(visitNote.body);
+    await expect(page.getByTestId('clinical-note').first()).toContainText('08:00');
+    await expect(page.getByTestId('clinical-note').first()).not.toContainText('13:00');
+
+    await page.getByTestId('note-body').fill(filedNote.body);
+    await page.getByTestId('add-note').click();
+
+    // The server's answer to the POST is installed before the POST can resolve, so
+    // the refetch the mutation triggers reads the note list as it now stands. The
+    // row that appears carries the server's own `id` — which is the point: nothing
+    // in the browser could have produced it, so nothing but the refetch could have
+    // put it on screen.
+    await installApi(page, {
+      [`/api/v1/visits/${VISIT_ID}/notes`]: { body: { notes: [visitNote, filedNote] } },
+    });
+
+    const filed = page
+      .getByTestId('clinical-note')
+      .filter({ hasText: 'Referred for endodontic assessment.' });
+    await expect(filed).toBeVisible();
+    await expect(filed).toContainText('08:00');
+    await expect(page.getByTestId('note-body')).toHaveValue('');
+
+    const post = api.recorded.find(
+      (entry) => entry.method === 'POST' && entry.url.includes(`/visits/${VISIT_ID}/notes`),
+    );
+    expect(post).toBeTruthy();
+    expect(post?.body).toEqual({ body: filedNote.body });
+
+    // Two reads, not one: the section's own, and the one the invalidation asked for.
+    await expect.poll(() => notesReads(api.recorded)).toBe(2);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('keeps what the clinician typed when the note is refused', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    await installApi(page, {
+      ...visitWorkspaceFixtures({
+        [`/api/v1/visits/${VISIT_ID}/notes`]: { body: { notes: [] } },
+        [`POST /api/v1/visits/${VISIT_ID}/notes`]: {
+          status: 422,
+          body: {
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'A note needs a body',
+              requestId: 'e2e',
+            },
+          },
+        },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+    await page.getByTestId('visit-section-notes').click();
+    await expect(page.getByText('No notes yet.')).toBeVisible();
+
+    await page.getByTestId('note-body').fill('Half a thought');
+    await page.getByTestId('add-note').click();
+
+    // The refusal reaches the screen in the API's own words (the wire code collapses
+    // every refusal, so the message is the only part that says why), and the text is
+    // still in the box — a failed request that took the paragraph with it would be
+    // the most destructive thing this panel does.
+    await expect(page.getByRole('alert')).toHaveText(/A note needs a body/);
+    await expect(page.getByTestId('note-body')).toHaveValue('Half a thought');
+    await expect(page.getByTestId('clinical-note')).toHaveCount(0);
+
+    expect(expectedResourceFailures(errors)).toEqual([]);
   });
 });

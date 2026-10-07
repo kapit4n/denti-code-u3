@@ -205,6 +205,15 @@ same reason — nothing can put an appointment in a room yet.
     sidebar's `/visits` link is a 404 with no visits list, which ADR 0023's
     "no filterable collection" deliberately leaves out.
 - Clinical notes
+  - **Done (session 29).** `listClinicalNotes` / `addClinicalNote` over a
+    `ClinicalNoteRepository` whose scoping comes through `visits`, because
+    `clinical_notes` has no `clinic_id`: both verbs answer 404 for a visit this clinic
+    does not hold, and `[]` only for one it does. Two endpoints,
+    `GET`/`POST /api/v1/visits/:visitId/notes`, one `save` statement and no
+    transaction, plus the workspace's **Notes** section — the nav's first new row —
+    which keeps the clinician's draft when the API refuses it.
+  - **Not done:** an author (`authorId` is null; there is no user model — ADR 0022's
+    question 18) and any edit or delete of a filed note.
 - Treatment records per visit
 - Prescriptions per visit
 - Charges per visit

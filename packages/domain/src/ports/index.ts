@@ -27,7 +27,7 @@ import type {
   AppointmentStatus,
   AppointmentWindow,
 } from '../appointment/index.js';
-import type { Visit, VisitStatus } from '../visit/index.js';
+import type { Visit, VisitStatus, ClinicalNote } from '../visit/index.js';
 import type {
   EditablePatientDetails,
   Patient,
@@ -60,11 +60,16 @@ export interface UnitOfWork {
  * The alternative was to keep the declared nine and have the API's implementation
  * throw "not implemented yet" for three of them, which is a promise the code has
  * stopped keeping.
+ *
+ * Session 29 added `clinicalNotes`, the first addition in the other direction: the
+ * port arrived with an implementation for both engines (ADR 0025), which is the same
+ * policy read forwards — the set holds what can be built, no more and no less.
  */
 export interface Repositories {
   readonly patients: PatientRepository;
   readonly appointments: AppointmentRepository & AppointmentWriteRepository;
   readonly visits: VisitRepository;
+  readonly clinicalNotes: ClinicalNoteRepository;
   readonly clinics: ClinicRepository;
   readonly dentists: DentistRepository;
   readonly chairs: ChairRepository;
@@ -364,6 +369,25 @@ export interface VisitRepository {
    * `appointment_id` is what refuses a second one for the same booking.
    */
   save(visit: Visit): Promise<void>;
+}
+
+/**
+ * The notes written on one visit.
+ *
+ * **`save` takes no `clinicId`, unlike every write above it**, and the reason is the
+ * table's: `clinical_notes` has no clinic column. The visit the note names is the
+ * tenant key, so the use case reads that visit in this clinic *before* saving, and a
+ * `save` whose visit has since vanished must answer `NOT_FOUND` rather than a foreign
+ * key error reaching the API as a 500.
+ *
+ * `findForVisit` does take one, because a read has no use case in front of it to scope
+ * with: it joins `visits` on the note's `visit_id` and filters the clinic there, so
+ * the scoping cannot be forgotten by a future caller (ADR 0014). Oldest first — the
+ * order a clinical record is read in, and the repository's to decide (ADR 0023).
+ */
+export interface ClinicalNoteRepository {
+  findForVisit(clinicId: ClinicId, visitId: VisitId): Promise<readonly ClinicalNote[]>;
+  save(note: ClinicalNote): Promise<void>;
 }
 
 /**

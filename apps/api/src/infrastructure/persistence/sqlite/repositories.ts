@@ -13,6 +13,7 @@ import type { Repositories } from '@denti-code-u3/domain';
 import type { SqliteDatabase } from './connection.js';
 import { SQLiteAppointmentRepository } from './repositories/appointment-repository.js';
 import { SQLiteChairRepository } from './repositories/chair-repository.js';
+import { SQLiteClinicalNoteRepository } from './repositories/clinical-note-repository.js';
 import { SQLiteClinicRepository } from './repositories/clinic-repository.js';
 import { SQLiteDentistRepository } from './repositories/dentist-repository.js';
 import { SQLitePatientRepository } from './repositories/patient-repository.js';
@@ -23,6 +24,7 @@ export function sqliteRepositoriesFor(db: SqliteDatabase): Repositories {
     patients: new SQLitePatientRepository(db),
     appointments: new SQLiteAppointmentRepository(db),
     visits: new SQLiteVisitRepository(db),
+    clinicalNotes: new SQLiteClinicalNoteRepository(db),
     clinics: new SQLiteClinicRepository(db),
     dentists: new SQLiteDentistRepository(db),
     chairs: new SQLiteChairRepository(db),

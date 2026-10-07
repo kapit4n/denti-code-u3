@@ -40,6 +40,7 @@ import { fileURLToPath } from 'node:url';
 import * as schema from '@denti-code-u3/database/schema';
 import { registerVisitsRoutes } from '../src/http/routes/visits.js';
 import { DrizzleVisitRepository } from '../src/infrastructure/persistence/repositories/visit-repository.js';
+import { DrizzleClinicalNoteRepository } from '../src/infrastructure/persistence/repositories/clinical-note-repository.js';
 import { DrizzleChairRepository } from '../src/infrastructure/persistence/repositories/chair-repository.js';
 import { DrizzleDentistRepository } from '../src/infrastructure/persistence/repositories/dentist-repository.js';
 import { DrizzleUnitOfWork } from '../src/infrastructure/persistence/postgres/unit-of-work.js';
@@ -214,6 +215,21 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       headers: { 'x-clinic-id': clinic },
     });
 
+  const getNotes = (visitId: string, clinic = clinicId) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${visitId}/notes`,
+      headers: { 'x-clinic-id': clinic },
+    });
+
+  const fileNote = (visitId: string, payload: unknown, clinic = clinicId) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/notes`,
+      headers: { 'x-clinic-id': clinic },
+      payload: payload as object,
+    });
+
   /**
    * The row as stored, with the timestamp read as an instant.
    *
@@ -280,6 +296,10 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       // deliberately a *separate* dependency: the walk-in and the two closing endpoints
       // write one row and are handed the repository directly (ADR 0022, ADR 0024).
       visits: new DrizzleVisitRepository(db),
+      // The notes' own repository, and a plain one: filing a note is one insert, and
+      // the use case has already resolved the visit in this clinic by the time it
+      // runs (`clinical_notes` has no clinic column of its own).
+      clinicalNotes: new DrizzleClinicalNoteRepository(db),
       // The two resources a walk-in names, for the same "who may be named" rule the
       // booking uses. The appointment door reads its names from the booking and never
       // calls these (ADR 0024).
@@ -900,6 +920,133 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       expect(response.json()).toMatchObject({
         error: { code: 'VALIDATION_ERROR', message: expect.stringContaining('patient') },
       });
+    });
+  });
+
+  describe('GET and POST /api/v1/visits/:visitId/notes', () => {
+    it('files a note and lists it back, with the clock’s time and nobody as the author', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const filed = await fileNote(visitId, { body: '  Sensitivity reported.  ' });
+
+      expect(filed.statusCode).toBe(201);
+      const note = filed.json() as {
+        id: string;
+        visitId: string;
+        body: string;
+        createdAt: string;
+        authorId: string | null;
+      };
+      expect(note.visitId).toBe(visitId);
+      // Trimmed by the boundary schema, so the row is not the box's edges.
+      expect(note.body).toBe('Sensitivity reported.');
+      // Null, and not a bug: there is no user model to attribute a note to yet, the
+      // same open question the audit trail waits on (ADR 0022).
+      expect(note.authorId).toBeNull();
+      expect(new Date(note.createdAt).toISOString()).toBe(NOW);
+
+      const listed = await getNotes(visitId);
+      expect(listed.statusCode).toBe(200);
+      expect((listed.json() as { notes: unknown[] }).notes).toEqual([note]);
+
+      // The row itself: a route that answered 201 without writing would pass every
+      // assertion above and lose the note.
+      const [row] = await sql`
+        select visit_id, author_id, body from clinical_notes where id = ${note.id}
+      `;
+      expect(row).toMatchObject({
+        visit_id: visitId,
+        author_id: null,
+        body: 'Sensitivity reported.',
+      });
+    });
+
+    it('lists notes oldest first, whatever order they were filed in', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      // The earlier note is written straight into the table because this suite's clock
+      // is fixed: two notes filed through the API would carry the same `created_at`, and
+      // the list would then be the id tiebreak's — stable, but not what "oldest first"
+      // claims to be. Different instants make the claim testable.
+      await sql`
+        insert into clinical_notes (id, visit_id, body, created_at)
+        values ('11111111-9999-4888-8999-000000000041', ${visitId}, 'Earlier note.', '2026-04-16T09:00:00.000Z')
+      `;
+      const filed = await fileNote(visitId, { body: 'Later note.' });
+      expect(filed.statusCode).toBe(201);
+
+      const listed = await getNotes(visitId);
+
+      expect(listed.statusCode).toBe(200);
+      const bodies = (listed.json() as { notes: { body: string }[] }).notes.map(
+        (note) => note.body,
+      );
+      expect(bodies).toEqual(['Earlier note.', 'Later note.']);
+    });
+
+    it('answers 404 for a visit another clinic holds, rather than an empty list', async () => {
+      const foreign = await seedVisit({
+        startedAt: `${day}T09:00:00.000Z`,
+        clinic: otherClinicId,
+      });
+      const ours = await seedVisit({ startedAt: `${day}T10:00:00.000Z` });
+
+      const readForeign = await getNotes(foreign);
+
+      // `clinical_notes` has no clinic column, so a scoped query alone would answer
+      // `[]` here — an empty list reading as "no notes were taken". The visit is the
+      // subject, and the subject is not in this clinic (ADR 0014).
+      expect(readForeign.statusCode).toBe(404);
+      expect(readForeign.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+      expect((await fileNote(foreign, { body: 'Anything.' })).statusCode).toBe(404);
+
+      // And the same visit asked about under the other clinic's header is a different
+      // request: our visit is theirs to read, ours is not theirs to write.
+      expect((await getNotes(ours, otherClinicId)).statusCode).toBe(404);
+
+      // Nothing was written by either refusal.
+      const [count] = await sql`select count(*)::int as total from clinical_notes`;
+      expect((count as { total: number }).total).toBe(0);
+    });
+
+    it('answers 404 for a visit id that is nowhere, in the same shape', async () => {
+      const response = await getNotes(missingId);
+
+      // Compared by assertion rather than to the response above: if the two ever
+      // diverge, both tests fail and the reason is in the failure (ADR 0014).
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+    });
+
+    it('refuses a body of nothing, and writes nothing', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const refused = await fileNote(visitId, { body: '   ' });
+
+      expect(refused.statusCode).toBe(422);
+      expect(refused.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+
+      const [count] = await sql`select count(*)::int as total from clinical_notes`;
+      expect((count as { total: number }).total).toBe(0);
+      // The read side still answers honestly: a refused note leaves no trace on the
+      // list, which is `[]` because the visit is real and has no notes.
+      expect((await getNotes(visitId)).statusCode).toBe(200);
+    });
+
+    it('answers 422 for a path id that is not a uuid, on both verbs', async () => {
+      for (const method of ['GET', 'POST'] as const) {
+        const response = await app.inject({
+          method,
+          url: '/api/v1/visits/not-a-uuid/notes',
+          headers: { 'x-clinic-id': clinicId },
+          ...(method === 'POST' ? { payload: { body: 'Anything.' } } : {}),
+        });
+
+        // Before the guard existed this was a `22P02` reported as a 500 — which is how
+        // the write side's helper came to default its clinic to an empty string.
+        expect(response.statusCode).toBe(422);
+        expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+      }
     });
   });
 

@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 28 (the visit workspace — the Milestone 6 exit criterion)
+> Last updated: session 29 (clinical notes — the section nav's first new row)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -20,6 +20,15 @@ Session 22 delivered the one thing item 5 of the plan below had been waiting for
 agenda's filters. `AgendaFilterBar` chooses clinicians and chairs, and the narrowing is
 **the request's**, not the browser's. Room _columns_ remain, and are blocked rather than
 deferred — they need a `roomId` in the read model, which ADR 0018 deliberately left out.
+
+Session 29 delivered **clinical notes** — the first row the workspace's section nav
+gained, and the promise session 28's data-driven nav made. `listClinicalNotes` and
+`addClinicalNote` sit over a `ClinicalNoteRepository` whose scoping works by reading the
+visit first: both verbs answer 404 for a visit this clinic does not hold, `[]` only for
+one it does. `GET`/`POST /api/v1/visits/:visitId/notes` are two endpoints, one `save`
+statement and no transaction, and the **Notes** section keeps what the clinician typed
+when the API refuses it. `Repositories` grew from six to seven — the first addition
+since it was narrowed, and the proof of the policy written beside it.
 
 Session 28 delivered the **visit workspace**, Milestone 6's exit criterion: the place
 where closing a visit happens. `/visits/$visitId` carries the header (patient, record
@@ -95,20 +104,42 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 28)
+## Verification log (last run, session 29)
 
-| Command                     | Result                                                                       |
-| --------------------------- | ---------------------------------------------------------------------------- |
-| `pnpm run typecheck`        | 12/12 tasks pass                                                             |
-| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)             |
-| `pnpm run format:check`     | clean (prettier also reflowed two wrapped lines in `AGENTS.md` / `STATE.md`) |
-| `pnpm run test`             | 12/12 tasks pass — 593 tests, 20 of them new in `features/visits`            |
-| `pnpm run test:integration` | not run — no API, domain, validation or schema file changed                  |
-| `pnpm run build`            | 5/5 tasks pass; `routeTree.gen.ts` regenerated with `/visits/$visitId`       |
-| `pnpm run guard:boundaries` | OK                                                                           |
-| `pnpm run test:e2e`         | 90/90 pass — after the harness-clock fix described below                     |
+| Command                     | Result                                                               |
+| --------------------------- | -------------------------------------------------------------------- |
+| `pnpm run typecheck`        | 12/12 tasks pass                                                     |
+| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)     |
+| `pnpm run format:check`     | clean                                                                |
+| `pnpm run test`             | 12/12 tasks pass — 616 tests (23 new), 207 integration tests skipped |
+| `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**               |
+| `pnpm run build`            | 5/5 tasks pass                                                       |
+| `pnpm run guard:boundaries` | OK                                                                   |
+| `pnpm run test:e2e`         | 92/92 pass — 2 new notes specs                                       |
 
-**The 14 failures this session's first full run showed were date drift in the harness,
+**The PostgreSQL integration suite could not be executed this session: Docker and every
+PostgreSQL client are absent from this environment** (no `docker`, no `podman`, no
+`psql`, no `/var/run/docker.sock`). The six new route tests in
+`visits-route.integration.test.ts` are written, typecheck and will run wherever
+`TEST_DATABASE_URL` exists; here they report as part of the 207 skipped. What covers
+the same path without a database is the always-on SQLite smoke suite, which gained a
+test that files a note, reads it back through the endpoint and proves both verbs are
+scoped through the visit — and which did run.
+
+**What session 29's work is verified by.** 23 new passing tests across four files: the
+domain use cases (7 — the subject is read before the write, a foreign visit is a 404
+for both verbs, a blank body never reaches `save`), the validation schema (5 — trim
+happens before the minimum is counted, and the cap matches the appointment's own
+`notes`), the workspace component (4 — the section asks for its notes when opened, a
+filed note appears only after the refetch and is then gone from the draft, the refusal
+alert keeps the text, and the invalidation touches nothing but the notes key), and the
+failure sentences (6). Plus 1 always-on SQLite smoke test and 2 e2e specs: one that
+asserts no notes are requested before the section is opened, that the row that appears
+after the POST carries the server's `createdAt` in the clinic's zone, that the POST body
+is exactly what was typed, and that the notes were read twice — once by the section,
+once by the invalidation; and one that a 422 leaves the paragraph in the box.
+
+**The 14 failures session 28's first full run showed were date drift in the harness,
 and they were proved not ours before anything was changed.** The e2e layer's fixtures
 are captures of Monday 2026-10-05 (`agendaEntries`, `bookingFixtures`' `TEN_AM_LIMA`),
 but the agenda opens on _today_; a failing spec's own error context read "October 7,
@@ -131,7 +162,7 @@ fixture instant from `new Date()`, would make the layer drift with the calendar 
 assert nothing about itself; the fixtures were frozen captures on purpose. Result:
 **90/90 e2e.**
 
-**What this session's work is verified by.** 20 new unit/component tests across three
+**What session 28's work was verified by.** 20 new unit/component tests across three
 files: the workspace itself (9 — header, status chip, the buttons derived from the
 transition set, the section nav, the 404 branch, the unavailable-patient heading), the
 status presentation and closure labels, and the failure sentences (which quote
@@ -144,6 +175,45 @@ router — a `<Link>` with no router context renders nothing — and the mock is
 the new suite failed for a reason that had nothing to do with the workspace.
 
 ## Decisions made this session (not yet in ADRs)
+
+### Decisions from session 29 (clinical notes)
+
+- **The read is scoped by reading the visit first, because a note has no clinic of its
+  own.** `clinical_notes` carries no `clinic_id` — the table was in both baseline
+  migrations exactly as found, so no migration was written — and tenancy can therefore
+  only come through `visits`: `findForVisit(clinicId, visitId)` inner-joins it, and the
+  use case reads the visit before it lists or writes. A visit this clinic does not hold
+  answers 404 to **both** verbs; only a visit that exists answers `[]`. The test that
+  files a refused attempt against a foreign visit and then counts the table to make sure
+  it is still empty is the one that proves scoping is not a filter applied after the
+  fact.
+- **`save` takes no clinic id, and there is no `UnitOfWork`.** One row, one statement.
+  The write path cannot be handed a note whose visit has not just been read, so a stray
+  insert is a foreign-key violation, and both repositories translate it into
+  `DomainError('NOT_FOUND', 'Visit … was not found')` — the same convention the visit
+  repositories already use for `23503`. A transaction wrapper around a single statement
+  would be ceremony.
+- **`Repositories` grew from six to seven — the policy's first test in the other
+  direction.** The set holds what can be built: `clinicalNotes` was added when its two
+  implementations existed, not before, exactly the rule that removed three
+  unconstructible repositories in session 23.
+- **`authorId` is always null.** There is no user model, so a note's author is a column
+  waiting for authentication rather than a field someone would have to guess.
+  Storing `null` is the honest answer (ADR 0022's open question stands).
+- **The body is 2,000 characters, matching the appointment's own `notes`.** Zod 4
+  applies `.trim()` before `.min(1)` counts, so whitespace alone is refused with "A note
+  needs a body" and what is stored is trimmed — asserted in a test, not assumed.
+- **The section's query is mounted, not enabled, and invalidates nothing else.**
+  `useVisitNotes` fetches when its component mounts — no `enabled` flag, because the
+  list is not asked for until someone opens the section — and the mutation invalidates
+  only `['visits','notes',visitId]`: a note does not change the visit row, so also
+  invalidating `['visits']` would be the client implying that it did. Non-optimistic
+  like the closure mutations: the row arrives with the server's `id` and `createdAt`,
+  and the e2e asserts those instead of the text it just typed.
+- **The refusal has its own sentence file because it fails differently.**
+  `describe-note-failure` quotes `ApiClientError`'s message the way
+  `describe-visit-failure` does, and the draft survives the failure — a request that ate
+  the paragraph would be the most destructive thing the panel could do.
 
 ### Decisions from session 28 (the visit workspace)
 
@@ -711,9 +781,9 @@ editing. Both sides now go through `PatientRepository`. Remaining:
      restate them wrongly, and the clinical record would then be evidence of something
      that did not happen.
 
-   **Still to do, in order:** clinical notes, treatments, charges and payments. The
-   walk-in (session 26), the read side (session 25), closing and reopening (session 24)
-   and the workspace UI (session 28) are done.
+   **Still to do, in order:** treatments, charges and payments. The clinical notes
+   (session 29), the walk-in (session 26), the read side (session 25), closing and
+   reopening (session 24) and the workspace UI (session 28) are done.
 
 **Milestone 6 onward** — the rest of visits, odontogram, treatments, payments,
 inventory, reports, auth: not started.
@@ -1516,3 +1586,41 @@ e2e: **90/90** — 5 new visit-workspace specs, plus the harness-clock fix that 
 the 14 date-drift failures · Playwright chromium reinstalled
 (`pnpm exec playwright install chromium`) after it had been cleared from the machine's
 cache.
+
+Session 29: clinical notes — the first row the workspace's section nav gained, and the
+promise session 28's data-driven nav made. `clinical-notes.ts` holds `listClinicalNotes`
+and `addClinicalNote` over a new `ClinicalNoteRepository` port; two endpoints,
+`GET`/`POST /api/v1/visits/:visitId/notes`, sit behind the existing `readVisitId` guard;
+and `VisitNotesSection` is the second row in `visitSections`.
+
+- **Scoping comes through `visits`, because a note has no clinic of its own.**
+  `clinical_notes` has no `clinic_id` — the table was already in both baseline
+  migrations, so no migration was written — and `findForVisit(clinicId, visitId)`
+  inner-joins it while the use case reads the visit first. A visit this clinic does not
+  hold is a 404 for both verbs, `[]` only for one it does, and `save` takes no clinic id:
+  one row, one statement, no `UnitOfWork`, with the foreign-key violation translated to
+  `NOT_FOUND` the way the visit repositories translate `23503`.
+- **`Repositories` grew from six to seven, which is the rule's first use in the other
+  direction.** The set holds what can be built: `clinicalNotes` was added when both
+  implementations existed, not before — the same policy that removed three
+  unconstructible repositories in session 23.
+- **The client does less than it could.** The notes query is mounted rather than
+  `enabled` (nothing is asked for until the section is opened), the mutation invalidates
+  only `['visits','notes',visitId]` (a note does not change the visit row, so also
+  re-reading the visit would be the client implying it did), and nothing is optimistic:
+  the row arrives carrying the server's `id` and `createdAt`, which is exactly what the
+  e2e asserts — the part no browser could have produced — alongside the POST's own body
+  and a second notes read.
+- **The refusal keeps the paragraph.** `describe-note-failure` quotes `ApiClientError`'s
+  message like its visit sibling, and the draft stays in the textarea: a request that
+  ate the text would be the most destructive thing the panel could do.
+- **Not attributable, not editable.** `authorId` is null (no user model — ADR 0022's
+  question 18) and there is no edit or delete: an append-only record was the simplest
+  honest rule until revising history becomes a product decision.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
+warning) · format · guard:boundaries OK · build 5/5 · 616 unit/component (23 new across
+domain, validation and `features/visits`) · 207 integration skipped — **Docker and every
+PostgreSQL client are absent from this environment, so the six new route tests were
+written and typechecked but not executed**, with the always-on SQLite smoke test
+covering the same path · e2e: **92/92** — 2 new notes specs.

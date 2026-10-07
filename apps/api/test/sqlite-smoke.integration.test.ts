@@ -18,6 +18,9 @@
  *    is a composite-key refusal, reported as `INVALID_INPUT`.
  *  - **The visit bridge is transactional.** Starting a visit moves two rows; a
  *    second start is refused by the unique index (`DUPLICATED_RECORD`).
+ *  - **A note scopes through its visit.** `clinical_notes` has no clinic column, so
+ *    both verbs resolve the visit in this clinic first — the join that does it is
+ *    written twice, once per engine (ADR 0025), and this is the second one.
  *  - **The dashboard reads real rows** on the SQLite engine — revenue, capacity,
  *    calendar day, recent patients.
  */
@@ -43,6 +46,9 @@ const dentistId = 'a0a0a0a0-0000-4000-8000-000000000004';
 const otherDentistId = 'a0a0a0a0-0000-4000-8000-000000000005';
 const chairId = 'a0a0a0a0-0000-4000-8000-000000000006';
 const roomId = 'a0a0a0a0-0000-4000-8000-000000000007';
+/** Another clinic's patient and visit, so the notes read has something to refuse. */
+const foreignPatientId = 'a0a0a0a0-0000-4000-8000-000000000011';
+const foreignVisitId = 'a0a0a0a0-0000-4000-8000-000000000012';
 
 describe('API on SQLite', () => {
   let dir: string;
@@ -85,6 +91,8 @@ describe('API on SQLite', () => {
   });
 
   let apiPatientId: string;
+  /** The visit the booking above became, captured for the note written on it. */
+  let visitId: string;
 
   /** The clinics table is empty of patients, so the first registration is P-000001. */
   it('registers a patient, issuing sequential chart numbers', async () => {
@@ -191,6 +199,7 @@ describe('API on SQLite', () => {
     const { visit, appointment } = response.json();
     expect(visit.status).toBe('OPEN');
     expect(appointment.status).toBe('IN_TREATMENT');
+    visitId = visit.id;
   });
 
   it('refuses a second visit for the same appointment', async () => {
@@ -205,6 +214,48 @@ describe('API on SQLite', () => {
     // `DOMAIN_RULE_VIOLATION` (see `problem.ts`), exactly as on PostgreSQL.
     expect(response.statusCode).toBe(409);
     expect(response.json().error.code).toBe('DOMAIN_RULE_VIOLATION');
+  });
+
+  it('files a note on the visit and scopes both verbs through it', async () => {
+    const filed = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/notes`,
+      payload: { body: '  Sensitivity reported.  ' },
+    });
+
+    expect(filed.statusCode).toBe(201);
+    // Trimming at the boundary, `authorId` left null (no user model yet), and the
+    // same envelope PostgreSQL answers with — the engine is not supposed to show.
+    expect(filed.json()).toMatchObject({
+      visitId,
+      body: 'Sensitivity reported.',
+      authorId: null,
+    });
+
+    const ours = await app.inject({ method: 'GET', url: `/api/v1/visits/${visitId}/notes` });
+    expect(ours.statusCode).toBe(200);
+    expect(ours.json().notes).toHaveLength(1);
+
+    // `clinical_notes` has no clinic column, so the read scopes by joining the
+    // visit — a second implementation of that join, on the engine that must not
+    // disagree with the first about what a clinic may see (ADR 0014, ADR 0025).
+    const foreign = await app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${foreignVisitId}/notes`,
+    });
+    expect(foreign.statusCode).toBe(404);
+    expect(foreign.json().error.code).toBe('NOT_FOUND');
+
+    const refusedWrite = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${foreignVisitId}/notes`,
+      payload: { body: 'Another clinic’s note.' },
+    });
+    // Refused before anything is written: the use case reads the visit first, and
+    // `clinical-notes.test.ts` asserts the half a 404 cannot show — that `save`
+    // was never called.
+    expect(refusedWrite.statusCode).toBe(404);
+    expect(refusedWrite.json().error.code).toBe('NOT_FOUND');
   });
 
   it('summarises the day on the dashboard, occupancy included', async () => {
@@ -283,6 +334,24 @@ async function seed(db: importedDb) {
     clinicId: otherClinicId,
     fullName: 'Dr Foreign',
     isActive: true,
+  });
+
+  // A patient and a visit in that other clinic: the note endpoints' whole scoping
+  // story is "this clinic cannot see that visit", and a fixture-less version of it
+  // would only ever prove the id was nowhere (ADR 0014, ADR 0025).
+  await db.insert(sqliteSchema.patients).values({
+    id: foreignPatientId,
+    clinicId: otherClinicId,
+    firstName: 'Far',
+    lastName: 'Away',
+  });
+  await db.insert(sqliteSchema.visits).values({
+    id: foreignVisitId,
+    clinicId: otherClinicId,
+    patientId: foreignPatientId,
+    dentistId: otherDentistId,
+    status: 'OPEN',
+    startedAt: new Date('2026-04-16T09:00:00.000Z'),
   });
 }
 

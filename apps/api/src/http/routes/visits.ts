@@ -29,29 +29,43 @@
  * with only one of them would leave the other to be guessed at. The walk-in answers
  * with the visit alone: there is no second row, so the wrapper would be a shape with
  * one field in it.
+ *
+ * **The notes are here rather than in a file of their own** because they have no
+ * address but this one: a note belongs to a visit, `clinical_notes` has no clinic of
+ * its own, and `GET /visits/:visitId/notes` says whose notes these are without a query
+ * parameter. One route, one subject (ADR 0023).
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type {
   ChairRepository,
+  ClinicalNoteRepository,
   Clock,
   DentistRepository,
   IdGenerator,
   UnitOfWork,
 } from '@denti-code-u3/domain';
 import {
+  addClinicalNote,
   completeVisitRecord,
   getVisit,
+  listClinicalNotes,
   listVisitsForPatient,
   reopenVisitRecord,
   startVisit,
   startWalkInVisit,
   type VisitRepository,
 } from '@denti-code-u3/domain';
-import { startVisitSchema, startWalkInVisitSchema, uuidSchema } from '@denti-code-u3/validation';
+import {
+  createClinicalNoteSchema,
+  startVisitSchema,
+  startWalkInVisitSchema,
+  uuidSchema,
+} from '@denti-code-u3/validation';
 import {
   asAppointmentId,
   asChairId,
+  asClinicalNoteId,
   asDentistId,
   asPatientId,
   asVisitId,
@@ -87,6 +101,17 @@ export interface VisitsDependencies {
   readonly visits: VisitRepository;
 
   /**
+   * The notes written on a visit.
+   *
+   * A repository rather than the transaction, for the same reason the closures get
+   * one: filing a note writes one row, and a `UnitOfWork` around a single insert is
+   * ceremony. What makes it *safe* as a plain repository is the use case's read — it
+   * resolves the visit in this clinic before anything is written, and `clinical_notes`
+   * has no clinic column of its own to check against (ADR 0014).
+   */
+  readonly clinicalNotes: ClinicalNoteRepository;
+
+  /**
    * The two resources a walk-in names, because there is no booking to name them from.
    *
    * Required rather than optional for the same reason the appointment routes require
@@ -104,7 +129,7 @@ export interface VisitsDependencies {
 
 export async function registerVisitsRoutes(
   app: FastifyInstance,
-  { unitOfWork, visits, dentists, chairs, clock, ids }: VisitsDependencies,
+  { unitOfWork, visits, clinicalNotes, dentists, chairs, clock, ids }: VisitsDependencies,
 ): Promise<void> {
   /**
    * `POST /api/v1/visits` — start a visit from an appointment.
@@ -280,6 +305,80 @@ export async function registerVisitsRoutes(
       const visit = await getVisit(path.clinicId, path.visitId, { visits });
 
       return reply.status(200).send(visit);
+    } catch (error) {
+      return sendProblem(reply, request, error);
+    }
+  });
+
+  /**
+   * `GET /api/v1/visits/:visitId/notes` — what the clinician wrote on this visit.
+   *
+   * 200 with `{ notes: [...] }`, oldest first, and `[]` for a visit that holds none.
+   *
+   * **404 for a visit this clinic does not hold, and that is the whole reason the
+   * use case reads the visit first.** `clinical_notes` has no clinic column, so a
+   * scoped query alone would answer `[]` for another clinic's visit — an empty list
+   * that reads as "no notes were taken". The visit is the subject; if the subject is
+   * not in this clinic, the answer is the same `NOT_FOUND` the visit itself gives
+   * (ADR 0014).
+   */
+  app.get('/api/v1/visits/:visitId/notes', async (request, reply) => {
+    const path = readVisitId(request.params, request.clinicId as ClinicId);
+
+    if (!path.valid) {
+      return sendInvalidVisitId(reply, request);
+    }
+
+    try {
+      const notes = await listClinicalNotes(path.clinicId, path.visitId, {
+        visits,
+        notes: clinicalNotes,
+      });
+
+      return reply.status(200).send({ notes });
+    } catch (error) {
+      return sendProblem(reply, request, error);
+    }
+  });
+
+  /**
+   * `POST /api/v1/visits/:visitId/notes` — file a note.
+   *
+   * 201 with the note as it was written. The body carries `body` and nothing else:
+   * the visit is the path, the clinic is the request scope, the time is the clock's
+   * and the author would be the authenticated user's — there is no user model yet,
+   * so `authorId` is written as null and that open question travels with the audit
+   * trail (ADR 0022).
+   *
+   * 422 for an empty or over-long body, refused here rather than stored: a note of
+   * nothing is a row that costs a reader's attention and answers no question.
+   *
+   * 404 for a visit this clinic does not hold — and for the race where the visit is
+   * deleted between the use case's read and the insert, which the repository
+   * translates from the foreign key so that the same refusal arrives the same way.
+   */
+  app.post('/api/v1/visits/:visitId/notes', async (request, reply) => {
+    const path = readVisitId(request.params, request.clinicId as ClinicId);
+
+    if (!path.valid) {
+      return sendInvalidVisitId(reply, request);
+    }
+
+    const parsed = createClinicalNoteSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return sendInvalidBody(reply, request, 'The note could not be saved', parsed.error);
+    }
+
+    try {
+      const note = await addClinicalNote(path.clinicId, path.visitId, parsed.data.body, {
+        visits,
+        notes: clinicalNotes,
+        clock,
+        newId: () => asClinicalNoteId(ids.nextId()),
+      });
+
+      return reply.status(201).send(note);
     } catch (error) {
       return sendProblem(reply, request, error);
     }
