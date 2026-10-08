@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createChargeSchema,
   createClinicalNoteSchema,
   createPrescriptionSchema,
   medicationRouteSchema,
@@ -390,5 +391,99 @@ describe('createPrescriptionSchema', () => {
       frequency: 'Every 8 hours',
       durationDays: 5,
     });
+  });
+});
+
+describe('createChargeSchema', () => {
+  it('accepts a description and a price, with the quantity and discount optional', () => {
+    const sparse = createChargeSchema.safeParse({
+      description: '  Composite restoration, tooth 16  ',
+      unitPriceMinor: 12_000,
+    });
+
+    expect(sparse.success).toBe(true);
+    if (!sparse.success) return;
+    expect(sparse.data).toEqual({
+      description: 'Composite restoration, tooth 16',
+      unitPriceMinor: 12_000,
+    });
+
+    const full = createChargeSchema.safeParse({
+      description: 'Scaling and prophylaxis',
+      quantity: 2,
+      unitPriceMinor: 4_500,
+      discountMinor: 500,
+    });
+    expect(full.success).toBe(true);
+  });
+
+  it('refuses a blank description, including one that only looks filled', () => {
+    expect(createChargeSchema.safeParse({ description: '   ', unitPriceMinor: 100 }).success).toBe(
+      false,
+    );
+    expect(createChargeSchema.safeParse({ description: '', unitPriceMinor: 100 }).success).toBe(
+      false,
+    );
+  });
+
+  it('refuses a description beyond the 200-character ceiling', () => {
+    expect(
+      createChargeSchema.safeParse({ description: 'x'.repeat(201), unitPriceMinor: 100 }).success,
+    ).toBe(false);
+    expect(
+      createChargeSchema.safeParse({ description: 'x'.repeat(200), unitPriceMinor: 100 }).success,
+    ).toBe(true);
+  });
+
+  it('refuses a non-positive quantity', () => {
+    for (const quantity of [0, -1]) {
+      expect(
+        createChargeSchema.safeParse({ description: 'Cleaning', quantity, unitPriceMinor: 100 })
+          .success,
+      ).toBe(false);
+    }
+  });
+
+  it('refuses a price or discount that is not a non-negative integer', () => {
+    for (const unitPriceMinor of [-1, 10.5, Number.NaN]) {
+      expect(
+        createChargeSchema.safeParse({ description: 'Cleaning', unitPriceMinor }).success,
+      ).toBe(false);
+    }
+    for (const discountMinor of [-1, 10.5]) {
+      expect(
+        createChargeSchema.safeParse({
+          description: 'Cleaning',
+          unitPriceMinor: 100,
+          discountMinor,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it('refuses a missing unit price rather than defaulting to a free charge', () => {
+    const result = createChargeSchema.safeParse({ description: 'Cleaning' });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(['unitPriceMinor']);
+  });
+
+  it('drops who and what the row belongs to, which are the visit’s and the clinic’s', () => {
+    // patientId, visitId, clinicId, currency, tax and the timestamp all belong to
+    // the server: a body that could state them could state them differently from
+    // the visit they are filed on (ADR 0014).
+    const result = createChargeSchema.safeParse({
+      description: 'Cleaning',
+      unitPriceMinor: 100,
+      patientId: PATIENT_ID,
+      visitId: '44444444-4444-4444-8444-444444444444',
+      clinicId: '99999999-9999-4999-8999-999999999999',
+      currency: 'PEN',
+      taxRatePercent: 18,
+      createdAt: '2020-01-01T00:00:00.000Z',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ description: 'Cleaning', unitPriceMinor: 100 });
   });
 });

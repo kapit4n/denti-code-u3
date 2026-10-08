@@ -40,7 +40,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type {
   ChairRepository,
+  ChargeRepository,
   ClinicalNoteRepository,
+  ClinicRepository,
   Clock,
   DentistRepository,
   IdGenerator,
@@ -51,11 +53,13 @@ import type {
 } from '@denti-code-u3/domain';
 import {
   addClinicalNote,
+  addVisitCharge,
   addVisitPrescription,
   completeVisitRecord,
   getVisit,
   listClinicalNotes,
   listTreatmentRecords,
+  listVisitCharges,
   listVisitPrescriptions,
   listVisitsForPatient,
   recordVisitTreatment,
@@ -65,6 +69,7 @@ import {
   type VisitRepository,
 } from '@denti-code-u3/domain';
 import {
+  createChargeSchema,
   createClinicalNoteSchema,
   createPrescriptionSchema,
   recordVisitTreatmentSchema,
@@ -75,6 +80,7 @@ import {
 import {
   asAppointmentId,
   asChairId,
+  asChargeId,
   asClinicalNoteId,
   asDentistId,
   asPatientId,
@@ -147,6 +153,28 @@ export interface VisitsDependencies {
   readonly prescriptions: PrescriptionRepository;
 
   /**
+   * The charges raised on a visit.
+   *
+   * A plain repository rather than the transaction, for the same reason the notes
+   * are: raising a charge writes one row, and the use case reads the visit in this
+   * clinic before the insert. Unlike its clinical siblings, the charge carries its
+   * own `clinic_id`, so the read side scopes on that column rather than through the
+   * visit — but the visit is still read first, because a foreign visit's charges are
+   * not this clinic's to list (ADR 0014).
+   */
+  readonly charges: ChargeRepository;
+
+  /**
+   * The clinic's own record, whose currency a price is denominated in.
+   *
+   * A new charge is not complete until its currency is known, and nothing else in the
+   * request or the visit can say what it is. The repository read here has one job:
+   * the clinic exists (it must — the visit's own tenancy proves it), and the currency
+   * the row is priced in comes from the clinic's record, never from the caller.
+   */
+  readonly clinics: ClinicRepository;
+
+  /**
    * The two resources a walk-in names, because there is no booking to name them from.
    *
    * Required rather than optional for the same reason the appointment routes require
@@ -171,6 +199,8 @@ export async function registerVisitsRoutes(
     treatmentRecords,
     treatments,
     prescriptions,
+    charges,
+    clinics,
     dentists,
     chairs,
     clock,
@@ -600,6 +630,94 @@ export async function registerVisitsRoutes(
       );
 
       return reply.status(201).send(prescription);
+    } catch (error) {
+      return sendProblem(reply, request, error);
+    }
+  });
+
+  /**
+   * `GET /api/v1/visits/:visitId/charges` — the bill this visit has grown.
+   *
+   * 200 with `{ charges: [...] }`, in the order the bill grew, and `[]` for a visit
+   * that raised none.
+   *
+   * **404 for a visit this clinic does not hold, for the same reason the notes list
+   * 404s.** The charge carries its own `clinic_id`, so a scoped query could in
+   * principle answer on its own — but the visit is the subject, and a foreign visit's
+   * charges are not this clinic's to list. The visit read is what keeps the "is this
+   * our patient's bill" and the "we cannot see this visit" answers apart (ADR 0014).
+   */
+  app.get('/api/v1/visits/:visitId/charges', async (request, reply) => {
+    const path = readVisitId(request.params, request.clinicId as ClinicId);
+
+    if (!path.valid) {
+      return sendInvalidVisitId(reply, request);
+    }
+
+    try {
+      const list = await listVisitCharges(path.clinicId, path.visitId, {
+        visits,
+        charges,
+      });
+
+      return reply.status(200).send({ charges: list });
+    } catch (error) {
+      return sendProblem(reply, request, error);
+    }
+  });
+
+  /**
+   * `POST /api/v1/visits/:visitId/charges` — raise a charge on the visit.
+   *
+   * 201 with the charge as it was written. The body carries only the description and
+   * the price; the visit is the path, the clinic is the request scope, the currency
+   * is the clinic's own record, the time is the clock's, and whose the charge is is
+   * inherited from the visit rather than accepted from the request (ADR 0014,
+   * ADR 0021) — a body that could restate the patient or the visit could restate them
+   * differently from the record it is filed on.
+   *
+   * 422 for a charge that says nothing or is not priced lawfully (a blank or
+   * over-long description, a non-positive quantity, a negative price or discount).
+   *
+   * 404 for a visit this clinic does not hold — and for the race where the visit is
+   * deleted between the read and the insert, answered by the domain the way its read
+   * would.
+   */
+  app.post('/api/v1/visits/:visitId/charges', async (request, reply) => {
+    const path = readVisitId(request.params, request.clinicId as ClinicId);
+
+    if (!path.valid) {
+      return sendInvalidVisitId(reply, request);
+    }
+
+    const parsed = createChargeSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return sendInvalidBody(reply, request, 'The charge could not be raised', parsed.error);
+    }
+
+    try {
+      const charge = await addVisitCharge(
+        path.clinicId,
+        path.visitId,
+        {
+          description: parsed.data.description,
+          ...(parsed.data.quantity !== undefined ? { quantity: parsed.data.quantity } : {}),
+          unitPriceMinor: parsed.data.unitPriceMinor,
+          ...(parsed.data.discountMinor !== undefined
+            ? { discountMinor: parsed.data.discountMinor }
+            : {}),
+        },
+        {
+          visits,
+          charges,
+          clinics,
+          clock,
+          newId: () => asChargeId(ids.nextId()),
+        },
+      );
+
+      return reply.status(201).send(charge);
     } catch (error) {
       return sendProblem(reply, request, error);
     }

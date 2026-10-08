@@ -134,16 +134,16 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 
 ## Verification log (last run, session 31)
 
-| Command                     | Result                                                                 |
-| --------------------------- | ---------------------------------------------------------------------- |
-| `pnpm run typecheck`        | 12/12 tasks pass                                                       |
-| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)       |
-| `pnpm run format:check`     | clean                                                                  |
-| `pnpm run test`             | 12/12 tasks pass — 672 tests (26 new), PG suite skips |
-| `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                 |
-| `pnpm run build`            | 5/5 tasks pass                                                         |
-| `pnpm run guard:boundaries` | OK                                                                     |
-| `pnpm run test:e2e`         | 96/96 pass — 2 new prescriptions specs                                 |
+| Command                     | Result                                                           |
+| --------------------------- | ---------------------------------------------------------------- |
+| `pnpm run typecheck`        | 12/12 tasks pass                                                 |
+| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning) |
+| `pnpm run format:check`     | clean                                                            |
+| `pnpm run test`             | 12/12 tasks pass — 672 tests (26 new), PG suite skips            |
+| `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**           |
+| `pnpm run build`            | 5/5 tasks pass                                                   |
+| `pnpm run guard:boundaries` | OK                                                               |
+| `pnpm run test:e2e`         | 96/96 pass — 2 new prescriptions specs                           |
 
 **The PostgreSQL integration suite could not be executed this session: Docker and every
 PostgreSQL client are absent from this environment** (no `docker`, no `podman`, no

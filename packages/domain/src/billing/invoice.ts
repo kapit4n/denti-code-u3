@@ -11,15 +11,42 @@
  * later), so `charge → invoice` is a nullable link rather than a mandatory one.
  */
 
-import type { CurrencyCode } from '@denti-code-u3/types';
+import type {
+  ChargeId,
+  ClinicId,
+  CurrencyCode,
+  InvoiceId,
+  IsoDateTime,
+  PatientId,
+  TreatmentId,
+  VisitId,
+} from '@denti-code-u3/types';
 import { DomainError } from '../shared/errors.js';
 import { addMoney, money, percentageOf, subtractMoney, sumMoney } from './money.js';
 import type { MoneyAmount } from './money.js';
 
+/**
+ * One priceable clinical event, as the `charges` row holds it.
+ *
+ * The entity is the whole row rather than the slice a screen happens to draw,
+ * because the two build directions need the same columns: a write names the
+ * clinic, the visit it belongs to and the currency it is priced in, and a read
+ * reports the invoice the charge was folded into. A partial `Charge` shared
+ * between the two would be the shape a future field has to break to add.
+ */
 export interface Charge {
-  readonly id: string;
-  readonly patientId: string;
-  readonly visitId?: string;
+  readonly id: ChargeId;
+  readonly clinicId: ClinicId;
+  readonly patientId: PatientId;
+  /** Null for a charge raised outside a visit — the column is `on delete set null`. */
+  readonly visitId: VisitId | null;
+  /** Null until the charge is included in an invoice. */
+  readonly invoiceId: InvoiceId | null;
+  /** The instant the charge itself was invoiced, distinct from when it was created. */
+  readonly invoicedAt: IsoDateTime | null;
+  readonly createdAt: IsoDateTime;
+  /** Null for a charge recorded by hand rather than from a treatment plan item. */
+  readonly treatmentId: TreatmentId | null;
   readonly description: string;
   readonly quantity: number;
   readonly unitPriceMinor: number;
@@ -27,7 +54,6 @@ export interface Charge {
   readonly discountMinor: number;
   readonly taxRatePercent: number;
   readonly currency: CurrencyCode;
-  readonly invoicedAt?: string;
 }
 
 export const INVOICE_STATUSES = ['DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'PAID', 'VOID'] as const;

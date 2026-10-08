@@ -40,7 +40,9 @@ import { fileURLToPath } from 'node:url';
 import * as schema from '@denti-code-u3/database/schema';
 import { registerVisitsRoutes } from '../src/http/routes/visits.js';
 import { DrizzleVisitRepository } from '../src/infrastructure/persistence/repositories/visit-repository.js';
+import { DrizzleChargeRepository } from '../src/infrastructure/persistence/repositories/charge-repository.js';
 import { DrizzleClinicalNoteRepository } from '../src/infrastructure/persistence/repositories/clinical-note-repository.js';
+import { DrizzleClinicRepository } from '../src/infrastructure/persistence/repositories/clinic-repository.js';
 import { DrizzleChairRepository } from '../src/infrastructure/persistence/repositories/chair-repository.js';
 import { DrizzleDentistRepository } from '../src/infrastructure/persistence/repositories/dentist-repository.js';
 import { DrizzlePrescriptionRepository } from '../src/infrastructure/persistence/repositories/prescription-repository.js';
@@ -266,6 +268,21 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       payload: payload as object,
     });
 
+  const getCharges = (visitId: string, clinic = clinicId) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${visitId}/charges`,
+      headers: { 'x-clinic-id': clinic },
+    });
+
+  const raiseCharge = (visitId: string, payload: unknown, clinic = clinicId) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/charges`,
+      headers: { 'x-clinic-id': clinic },
+      payload: payload as object,
+    });
+
   /**
    * The row as stored, with the timestamp read as an instant.
    *
@@ -305,6 +322,9 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
 
   /** The two statements that make the fixture removable, given both links are restrict. */
   const clearFixtures = async () => {
+    // Charges hold restrict links to the clinic and patient, so they are cleared at
+    // the start (before the visit rows that would otherwise set-null their visit_id).
+    await sql`delete from charges where clinic_id in (${clinicId}, ${otherClinicId})`;
     await sql`update appointments set visit_id = null where clinic_id in (${clinicId}, ${otherClinicId})`;
     await sql`update visits set appointment_id = null where clinic_id in (${clinicId}, ${otherClinicId})`;
     await sql`delete from visits where clinic_id in (${clinicId}, ${otherClinicId})`;
@@ -344,6 +364,15 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       // The prescriptions written on a visit, exercised by the prescription tests
       // below; a plain repository for the same read-then-write reason (ADR 0014).
       prescriptions: new DrizzlePrescriptionRepository(db),
+      // The charges raised on a visit, exercised by the charge tests below. A plain
+      // repository, and the first billing row with a clinic_id of its own — but the
+      // visit read still runs first, so a foreign visit 404s before any charge is
+      // listed or written (ADR 0014).
+      charges: new DrizzleChargeRepository(db),
+      // The clinic's own record, whose currency a charge is priced in. Required the
+      // way the dentists and chairs are: a door wired without it cannot complete a
+      // price (ADR 0020).
+      clinics: new DrizzleClinicRepository(db),
       // The two resources a walk-in names, for the same "who may be named" rule the
       // booking uses. The appointment door reads its names from the booking and never
       // calls these (ADR 0024).
@@ -1454,6 +1483,202 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
           url: '/api/v1/visits/not-a-uuid/prescriptions',
           headers: { 'x-clinic-id': clinicId },
           ...(method === 'POST' ? { payload: course() } : {}),
+        });
+
+        expect(response.statusCode).toBe(422);
+        expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+      }
+    });
+  });
+
+  describe('GET and POST /api/v1/visits/:visitId/charges', () => {
+    const aCharge = (overrides: Record<string, unknown> = {}) => ({
+      description: '  Composite restoration, tooth 16  ',
+      unitPriceMinor: 12_000,
+      ...overrides,
+    });
+
+    it('raises a charge and lists it back, priced in the clinic’s own record', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const raised = await raiseCharge(visitId, aCharge({ quantity: 2, discountMinor: 1_000 }));
+
+      expect(raised.statusCode).toBe(201);
+      const body = raised.json() as {
+        id: string;
+        clinicId: string;
+        patientId: string;
+        visitId: string;
+        treatmentId: string | null;
+        description: string;
+        quantity: number;
+        unitPriceMinor: number;
+        discountMinor: number;
+        taxRatePercent: number;
+        currency: string;
+        invoiceId: string | null;
+        invoicedAt: string | null;
+        createdAt: string;
+      };
+      // Who the row is about is inherited from the visit — the body may not restate
+      // the patient, the visit or the clinic (ADR 0014, ADR 0021).
+      expect(body.clinicId).toBe(clinicId);
+      expect(body.patientId).toBe(patient);
+      expect(body.visitId).toBe(visitId);
+      expect(body.treatmentId).toBeNull();
+      // Trimmed by the boundary schema, so the row is not the box's edges.
+      expect(body.description).toBe('Composite restoration, tooth 16');
+      expect(body.quantity).toBe(2);
+      expect(body.discountMinor).toBe(1_000);
+      // No tax in this slice (OPEN QUESTION), and not invoiced yet: both deliberate.
+      expect(body.taxRatePercent).toBe(0);
+      expect(body.currency).toBe('USD');
+      expect(body.invoiceId).toBeNull();
+      expect(body.invoicedAt).toBeNull();
+      // The clock, not something the body could have said.
+      expect(new Date(body.createdAt).toISOString()).toBe(NOW);
+
+      const listed = await getCharges(visitId);
+      expect(listed.statusCode).toBe(200);
+      expect((listed.json() as { charges: unknown[] }).charges).toEqual([body]);
+
+      // The row itself: a route that answered 201 without writing would pass every
+      // assertion above and lose the record.
+      const [row] = await sql`
+        select clinic_id, patient_id, visit_id, description, quantity, unit_price_minor,
+               discount_minor, tax_rate_percent, currency, invoice_id, invoiced_at
+        from charges where id = ${body.id}
+      `;
+      expect(row).toMatchObject({
+        clinic_id: clinicId,
+        patient_id: patient,
+        visit_id: visitId,
+        description: 'Composite restoration, tooth 16',
+        quantity: '2.00',
+        unit_price_minor: 12_000,
+        discount_minor: 1_000,
+        tax_rate_percent: '0.00',
+        currency: 'USD',
+        invoice_id: null,
+        invoiced_at: null,
+      });
+    });
+
+    it('defaults the quantity and the discount when the caller omits them', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const raised = await raiseCharge(visitId, aCharge());
+
+      expect(raised.statusCode).toBe(201);
+      // A single service raises one charge, and a charge without a discount is not
+      // one with a hidden discount.
+      expect((raised.json() as { quantity: number }).quantity).toBe(1);
+      expect((raised.json() as { discountMinor: number }).discountMinor).toBe(0);
+    });
+
+    it('lists the bill in the order it grew', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      // The earlier charge is written straight into the table because this suite's
+      // clock is fixed: two charges raised through the API would carry the same
+      // `created_at`, and the list would then be the id tiebreak's — stable, but not
+      // what "in the order it grew" claims to be.
+      await sql`
+        insert into charges
+          (id, clinic_id, patient_id, visit_id, description, quantity, unit_price_minor, currency, created_at)
+        values (
+          '11111111-9999-4888-8999-000000000044', ${clinicId}, ${patient}, ${visitId},
+          'Consultation', 1, 8000, 'USD', '2026-04-16T08:00:00.000Z'
+        )
+      `;
+      const raised = await raiseCharge(visitId, aCharge({ description: 'Cleaning' }));
+      expect(raised.statusCode).toBe(201);
+
+      const listed = await getCharges(visitId);
+
+      expect(listed.statusCode).toBe(200);
+      const descriptions = (listed.json() as { charges: { description: string }[] }).charges.map(
+        (charge) => charge.description,
+      );
+      expect(descriptions).toEqual(['Consultation', 'Cleaning']);
+    });
+
+    it('refuses a charge that says nothing and writes nothing', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const refused = await raiseCharge(visitId, aCharge({ description: '   ' }));
+
+      expect(refused.statusCode).toBe(422);
+      expect(refused.json()).toMatchObject({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'The charge could not be raised',
+        },
+      });
+
+      const [count] = await sql`select count(*)::int as total from charges`;
+      expect((count as { total: number }).total).toBe(0);
+    });
+
+    it('refuses a price that is not a non-negative integer, and writes nothing', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      for (const unitPriceMinor of [-100, 10.5]) {
+        const refused = await raiseCharge(visitId, aCharge({ unitPriceMinor }));
+        expect(refused.statusCode).toBe(422);
+        expect(refused.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+      }
+      for (const quantity of [0, -1]) {
+        const refused = await raiseCharge(visitId, aCharge({ quantity }));
+        expect(refused.statusCode).toBe(422);
+        expect(refused.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+      }
+      expect((await raiseCharge(visitId, aCharge({ discountMinor: -1 }))).statusCode).toBe(422);
+
+      const [count] = await sql`select count(*)::int as total from charges`;
+      expect((count as { total: number }).total).toBe(0);
+    });
+
+    it('answers 404 for a visit another clinic holds, rather than an empty list', async () => {
+      const foreign = await seedVisit({
+        startedAt: `${day}T09:00:00.000Z`,
+        clinic: otherClinicId,
+      });
+      const ours = await seedVisit({ startedAt: `${day}T10:00:00.000Z` });
+
+      const readForeign = await getCharges(foreign);
+
+      // A foreign visit's bill is not this clinic's to list; the visit is the subject,
+      // and the subject is not in this clinic (ADR 0014). Unlike the prescriptions —
+      // which have no clinic column at all — the charge carries its own clinic_id, so
+      // this is the *visit* read doing the refusing, not a bare empty list.
+      expect(readForeign.statusCode).toBe(404);
+      expect(readForeign.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+      expect((await raiseCharge(foreign, aCharge())).statusCode).toBe(404);
+
+      // And the same visit asked about under the other clinic's header is a different
+      // request: our visit is theirs to read, ours is not theirs to write.
+      expect((await getCharges(ours, otherClinicId)).statusCode).toBe(404);
+
+      // Nothing was written by either refusal.
+      const [count] = await sql`select count(*)::int as total from charges`;
+      expect((count as { total: number }).total).toBe(0);
+    });
+
+    it('answers 404 for a visit id that is nowhere, in the same shape', async () => {
+      const response = await getCharges(missingId);
+
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+    });
+
+    it('answers 422 for a path id that is not a uuid, on both verbs', async () => {
+      for (const method of ['GET', 'POST'] as const) {
+        const response = await app.inject({
+          method,
+          url: '/api/v1/visits/not-a-uuid/charges',
+          headers: { 'x-clinic-id': clinicId },
+          ...(method === 'POST' ? { payload: aCharge() } : {}),
         });
 
         expect(response.statusCode).toBe(422);

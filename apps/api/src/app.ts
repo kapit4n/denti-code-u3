@@ -164,6 +164,14 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     // What the patient was sent home with — the same read-then-write shape as the
     // notes, and a plain repository for the same reason (ADR 0014).
     prescriptions,
+    // The bill this visit has grown — the first billing row with a clinic_id of its
+    // own. Still a plain repository, because raising a charge writes one row and the
+    // use case reads the visit in this clinic first (ADR 0014).
+    charges: connection.repositories.charges,
+    // The clinic's own record, whose currency a charge is priced in: the write is
+    // not complete until the currency is known, and nothing in the request or the
+    // visit can say what it is. The same instance the agenda and opening hours use.
+    clinics,
     // The two resources a walk-in names, because it has no booking to read them from.
     // The same instances the agenda's filters and the booking rule use: one question,
     // one implementation.

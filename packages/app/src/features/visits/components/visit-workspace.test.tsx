@@ -152,6 +152,15 @@ interface HarnessOptions {
    * at the screen while the request is still in flight.
    */
   readonly prescriptionGate?: Promise<void>;
+  /** The charges the API answers with when the charges section is opened. */
+  readonly visitCharges?: Record<string, unknown>[];
+  /** When set, raising a charge is refused with this envelope. */
+  readonly chargeRefusal?: { readonly status: number; readonly body: unknown };
+  /**
+   * A promise the charge POST waits on before it answers, so a test can look at
+   * the screen while the request is still in flight.
+   */
+  readonly chargeGate?: Promise<void>;
 }
 
 function renderWorkspace({
@@ -170,12 +179,16 @@ function renderWorkspace({
   visitPrescriptions = [],
   prescriptionRefusal,
   prescriptionGate,
+  visitCharges = [],
+  chargeRefusal,
+  chargeGate,
 }: HarnessOptions = {}) {
   const state = {
     visit,
     notes: [...notes],
     visitTreatments: [...visitTreatments],
     visitPrescriptions: [...visitPrescriptions],
+    visitCharges: [...visitCharges],
   };
 
   const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
@@ -274,6 +287,39 @@ function renderWorkspace({
       // not been told about it yet.
       await prescriptionGate;
       return jsonResponse(filed, 201);
+    }
+    if (path === `/api/v1/visits/${VISIT_ID}/charges` && method === 'GET') {
+      return jsonResponse({ charges: state.visitCharges });
+    }
+    if (path === `/api/v1/visits/${VISIT_ID}/charges` && method === 'POST') {
+      if (chargeRefusal) {
+        return jsonResponse(chargeRefusal.body, chargeRefusal.status);
+      }
+      const written = JSON.parse(String(init?.body)) as {
+        description: string;
+        quantity?: number;
+        unitPriceMinor: number;
+        discountMinor?: number;
+      };
+      const raised = {
+        id: `charge-${state.visitCharges.length + 1}`,
+        clinicId: 'clinic-1',
+        patientId: PATIENT_ID,
+        visitId: VISIT_ID,
+        invoiceId: null,
+        invoicedAt: null,
+        createdAt: '2026-10-05T14:35:00.000Z',
+        treatmentId: null,
+        description: written.description,
+        quantity: written.quantity ?? 1,
+        unitPriceMinor: written.unitPriceMinor,
+        discountMinor: written.discountMinor ?? 0,
+        taxRatePercent: 0,
+        currency: 'USD',
+      };
+      state.visitCharges = [...state.visitCharges, raised];
+      await chargeGate;
+      return jsonResponse(raised, 201);
     }
     if (method === 'GET' && path === `/api/v1/patients/${PATIENT_ID}`) {
       return profile === null
@@ -891,38 +937,121 @@ describe('VisitWorkspace', () => {
     expect(visitReads).toHaveLength(1);
   });
 
-  it('keeps the form the clinician filled and says why when the prescription is refused', async () => {
+  it('lists the charges on the visit, in the clinic’s clock, only once the section is open', async () => {
     const { fetchImplementation } = renderWorkspace({
-      prescriptionRefusal: {
+      visitCharges: [
+        {
+          id: 'charge-1',
+          clinicId: 'clinic-1',
+          patientId: PATIENT_ID,
+          visitId: VISIT_ID,
+          invoiceId: null,
+          invoicedAt: null,
+          createdAt: '2026-10-05T14:00:00.000Z',
+          treatmentId: null,
+          description: 'Composite restoration',
+          quantity: 1,
+          unitPriceMinor: 8500,
+          discountMinor: 0,
+          taxRatePercent: 0,
+          currency: 'USD',
+        },
+      ],
+    });
+
+    await screen.findByTestId('visit-workspace');
+    expect(
+      fetchImplementation.mock.calls.filter(([url]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}/charges`),
+      ),
+    ).toHaveLength(0);
+
+    await user.click(screen.getByTestId('visit-section-charges'));
+
+    const row = await screen.findByTestId('charge');
+    expect(row).toHaveTextContent('Composite restoration');
+    expect(row).toHaveTextContent('85.00');
+    expect(row).toHaveTextContent('09:00');
+    expect(screen.queryByText('No charges raised yet.')).toBeNull();
+  });
+
+  it('says there are no charges rather than showing an empty list as an error', async () => {
+    renderWorkspace({ visitCharges: [] });
+
+    await user.click(await screen.findByTestId('visit-section-charges'));
+
+    expect(await screen.findByText('No charges raised yet.')).toBeTruthy();
+    expect(screen.queryByTestId('charge')).toBeNull();
+  });
+
+  it('raises a charge and shows it only once the server has answered', async () => {
+    let release: () => void = () => {};
+    const chargeGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { fetchImplementation } = renderWorkspace({ visitCharges: [], chargeGate });
+
+    await user.click(await screen.findByTestId('visit-section-charges'));
+    await screen.findByText('No charges raised yet.');
+
+    await user.type(screen.getByTestId('charge-description'), '  Composite  ');
+    await user.type(screen.getByTestId('charge-unit-price'), '85.00');
+    await user.type(screen.getByTestId('charge-quantity'), '2');
+    await user.click(screen.getByTestId('raise-charge'));
+
+    expect(screen.queryByTestId('charge')).toBeNull();
+    const post = fetchImplementation.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}/charges`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'POST',
+    );
+    expect(post).toBeTruthy();
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      description: 'Composite',
+      quantity: 2,
+      unitPriceMinor: 8500,
+    });
+
+    release();
+
+    expect(await screen.findByTestId('charge')).toHaveTextContent('Composite');
+    expect(screen.getByTestId('charges-total')).toHaveTextContent('170.00');
+
+    expect(screen.getByTestId('charge-description')).toHaveValue('');
+    expect(screen.getByTestId('charge-unit-price')).toHaveValue('');
+    expect(screen.getByTestId('charge-quantity')).toHaveValue(null);
+    expect(screen.getByTestId('charge-discount')).toHaveValue('');
+
+    const visitReads = fetchImplementation.mock.calls.filter(
+      ([url, init]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'GET',
+    );
+    expect(visitReads).toHaveLength(1);
+  });
+
+  it('keeps what the clinician typed and says why when the charge is refused', async () => {
+    const { fetchImplementation } = renderWorkspace({
+      chargeRefusal: {
         status: 422,
         body: {
           error: {
             code: 'VALIDATION_ERROR',
-            message: 'A prescription needs a medication name',
+            message: 'A charge needs a description',
             requestId: 'test',
           },
         },
       },
     });
 
-    await user.click(await screen.findByTestId('visit-section-prescriptions'));
-    await screen.findByText('No prescriptions written yet.');
+    await user.click(await screen.findByTestId('visit-section-charges'));
+    await user.type(screen.getByTestId('charge-description'), 'Cleaning');
+    await user.type(screen.getByTestId('charge-unit-price'), '85.00');
+    await user.click(screen.getByTestId('raise-charge'));
 
-    await user.type(screen.getByTestId('prescription-medication'), 'Ibuprofen');
-    await user.type(screen.getByTestId('prescription-dosage'), '400 mg');
-    await chooseFrom('prescription-route', /Oral/);
-    await user.type(screen.getByTestId('prescription-frequency'), 'Every 8 hours');
-    await user.type(screen.getByTestId('prescription-duration'), '5');
-    await user.click(screen.getByTestId('write-prescription'));
-
-    // The refusal reaches the screen in the API's own words, and the medication is
-    // still there: a network error that took the clinician's course with it would be
-    // the most destructive thing this panel does.
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'A prescription needs a medication name',
-    );
-    expect(screen.getByTestId('prescription-medication')).toHaveValue('Ibuprofen');
+    expect(await screen.findByRole('alert')).toHaveTextContent('A charge needs a description');
+    expect(screen.getByTestId('charge-description')).toHaveValue('Cleaning');
     expect(fetchImplementation).toHaveBeenCalled();
-    expect(screen.queryByTestId('prescription')).toBeNull();
+    expect(screen.queryByTestId('charge')).toBeNull();
   });
 });

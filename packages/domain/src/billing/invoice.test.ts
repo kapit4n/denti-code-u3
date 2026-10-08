@@ -12,8 +12,14 @@ import { DomainError } from '../shared/errors.js';
 
 function charge(overrides: Partial<Charge> = {}): Charge {
   return {
-    id: 'charge-1',
-    patientId: 'patient-1',
+    id: 'charge-1' as Charge['id'],
+    clinicId: 'clinic-1' as Charge['clinicId'],
+    patientId: 'patient-1' as Charge['patientId'],
+    visitId: 'visit-1' as Charge['visitId'],
+    invoiceId: null,
+    invoicedAt: null,
+    createdAt: '2026-10-05T14:00:00.000Z' as Charge['createdAt'],
+    treatmentId: null,
     description: 'Composite restoration, tooth 16',
     quantity: 1,
     unitPriceMinor: 20_000,
@@ -115,7 +121,7 @@ describe('calculateInvoiceTotals', () => {
       invoice({
         charges: [
           charge(),
-          charge({ id: 'charge-2', unitPriceMinor: 10_000, discountMinor: 1_000 }),
+          charge({ id: 'charge-2' as Charge['id'], unitPriceMinor: 10_000, discountMinor: 1_000 }),
         ],
       }),
     );

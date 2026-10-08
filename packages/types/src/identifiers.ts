@@ -26,6 +26,7 @@ export type VisitId = Brand<string, 'VisitId'>;
 export type TreatmentId = Brand<string, 'TreatmentId'>;
 export type TreatmentPlanId = Brand<string, 'TreatmentPlanId'>;
 export type PrescriptionId = Brand<string, 'PrescriptionId'>;
+export type ChargeId = Brand<string, 'ChargeId'>;
 export type InvoiceId = Brand<string, 'InvoiceId'>;
 export type PaymentId = Brand<string, 'PaymentId'>;
 export type InventoryItemId = Brand<string, 'InventoryItemId'>;
@@ -46,6 +47,7 @@ export type ClinicIdentifier =
   | TreatmentId
   | TreatmentPlanId
   | PrescriptionId
+  | ChargeId
   | InvoiceId
   | PaymentId
   | InventoryItemId
@@ -64,6 +66,7 @@ export const asVisitId = (value: string): VisitId => value as VisitId;
 export const asTreatmentId = (value: string): TreatmentId => value as TreatmentId;
 export const asTreatmentPlanId = (value: string): TreatmentPlanId => value as TreatmentPlanId;
 export const asPrescriptionId = (value: string): PrescriptionId => value as PrescriptionId;
+export const asChargeId = (value: string): ChargeId => value as ChargeId;
 export const asInvoiceId = (value: string): InvoiceId => value as InvoiceId;
 export const asPaymentId = (value: string): PaymentId => value as PaymentId;
 export const asInventoryItemId = (value: string): InventoryItemId => value as InventoryItemId;

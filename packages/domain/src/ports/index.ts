@@ -37,6 +37,7 @@ import type {
   PatientProfile,
 } from '../patient/index.js';
 import type { Clinic, ClinicRole } from '../organization/index.js';
+import type { Charge } from '../billing/index.js';
 import type { Prescription } from '../prescription/index.js';
 
 /**
@@ -75,6 +76,13 @@ export interface UnitOfWork {
  * read (which `visits` already holds) and the prescription written, and the
  * implementation exists in both engines before the name enters this set. The set is
  * ten now, and every one of its ten is constructible in both engines.
+ *
+ * Session 32 adds `charges`, the first billing row in the set. Raising a charge needs
+ * the visit read and the clinic read (for the currency) and the charge written — and,
+ * unlike its clinical siblings, `charges` has its own `clinic_id`, so `findForVisit`
+ * scopes in the table itself rather than through a join. The implementation exists in
+ * both engines before the name enters this set, and the set is eleven now, every one
+ * of its eleven constructible in both engines.
  */
 export interface Repositories {
   readonly patients: PatientRepository;
@@ -82,6 +90,7 @@ export interface Repositories {
   readonly visits: VisitRepository;
   readonly clinicalNotes: ClinicalNoteRepository;
   readonly prescriptions: PrescriptionRepository;
+  readonly charges: ChargeRepository;
   readonly treatments: TreatmentRepository;
   readonly treatmentRecords: TreatmentRecordRepository;
   readonly clinics: ClinicRepository;
@@ -589,6 +598,28 @@ export interface TreatmentRecordRepository {
 export interface PrescriptionRepository {
   findForVisit(clinicId: ClinicId, visitId: VisitId): Promise<readonly Prescription[]>;
   save(prescription: Prescription): Promise<void>;
+}
+
+/**
+ * A priceable clinical event recorded on a visit.
+ *
+ * **The first billing row in the patient's clinical record, and the first with a
+ * `clinic_id` of its own** — the reason this port differs from its clinical siblings.
+ * `findForVisit` scopes in the statement on the charge's own column rather than
+ * through a join, but the charge still belongs to the visit: a read has no use case
+ * in front of it to resolve the subject first, so the clinic filter is where the
+ * visit's tenancy is double-checked, defence in depth on a read (ADR 0014). Oldest
+ * first, then by id — the order a bill grew in.
+ *
+ * `save` takes no clinic, because the use case has already resolved the visit in this
+ * clinic. What it cannot know is whether that visit still exists by the time the
+ * insert lands, so the one refusal it translates is the foreign key — a visit deleted
+ * between the read and the insert answers the same `NOT_FOUND` the read would have,
+ * rather than a `23503` (or its SQLite twin) reaching the API as a 500.
+ */
+export interface ChargeRepository {
+  findForVisit(clinicId: ClinicId, visitId: VisitId): Promise<readonly Charge[]>;
+  save(charge: Charge): Promise<void>;
 }
 
 export interface PaymentSummary {

@@ -25,6 +25,7 @@ import type { Repositories, UnitOfWork } from '@denti-code-u3/domain';
 import type { DentiDatabase } from './connection.js';
 import { DrizzleAppointmentRepository } from '../repositories/appointment-repository.js';
 import { DrizzleChairRepository } from '../repositories/chair-repository.js';
+import { DrizzleChargeRepository } from '../repositories/charge-repository.js';
 import { DrizzleClinicalNoteRepository } from '../repositories/clinical-note-repository.js';
 import { DrizzleClinicRepository } from '../repositories/clinic-repository.js';
 import { DrizzleDentistRepository } from '../repositories/dentist-repository.js';
@@ -47,6 +48,7 @@ export function repositoriesFor(db: DentiDatabase): Repositories {
     visits: new DrizzleVisitRepository(db),
     clinicalNotes: new DrizzleClinicalNoteRepository(db),
     prescriptions: new DrizzlePrescriptionRepository(db),
+    charges: new DrizzleChargeRepository(db),
     treatments: new DrizzleTreatmentRepository(db),
     treatmentRecords: new DrizzleTreatmentRecordRepository(db),
     clinics: new DrizzleClinicRepository(db),

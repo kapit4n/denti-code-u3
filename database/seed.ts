@@ -52,7 +52,7 @@ const currencyCode = 'USD';
 const now = new Date();
 
 function seedSummary(): string {
-  return `clinic ${DEVELOPMENT_CLINIC_ID}, 3 patients, 2 dentists, 2 rooms, 4 chairs, 4 appointments, 2 visits (1 completed, 1 open), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 charges, 2 payments`;
+  return `clinic ${DEVELOPMENT_CLINIC_ID}, 3 patients, 2 dentists, 2 rooms, 4 chairs, 4 appointments, 2 visits (1 completed, 1 open), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 3 charges, 2 payments`;
 }
 
 /**
@@ -779,6 +779,21 @@ async function insertChargesPg(db: PostgresJsDatabase<typeof pgSchema>): Promise
         unitPriceMinor: 4500,
         currency: currencyCode,
       },
+      // The charge raised on Luis's open visit, so the workspace's Charges section
+      // opens to a bill that is growing rather than an empty page: the visit row's
+      // own patient and currency, granularity 1, no discount, not yet invoiced.
+      {
+        id: '11111111-5555-4666-8777-000000000003',
+        clinicId: DEVELOPMENT_CLINIC_ID,
+        patientId: '11111111-3333-4444-8555-000000000002',
+        visitId: '11111111-7777-4888-8999-000000000002',
+        description: 'Scaling and prophylaxis',
+        quantity: '1',
+        unitPriceMinor: 8500,
+        discountMinor: 0,
+        currency: currencyCode,
+        createdAt: at(0, 10, 35),
+      },
     ])
     .onConflictDoNothing();
 }
@@ -805,12 +820,25 @@ async function insertChargesSqlite(db: BetterSQLite3Database<typeof sqliteSchema
         unitPriceMinor: 4500,
         currency: currencyCode,
       },
+      // The charge raised on Luis's open visit, so the workspace's Charges section
+      // opens to a bill that is growing rather than an empty page: the visit row's
+      // own patient and currency, granularity 1, no discount, not yet invoiced.
+      {
+        id: '11111111-5555-4666-8777-000000000003',
+        clinicId: DEVELOPMENT_CLINIC_ID,
+        patientId: '11111111-3333-4444-8555-000000000002',
+        visitId: '11111111-7777-4888-8999-000000000002',
+        description: 'Scaling and prophylaxis',
+        quantity: '1',
+        unitPriceMinor: 8500,
+        discountMinor: 0,
+        currency: currencyCode,
+        createdAt: at(0, 10, 35),
+      },
     ])
     .onConflictDoNothing();
 }
 
-// A partial payment, so the profile balance is non-zero and the patient is not
-// simply "paid in full" — the interesting case for a balance query.
 async function insertPaymentsPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
   await db
     .insert(pgSchema.payments)

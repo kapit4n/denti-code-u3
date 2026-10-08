@@ -167,6 +167,36 @@ export const createPrescriptionSchema = z.object({
 export type CreatePrescriptionInput = z.infer<typeof createPrescriptionSchema>;
 
 /**
+ * Raise a charge on a visit.
+ *
+ * The body is only the description and the price, for the same reason the
+ * prescription body is only the course: **who the row is about and what it is priced
+ * in are not the caller's to say.** `patientId` and `visitId` are inherited from the
+ * visit and the currency from the clinic, so a request that could restate them could
+ * restate them differently (ADR 0014). The amounts are integer minor units — the
+ * wire shape money always travels in here, so this schema is never asked to divide
+ * or round.
+ *
+ * `quantity` and `discountMinor` are optional for the same reason the domain defaults
+ * them: a single service does not force a quantity, and a charge without a discount
+ * is not a charge with a hidden one. A non-positive quantity and a negative price or
+ * discount are refused at this boundary and again by the domain, because money is the
+ * one thing no boundary may be trusted to get right twice.
+ */
+export const createChargeSchema = z.object({
+  description: z
+    .string()
+    .trim()
+    .min(1, 'A charge needs a description')
+    .max(200, 'The description is too long'),
+  quantity: z.number().positive('A quantity must be greater than zero').optional(),
+  unitPriceMinor: z.number().int().nonnegative('A unit price cannot be negative'),
+  discountMinor: z.number().int().nonnegative('A discount cannot be negative').optional(),
+});
+
+export type CreateChargeInput = z.infer<typeof createChargeSchema>;
+
+/**
  * Deliberately not here: a `visitStatusSchema` mirroring the domain's three statuses.
  *
  * The appointment package mirrors its enum and the API has a startup check that the

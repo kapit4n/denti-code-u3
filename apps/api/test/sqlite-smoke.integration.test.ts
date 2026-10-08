@@ -30,6 +30,10 @@
  *    column of its own from the request — the write resolves the visit in this clinic
  *    and copies the patient and clinician from it, and the join that scopes the read
  *    is the second implementation of the notes' (ADR 0014, ADR 0025).
+ *  - **A charge carries its own clinic_id, so its read needs no join — but the visit
+ *    is still read first.** The first billing row scopes on its own column, priced in
+ *    the clinic's own record, and still 404s for another clinic's visit — the second
+ *    implementation of the whole shape, on the engine that must not disagree.
  *  - **The dashboard reads real rows** on the SQLite engine — revenue, capacity,
  *    calendar day, recent patients.
  */
@@ -393,6 +397,69 @@ describe('API on SQLite', () => {
         frequency: 'Every 8 hours',
         durationDays: 5,
       },
+    });
+    expect(refusedBlank.statusCode).toBe(422);
+    expect(refusedBlank.json().error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('raises a charge on the visit, priced in the clinic’s own record', async () => {
+    const raised = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/charges`,
+      payload: {
+        description: '  Composite restoration, tooth 16  ',
+        quantity: 2,
+        unitPriceMinor: 12_000,
+        discountMinor: 1_000,
+      },
+    });
+
+    expect(raised.statusCode).toBe(201);
+    // Trimming at the boundary, who the row is about inherited from the visit, and
+    // the currency from the clinic's own record — a body cannot restate any of it.
+    expect(raised.json()).toMatchObject({
+      clinicId,
+      patientId: apiPatientId,
+      visitId,
+      description: 'Composite restoration, tooth 16',
+      quantity: 2,
+      unitPriceMinor: 12_000,
+      discountMinor: 1_000,
+      taxRatePercent: 0,
+      currency: 'USD',
+      invoiceId: null,
+      invoicedAt: null,
+    });
+
+    const ours = await app.inject({ method: 'GET', url: `/api/v1/visits/${visitId}/charges` });
+    expect(ours.statusCode).toBe(200);
+    expect(ours.json().charges).toHaveLength(1);
+
+    // The charge carries its own clinic_id, but the visit is still read first — so
+    // another clinic's visit answers the same 404 the notes answered, on this engine
+    // too (ADR 0014).
+    const foreignRead = await app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${foreignVisitId}/charges`,
+    });
+    expect(foreignRead.statusCode).toBe(404);
+    expect(foreignRead.json().error.code).toBe('NOT_FOUND');
+
+    // Refused before anything is written: the use case reads the visit first.
+    const refusedForeignWrite = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${foreignVisitId}/charges`,
+      payload: { description: 'Cleaning', unitPriceMinor: 8_000 },
+    });
+    expect(refusedForeignWrite.statusCode).toBe(404);
+    expect(refusedForeignWrite.json().error.code).toBe('NOT_FOUND');
+
+    // A charge that says nothing is refused by the boundary schema before any row is
+    // written — the seeds of each refusal live in `validation`, not here.
+    const refusedBlank = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/charges`,
+      payload: { description: '   ', unitPriceMinor: 8_000 },
     });
     expect(refusedBlank.statusCode).toBe(422);
     expect(refusedBlank.json().error.code).toBe('VALIDATION_ERROR');

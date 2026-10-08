@@ -43,7 +43,8 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
-import type { MedicationRoute, TreatmentRecord, Visit } from '@denti-code-u3/domain';
+import type { Charge, MedicationRoute, TreatmentRecord, Visit } from '@denti-code-u3/domain';
+import { formatMinorUnits } from '@denti-code-u3/domain';
 
 import {
   Button,
@@ -65,15 +66,19 @@ import { formatClinicDayTime, READING_THE_CLINIC_CLOCK } from '../../clinic/form
 import { useClinicSettings } from '../../clinic/queries/clinic-settings-query.js';
 import { usePatient } from '../../patients/hooks/use-patients.js';
 import { useChairs, useDentists } from '../../agenda/queries/bookable-resources-query.js';
+import { chargeLineTotal, chargesTotal, parseMajorUnitsToMinor } from '../charge-presentation.js';
+import { describeChargeFailure } from '../describe-charge-failure.js';
 import { describeNoteFailure } from '../describe-note-failure.js';
 import { describePrescriptionFailure } from '../describe-prescription-failure.js';
 import { describeTreatmentFailure } from '../describe-treatment-failure.js';
 import { describeVisitFailure } from '../describe-visit-failure.js';
+import { useCreateCharge } from '../mutations/use-create-charge.js';
 import { useCreateClinicalNote } from '../mutations/use-create-clinical-note.js';
 import { useCreatePrescription } from '../mutations/use-create-prescription.js';
 import { useRecordVisitTreatment } from '../mutations/use-record-visit-treatment.js';
 import { useVisitClosure } from '../mutations/use-visit-closure.js';
 import { MEDICATION_ROUTE_OPTIONS, medicationRouteLabel } from '../prescription-presentation.js';
+import { useVisitCharges } from '../queries/charges-query.js';
 import { useVisitPrescriptions } from '../queries/prescriptions-query.js';
 import { useTreatments, useVisitTreatments } from '../queries/treatments-query.js';
 import { useVisitNotes } from '../queries/visit-notes-query.js';
@@ -92,18 +97,19 @@ export interface VisitWorkspaceProps {
 /**
  * The sections this workspace can draw.
  *
- * Four rows today, each with an endpoint behind it. `odontogram`, `files` and
+ * Five rows today, each with an endpoint behind it. `odontogram`, `files` and
  * `payments` from the brief each arrive with their own endpoint and their own row
  * here — a nav entry with nothing behind it is the "control that looks live and is
  * not" this project refuses to ship.
  */
-type VisitSectionId = 'summary' | 'notes' | 'treatments' | 'prescriptions';
+type VisitSectionId = 'summary' | 'notes' | 'treatments' | 'prescriptions' | 'charges';
 
 const VISIT_SECTIONS: readonly { readonly id: VisitSectionId; readonly label: string }[] = [
   { id: 'summary', label: 'Summary' },
   { id: 'notes', label: 'Notes' },
   { id: 'treatments', label: 'Treatments' },
   { id: 'prescriptions', label: 'Prescriptions' },
+  { id: 'charges', label: 'Charges' },
 ];
 
 export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
@@ -283,6 +289,9 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
           ) : null}
           {section === 'prescriptions' ? (
             <VisitPrescriptionsSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
+          ) : null}
+          {section === 'charges' ? (
+            <VisitChargesSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
           ) : null}
         </div>
       </div>
@@ -941,6 +950,256 @@ function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptio
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * The charges raised on this visit, and the door to raise more.
+ *
+ * Mounted only while the section is open, which is what keeps the charges request
+ * an answer to something on screen (see `charges-query.ts`). It owns its own hooks
+ * rather than taking them as props for the same reason the prescriptions section
+ * does: this is a feature with a draft, a mutation and a list of its own.
+ *
+ * **Nothing is written optimistically, and the form stays filled until the server
+ * answers.** The charge appears in the list because the invalidation refetched it —
+ * a price shown before the API accepted it is a claim on the patient's balance the
+ * record does not contain. The form clears on success, and only there: a refused
+ * charge is still the front desk's draft, and taking it back after a network error
+ * would be the one destructive thing this panel does.
+ *
+ * **Major units are the door, minor units are the wire.** The boxes take "120.00"
+ * and `parseMajorUnitsToMinor` hands the mutation an integer of cents, the shape
+ * the API and the domain always use. The list shows the line total computed by the
+ * domain's own `calculateChargeTotal` — quantity × unit price, minus the discount,
+ * priced in the clinic's currency — never a total this screen re-derived and could
+ * disagree with the record about.
+ */
+interface VisitChargesSectionProps {
+  readonly visitId: string;
+  /** Absent while the clinic is still being fetched; the times then wait for it. */
+  readonly clinicTimeZone: string | undefined;
+}
+
+function VisitChargesSection({ visitId, clinicTimeZone }: VisitChargesSectionProps) {
+  const chargesQuery = useVisitCharges(visitId);
+  const createCharge = useCreateCharge();
+  const [description, setDescription] = useState('');
+  const [priceMajor, setPriceMajor] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [discountMajor, setDiscountMajor] = useState('');
+
+  const failure = describeChargeFailure(createCharge.error, 'The charge could not be raised.');
+
+  const parsedPrice = parseMajorUnitsToMinor(priceMajor);
+  const parsedDiscount = parseMajorUnitsToMinor(discountMajor);
+  const parsedQuantity = quantity.trim() === '' ? undefined : Number(quantity);
+  const ready =
+    description.trim().length > 0 &&
+    parsedPrice !== undefined &&
+    (parsedQuantity === undefined || (Number.isInteger(parsedQuantity) && parsedQuantity > 0));
+
+  const list = chargesQuery.data?.charges ?? [];
+  const totalMinor = list.length > 0 ? chargesTotal(list, list[0]!.currency) : undefined;
+
+  return (
+    <Card data-testid="visit-charges">
+      <CardHeader>
+        <CardTitle>Charges</CardTitle>
+        <CardDescription>
+          What this visit has been priced at, and what is still to pay
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {chargesQuery.isPending ? (
+          <p className="text-sm text-muted-foreground">Loading the charges…</p>
+        ) : chargesQuery.error ? (
+          <p className="text-sm text-destructive" role="alert">
+            The charges could not be loaded.
+          </p>
+        ) : list.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No charges raised yet.</p>
+        ) : (
+          <ul className="space-y-3">
+            {list.map((charge) => (
+              <ChargeRow key={charge.id} charge={charge} clinicTimeZone={clinicTimeZone} />
+            ))}
+          </ul>
+        )}
+
+        {list.length > 0 ? (
+          <div
+            className="flex items-center justify-between border-t pt-3 text-sm"
+            data-testid="charges-total"
+          >
+            <span className="font-medium">Total so far</span>
+            {/* The domain's own sum, in the charges' own currency. */}
+            <span className="font-medium">{formatMinorUnits(totalMinor ?? 0)}</span>
+          </div>
+        ) : null}
+
+        <form
+          className="space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!ready || parsedPrice === undefined) {
+              return;
+            }
+            createCharge.mutate(
+              {
+                visitId,
+                description,
+                ...(parsedQuantity !== undefined ? { quantity: parsedQuantity } : {}),
+                unitPriceMinor: parsedPrice,
+                ...(parsedDiscount !== undefined && parsedDiscount > 0
+                  ? { discountMinor: parsedDiscount }
+                  : {}),
+              },
+              {
+                onSuccess: () => {
+                  setDescription('');
+                  setPriceMajor('');
+                  setQuantity('');
+                  setDiscountMajor('');
+                },
+              },
+            );
+          }}
+        >
+          <div className="space-y-1">
+            <Label htmlFor="charge-description">Description</Label>
+            <input
+              id="charge-description"
+              data-testid="charge-description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              disabled={createCharge.isPending}
+              className="w-full rounded-md border bg-background p-2 text-sm"
+              placeholder="e.g. Composite restoration, tooth 16"
+              maxLength={200}
+            />
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="space-y-1">
+              <Label htmlFor="charge-unit-price">Unit price</Label>
+              <input
+                id="charge-unit-price"
+                data-testid="charge-unit-price"
+                value={priceMajor}
+                onChange={(event) => setPriceMajor(event.target.value)}
+                inputMode="decimal"
+                disabled={createCharge.isPending}
+                className="w-full rounded-md border bg-background p-2 text-sm"
+                placeholder="120.00"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="charge-quantity">Quantity (optional)</Label>
+              <input
+                id="charge-quantity"
+                data-testid="charge-quantity"
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
+                type="number"
+                min={1}
+                step={1}
+                inputMode="numeric"
+                disabled={createCharge.isPending}
+                className="w-full rounded-md border bg-background p-2 text-sm"
+                placeholder="1"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="charge-discount">Discount (optional)</Label>
+              <input
+                id="charge-discount"
+                data-testid="charge-discount"
+                value={discountMajor}
+                onChange={(event) => setDiscountMajor(event.target.value)}
+                inputMode="decimal"
+                disabled={createCharge.isPending}
+                className="w-full rounded-md border bg-background p-2 text-sm"
+                placeholder="0.00"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="submit"
+              data-testid="raise-charge"
+              disabled={createCharge.isPending || !ready}
+            >
+              Raise charge
+            </Button>
+            {createCharge.isPending ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
+                Saving…
+              </p>
+            ) : null}
+          </div>
+        </form>
+
+        {failure ? (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
+            <span>{failure}</span>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ChargeRow({
+  charge,
+  clinicTimeZone,
+}: {
+  readonly charge: Charge;
+  readonly clinicTimeZone: string | undefined;
+}) {
+  const total = chargeLineTotal(charge).amountMinor;
+
+  return (
+    <li className="rounded-md border p-3 text-sm" data-testid="charge">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">
+            {clinicTimeZone ? (
+              formatClinicDayTime(charge.createdAt, clinicTimeZone)
+            ) : (
+              <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+            )}
+          </p>
+          <p className="font-medium">{charge.description}</p>
+          <p className="text-muted-foreground">
+            {formatMinorUnits(charge.unitPriceMinor)}
+            {charge.quantity > 1 ? ` × ${charge.quantity}` : ''}
+            {charge.discountMinor > 0 ? (
+              <>
+                {' · '}
+                <span className="line-through">
+                  {formatMinorUnits(charge.unitPriceMinor * charge.quantity)}
+                </span>{' '}
+                less {formatMinorUnits(charge.discountMinor)}
+              </>
+            ) : null}
+          </p>
+        </div>
+        {/* The domain's own line total (quantity × price − discount + tax), shown
+            here and not re-derived by the screen. */}
+        <p className="font-medium" data-testid="charge-total">
+          {formatMinorUnits(total)}
+        </p>
+      </div>
+    </li>
   );
 }
 
