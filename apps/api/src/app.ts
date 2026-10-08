@@ -168,6 +168,12 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     // own. Still a plain repository, because raising a charge writes one row and the
     // use case reads the visit in this clinic first (ADR 0014).
     charges: connection.repositories.charges,
+    // Money received against that bill. The write is not a plain repository: a
+    // settlement raises an invoice, records the payment, allocates it and stamps the
+    // charges — four rows that must become one, so it goes through the unit of work
+    // the bridge uses. The register read is the one four-table join in the visits
+    // feature, scoped by the visit.
+    payments: connection.repositories.payments,
     // The clinic's own record, whose currency a charge is priced in: the write is
     // not complete until the currency is known, and nothing in the request or the
     // visit can say what it is. The same instance the agenda and opening hours use.

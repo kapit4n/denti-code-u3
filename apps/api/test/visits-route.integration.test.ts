@@ -46,6 +46,7 @@ import { DrizzleClinicRepository } from '../src/infrastructure/persistence/repos
 import { DrizzleChairRepository } from '../src/infrastructure/persistence/repositories/chair-repository.js';
 import { DrizzleDentistRepository } from '../src/infrastructure/persistence/repositories/dentist-repository.js';
 import { DrizzlePrescriptionRepository } from '../src/infrastructure/persistence/repositories/prescription-repository.js';
+import { DrizzlePaymentRepository } from '../src/infrastructure/persistence/repositories/payment-repository.js';
 import { DrizzleTreatmentRecordRepository } from '../src/infrastructure/persistence/repositories/treatment-record-repository.js';
 import { DrizzleTreatmentRepository } from '../src/infrastructure/persistence/repositories/treatment-repository.js';
 import { DrizzleUnitOfWork } from '../src/infrastructure/persistence/postgres/unit-of-work.js';
@@ -283,6 +284,21 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       payload: payload as object,
     });
 
+  const getPayments = (visitId: string, clinic = clinicId) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${visitId}/payments`,
+      headers: { 'x-clinic-id': clinic },
+    });
+
+  const pay = (visitId: string, payload: unknown, clinic = clinicId) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/payments`,
+      headers: { 'x-clinic-id': clinic },
+      payload: payload as object,
+    });
+
   /**
    * The row as stored, with the timestamp read as an instant.
    *
@@ -320,10 +336,13 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       payload: payload as object,
     });
 
-  /** The two statements that make the fixture removable, given both links are restrict. */
+  /** The statements that make the fixture removable, given both links are restrict. */
   const clearFixtures = async () => {
-    // Charges hold restrict links to the clinic and patient, so they are cleared at
-    // the start (before the visit rows that would otherwise set-null their visit_id).
+    // Payments and invoices hold restrict links to the clinic and patient, and their
+    // allocations cascade from them, so they are cleared before the charges (which the
+    // settlement test stamps with an invoice id) and before the visits and appointments.
+    await sql`delete from payments where clinic_id in (${clinicId}, ${otherClinicId})`;
+    await sql`delete from invoices where clinic_id in (${clinicId}, ${otherClinicId})`;
     await sql`delete from charges where clinic_id in (${clinicId}, ${otherClinicId})`;
     await sql`update appointments set visit_id = null where clinic_id in (${clinicId}, ${otherClinicId})`;
     await sql`update visits set appointment_id = null where clinic_id in (${clinicId}, ${otherClinicId})`;
@@ -369,6 +388,11 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       // visit read still runs first, so a foreign visit 404s before any charge is
       // listed or written (ADR 0014).
       charges: new DrizzleChargeRepository(db),
+      // Money received against the bill, exercised by the payment tests below. The
+      // write is a plain repository *plus* the unit of work already wired above: a
+      // settlement raises an invoice, records the payment, allocates it and stamps
+      // the charges — four rows that must become one (ADR 0021).
+      payments: new DrizzlePaymentRepository(db),
       // The clinic's own record, whose currency a charge is priced in. Required the
       // way the dentists and chairs are: a door wired without it cannot complete a
       // price (ADR 0020).
@@ -1679,6 +1703,198 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
           url: '/api/v1/visits/not-a-uuid/charges',
           headers: { 'x-clinic-id': clinicId },
           ...(method === 'POST' ? { payload: aCharge() } : {}),
+        });
+
+        expect(response.statusCode).toBe(422);
+        expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+      }
+    });
+  });
+
+  describe('GET and POST /api/v1/visits/:visitId/payments', () => {
+    const bill = { description: '  Composite restoration, tooth 16  ', unitPriceMinor: 12_000 };
+
+    /**
+     * A visit with one settled bill: one charge worth 23_000 minor units
+     * (2 × 12_000 − 1_000 discount), paid in full by the caller.
+     */
+    const settle = async (overrides: Record<string, unknown> = {}) => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+      const raised = await raiseCharge(visitId, { ...bill, quantity: 2, discountMinor: 1_000 });
+      expect(raised.statusCode).toBe(201);
+
+      const paid = await pay(visitId, { method: 'CARD', amountMinor: 23_000, ...overrides });
+      expect(paid.statusCode).toBe(201);
+      return { visitId, payment: paid.json() as Record<string, unknown> };
+    };
+
+    it('raises an invoice, records the payment, allocates it and stamps the charges', async () => {
+      const { visitId, payment } = await settle({ reference: '  *** 4242  ' });
+
+      expect(payment).toMatchObject({
+        clinicId,
+        patientId: patient,
+        method: 'CARD',
+        currency: 'USD',
+        amountMinor: 23_000,
+        // Trimmed by the boundary schema, not by the row.
+        reference: '*** 4242',
+      });
+      // The clock, not something the body could have said.
+      expect(new Date(payment.receivedAt as string).toISOString()).toBe(NOW);
+
+      const [invoice] = (await sql`
+        select id, status, clinic_id, patient_id, currency, discount_minor, subtotal_minor, total_minor,
+               tax_rate_percent
+        from invoices where clinic_id = ${clinicId}
+      `) as [
+        {
+          id: string;
+          status: string;
+          clinic_id: string;
+          patient_id: string;
+          currency: string;
+          discount_minor: number;
+          subtotal_minor: number;
+          total_minor: number;
+          tax_rate_percent: string;
+        },
+      ];
+      // One settle, one invoice: the four rows became one document in one transaction.
+      expect(invoice).toMatchObject({
+        status: 'PAID',
+        clinic_id: clinicId,
+        patient_id: patient,
+        currency: 'USD',
+        discount_minor: 0,
+        subtotal_minor: 24_000,
+        total_minor: 23_000,
+        tax_rate_percent: '0.00',
+      });
+
+      const [allocation] = (await sql`
+        select payment_id, invoice_id, amount_minor
+        from payment_allocations
+      `) as [{ payment_id: string; invoice_id: string; amount_minor: number }];
+      expect(allocation).toMatchObject({
+        payment_id: payment.id,
+        invoice_id: invoice.id,
+        amount_minor: 23_000,
+      });
+
+      const [stored] = (await sql`select invoice_id, invoiced_at from charges`) as [
+        { invoice_id: string; invoiced_at: string },
+      ];
+      expect(stored.invoice_id).toBe(invoice.id);
+      expect(new Date(stored.invoiced_at).toISOString()).toBe(NOW);
+
+      // The register answers the payment the moment it was recorded.
+      const listed = await getPayments(visitId);
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json()).toEqual({ payments: [payment] });
+    });
+
+    it('is born PARTIALLY_PAID, folding every charge in, and stores the amount actually received', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+      await raiseCharge(visitId, { ...bill, quantity: 2, discountMinor: 1_000 });
+
+      const paid = await pay(visitId, { method: 'CASH', amountMinor: 5_000 });
+
+      expect(paid.statusCode).toBe(201);
+      expect(paid.json()).toMatchObject({ method: 'CASH', amountMinor: 5_000 });
+
+      const [invoice] =
+        (await sql`select id, status, total_minor, subtotal_minor from invoices`) as [
+          { id: string; status: string; total_minor: number; subtotal_minor: number },
+        ];
+      expect(invoice).toMatchObject({
+        status: 'PARTIALLY_PAID',
+        total_minor: 23_000,
+        subtotal_minor: 24_000,
+      });
+      const [allocation] = (await sql`select amount_minor from payment_allocations`) as [
+        { amount_minor: number },
+      ];
+      expect(allocation.amount_minor).toBe(5_000);
+
+      // The charges are still folded in — "billed later" is not a state after a bill
+      // exists — and the register still names the payment.
+      const [stored] = (await sql`select invoice_id from charges`) as [{ invoice_id: string }];
+      expect(stored.invoice_id).toBe(invoice.id);
+      const listed = await getPayments(visitId);
+      expect((listed.json() as { payments: unknown[] }).payments).toHaveLength(1);
+    });
+
+    it('refuses an amount over the bill and writes nothing', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+      await raiseCharge(visitId, { ...bill, quantity: 2, discountMinor: 1_000 });
+
+      const refused = await pay(visitId, { method: 'CARD', amountMinor: 23_001 });
+
+      expect(refused.statusCode).toBe(422);
+      expect(refused.json()).toMatchObject({
+        error: { code: 'VALIDATION_ERROR', details: { amountMinor: 23_001 } },
+      });
+
+      const [payments] = await sql`select count(*)::int as total from payments`;
+      expect((payments as { total: number }).total).toBe(0);
+      const [invoices] = await sql`select count(*)::int as total from invoices`;
+      expect((invoices as { total: number }).total).toBe(0);
+    });
+
+    it('refuses a second payment once the bill is fully or partially settled', async () => {
+      const { visitId } = await settle();
+      const [invoice] = (await sql`select id, status from invoices`) as [
+        { id: string; status: string },
+      ];
+
+      const refused = await pay(visitId, { method: 'CASH', amountMinor: 1 });
+
+      // The invoice's remaining balance is the Milestone 9 ledger's business, and
+      // until it exists a visit with a settled bill has nothing left for this route
+      // to collect — same 422, same domain answer, as an empty bill (docs/open-questions.md).
+      expect(refused.statusCode).toBe(422);
+      expect(refused.json()).toMatchObject({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'There is nothing left to pay on this visit',
+        },
+      });
+
+      const [payments] = await sql`select count(*)::int as total from payments`;
+      expect((payments as { total: number }).total).toBe(1);
+      expect(invoice.status).toBe('PAID');
+    });
+
+    it('answers 404 for a visit another clinic holds, and lists nothing from ours', async () => {
+      const foreign = await seedVisit({
+        startedAt: `${day}T09:00:00.000Z`,
+        clinic: otherClinicId,
+      });
+      const { visitId } = await settle();
+
+      expect((await getPayments(foreign)).statusCode).toBe(404);
+      expect((await pay(foreign, { method: 'CARD', amountMinor: 23_000 })).statusCode).toBe(404);
+
+      // Our visit under the other clinic's header is a different request.
+      expect((await getPayments(visitId, otherClinicId)).statusCode).toBe(404);
+
+      const [payments] = await sql`select count(*)::int as total from payments`;
+      expect((payments as { total: number }).total).toBe(1);
+    });
+
+    it('answers 404 for a visit id that is nowhere, in the same shape', async () => {
+      expect((await getPayments(missingId)).statusCode).toBe(404);
+      expect((await pay(missingId, { method: 'CARD', amountMinor: 100 })).statusCode).toBe(404);
+    });
+
+    it('answers 422 for a path id that is not a uuid, on both verbs', async () => {
+      for (const method of ['GET', 'POST'] as const) {
+        const response = await app.inject({
+          method,
+          url: '/api/v1/visits/not-a-uuid/payments',
+          headers: { 'x-clinic-id': clinicId },
+          ...(method === 'POST' ? { payload: { method: 'CARD', amountMinor: 100 } } : {}),
         });
 
         expect(response.statusCode).toBe(422);

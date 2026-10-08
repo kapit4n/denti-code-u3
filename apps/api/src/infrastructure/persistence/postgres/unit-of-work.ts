@@ -17,8 +17,8 @@
  * **The set is built fresh rather than passed in,** because the alternative is a
  * `Repositories` object assembled once from the outer connection and then handed to
  * every callback, and that object would hold the wrong handles. The cost is that each
- * transaction constructs ten wrappers, which is nothing next to the round trip it is
- * about to make.
+ * transaction constructs fourteen wrappers, which is nothing next to the round trip it
+ * is about to make.
  */
 import type { Repositories, UnitOfWork } from '@denti-code-u3/domain';
 
@@ -29,7 +29,10 @@ import { DrizzleChargeRepository } from '../repositories/charge-repository.js';
 import { DrizzleClinicalNoteRepository } from '../repositories/clinical-note-repository.js';
 import { DrizzleClinicRepository } from '../repositories/clinic-repository.js';
 import { DrizzleDentistRepository } from '../repositories/dentist-repository.js';
+import { DrizzleInvoiceRepository } from '../repositories/invoice-repository.js';
 import { DrizzlePatientRepository } from '../repositories/patient-repository.js';
+import { DrizzlePaymentAllocationRepository } from '../repositories/payment-allocation-repository.js';
+import { DrizzlePaymentRepository } from '../repositories/payment-repository.js';
 import { DrizzlePrescriptionRepository } from '../repositories/prescription-repository.js';
 import { DrizzleTreatmentRecordRepository } from '../repositories/treatment-record-repository.js';
 import { DrizzleTreatmentRepository } from '../repositories/treatment-repository.js';
@@ -39,7 +42,8 @@ import { DrizzleVisitRepository } from '../repositories/visit-repository.js';
  * One repository per port, all on the same handle.
  *
  * Exported because the API wires routes with repositories built on the outer
- * connection, and a caller that needed both would otherwise construct ten twice.
+ * connection, and a caller that needed both would otherwise construct fourteen
+ * twice.
  */
 export function repositoriesFor(db: DentiDatabase): Repositories {
   return {
@@ -54,6 +58,9 @@ export function repositoriesFor(db: DentiDatabase): Repositories {
     clinics: new DrizzleClinicRepository(db),
     dentists: new DrizzleDentistRepository(db),
     chairs: new DrizzleChairRepository(db),
+    invoices: new DrizzleInvoiceRepository(db),
+    payments: new DrizzlePaymentRepository(db),
+    paymentAllocations: new DrizzlePaymentAllocationRepository(db),
   };
 }
 

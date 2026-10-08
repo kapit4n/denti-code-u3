@@ -131,6 +131,7 @@ function harness(options: { visit?: Visit; clinic?: Clinic; stored?: readonly Ch
     save: async (charge) => {
       recorded.saved.push(charge);
     },
+    markInvoiced: async () => {},
   };
 
   return {

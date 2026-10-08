@@ -18,6 +18,7 @@ import type {
   InvoiceId,
   IsoDateTime,
   PatientId,
+  PaymentId,
   TreatmentId,
   VisitId,
 } from '@denti-code-u3/types';
@@ -69,13 +70,44 @@ export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
 export interface Invoice {
-  readonly id: string;
-  readonly patientId: string;
+  readonly id: InvoiceId;
+  readonly clinicId: ClinicId;
+  readonly patientId: PatientId;
   readonly currency: CurrencyCode;
   readonly status: InvoiceStatus;
   readonly discountMinor: number;
   readonly taxRatePercent: number;
   readonly charges: readonly Charge[];
+}
+
+/**
+ * Money received, as the `payments` row holds it.
+ *
+ * The full row rather than a slice, for the same reason `Charge` is the whole row:
+ * a write names the clinic and the patient the money belongs to, and a read reports
+ * the method and the reference, so a partial shape shared between the two would be
+ * the form a future field has to break to add.
+ *
+ * `amountMinor` is strictly positive — the column's check enforces it, and a payment
+ * of nothing is not money received.
+ */
+export interface Payment {
+  readonly id: PaymentId;
+  readonly clinicId: ClinicId;
+  readonly patientId: PatientId;
+  readonly method: PaymentMethod;
+  readonly currency: CurrencyCode;
+  readonly amountMinor: number;
+  /** Optional free text, e.g. a card's last digits or a transfer's number. */
+  readonly reference: string | null;
+  readonly receivedAt: IsoDateTime;
+}
+
+/** One line of `invoice X was paid with payment Y, this much`. */
+export interface PaymentAllocation {
+  readonly paymentId: PaymentId;
+  readonly invoiceId: InvoiceId;
+  readonly amountMinor: number;
 }
 
 export interface InvoiceTotals {

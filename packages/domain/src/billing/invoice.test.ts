@@ -32,8 +32,9 @@ function charge(overrides: Partial<Charge> = {}): Charge {
 
 function invoice(overrides: Partial<Invoice> = {}): Invoice {
   return {
-    id: 'invoice-1',
-    patientId: 'patient-1',
+    id: 'invoice-1' as Invoice['id'],
+    clinicId: 'clinic-1' as Invoice['clinicId'],
+    patientId: 'patient-1' as Invoice['patientId'],
     currency: 'USD',
     status: 'ISSUED',
     discountMinor: 0,
@@ -195,7 +196,7 @@ describe('calculatePatientBalance', () => {
     const balance = calculatePatientBalance(
       [
         { ...invoice(), status: 'DRAFT' },
-        { ...invoice(), id: 'invoice-2', status: 'VOID' },
+        { ...invoice(), id: 'invoice-2' as Invoice['id'], status: 'VOID' },
       ],
       [],
       0,

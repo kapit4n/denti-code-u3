@@ -46,6 +46,7 @@ import type {
   Clock,
   DentistRepository,
   IdGenerator,
+  PaymentRepository,
   PrescriptionRepository,
   TreatmentRecordRepository,
   TreatmentRepository,
@@ -60,8 +61,10 @@ import {
   listClinicalNotes,
   listTreatmentRecords,
   listVisitCharges,
+  listVisitPayments,
   listVisitPrescriptions,
   listVisitsForPatient,
+  payVisitCharges,
   recordVisitTreatment,
   reopenVisitRecord,
   startVisit,
@@ -71,6 +74,7 @@ import {
 import {
   createChargeSchema,
   createClinicalNoteSchema,
+  createPaymentSchema,
   createPrescriptionSchema,
   recordVisitTreatmentSchema,
   startVisitSchema,
@@ -83,7 +87,9 @@ import {
   asChargeId,
   asClinicalNoteId,
   asDentistId,
+  asInvoiceId,
   asPatientId,
+  asPaymentId,
   asPrescriptionId,
   asTreatmentId,
   asVisitId,
@@ -165,6 +171,21 @@ export interface VisitsDependencies {
   readonly charges: ChargeRepository;
 
   /**
+   * Money received against a visit's bill.
+   *
+   * A plain repository is *not* enough for the write: a settlement raises an
+   * invoice, records the payment, allocates it and stamps the charges — four
+   * rows the moment they must become one, so `POST /payments` goes through the
+   * same `unitOfWork` the bridge does, and reading it doesn't. The register
+   * read is a four-table join scoped by the visit, and it is handed a plain
+   * repository for the same reason the charges read is (ADR 0014). The
+   * currency, the patient and the clinic are the visit's and the clinic's own —
+   * nothing about a settlement is the caller's to say except the method, the
+   * amount and an optional reference.
+   */
+  readonly payments: PaymentRepository;
+
+  /**
    * The clinic's own record, whose currency a price is denominated in.
    *
    * A new charge is not complete until its currency is known, and nothing else in the
@@ -200,6 +221,7 @@ export async function registerVisitsRoutes(
     treatments,
     prescriptions,
     charges,
+    payments,
     clinics,
     dentists,
     chairs,
@@ -718,6 +740,105 @@ export async function registerVisitsRoutes(
       );
 
       return reply.status(201).send(charge);
+    } catch (error) {
+      return sendProblem(reply, request, error);
+    }
+  });
+
+  /**
+   * `GET /api/v1/visits/:visitId/payments` — money received against this bill.
+   *
+   * 200 with `{ payments: [...] }`, newest received first, and `[]` for a
+   * visit nothing has settled yet. Each payment is a full row: the method, the
+   * amount, an optional reference and the moment the money arrived. The visit's
+   * *bill* — what is still owed — is the charges list's reading, because "still
+   * owed" is a property of the charges until the Milestone 9 ledger exists to
+   * own it; this register only ever records what was paid.
+   *
+   * **404 for a visit this clinic does not hold, for the same reason the charges
+   * list 404s.** A payment carries no `visit_id` — the money reaches the visit
+   * through its allocations, its invoice and the charges that invoice folded in —
+   * so the join alone could answer `[]` for a foreign visit. The visit is the
+   * subject; if the subject is not in this clinic, the answer is the same
+   * `NOT_FOUND` the visit itself gives (ADR 0014).
+   */
+  app.get('/api/v1/visits/:visitId/payments', async (request, reply) => {
+    const path = readVisitId(request.params, request.clinicId as ClinicId);
+
+    if (!path.valid) {
+      return sendInvalidVisitId(reply, request);
+    }
+
+    try {
+      const list = await listVisitPayments(path.clinicId, path.visitId, {
+        visits,
+        payments,
+      });
+
+      return reply.status(200).send({ payments: list });
+    } catch (error) {
+      return sendProblem(reply, request, error);
+    }
+  });
+
+  /**
+   * `POST /api/v1/visits/:visitId/payments` — settle all or part of the bill.
+   *
+   * 201 with the payment as it was recorded. The body carries the method, the
+   * amount and an optional reference and nothing else: the visit is the path,
+   * the clinic is the request scope, whose the money is is inherited from the
+   * visit, and when it arrived is the clock's. The currency is the clinic's own
+   * record, never the caller's (ADR 0014, ADR 0021).
+   *
+   * The settlement runs in the same `unitOfWork` the bridge uses, and that is
+   * not ceremony: it raises an invoice, records the payment, allocates it and
+   * stamps the charges — four rows that must become one, or a crash could leave
+   * a bill raised with nothing marking it paid (ADR 0021).
+   *
+   * 422 for an unlawful amount — not a positive integer, or more than the visit's
+   * un-invoiced charges are worth — a method this product does not know, or a
+   * reference past its ceiling.
+   *
+   * 404 for a visit this clinic does not hold.
+   *
+   * **A payment settles the un-invoiced bill.** Charges already folded into an
+   * invoice are another document's business; collecting the rest of that invoice
+   * is the Milestone 9 ledger's, and until it exists a second payment on the same
+   * visit answers the same "nothing left" the empty bill does. That boundary is
+   * an open question recorded in `docs/open-questions.md`, not a gap this route
+   * is meant to hide.
+   */
+  app.post('/api/v1/visits/:visitId/payments', async (request, reply) => {
+    const path = readVisitId(request.params, request.clinicId as ClinicId);
+
+    if (!path.valid) {
+      return sendInvalidVisitId(reply, request);
+    }
+
+    const parsed = createPaymentSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return sendInvalidBody(reply, request, 'The payment could not be recorded', parsed.error);
+    }
+
+    try {
+      const payment = await payVisitCharges(
+        path.clinicId,
+        path.visitId,
+        {
+          method: parsed.data.method,
+          amountMinor: parsed.data.amountMinor,
+          ...(parsed.data.reference != null ? { reference: parsed.data.reference } : {}),
+        },
+        {
+          unitOfWork,
+          clock,
+          newInvoiceId: () => asInvoiceId(ids.nextId()),
+          newPaymentId: () => asPaymentId(ids.nextId()),
+        },
+      );
+
+      return reply.status(201).send(payment);
     } catch (error) {
       return sendProblem(reply, request, error);
     }

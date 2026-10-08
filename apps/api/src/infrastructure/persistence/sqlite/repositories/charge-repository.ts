@@ -16,12 +16,14 @@ import {
   asPatientId,
   asTreatmentId,
   asVisitId,
+  type ChargeId,
   type ClinicId,
   type CurrencyCode,
+  type InvoiceId,
   type IsoDateTime,
   type VisitId,
 } from '@denti-code-u3/types';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 
 import { charges } from '@denti-code-u3/database/schema/sqlite';
 
@@ -89,6 +91,28 @@ export class SQLiteChargeRepository implements ChargeRepository {
       }
       throw error;
     }
+  }
+
+  async markInvoiced(
+    clinicId: ClinicId,
+    chargeIds: readonly ChargeId[],
+    invoiceId: InvoiceId,
+    invoicedAt: IsoDateTime,
+  ): Promise<void> {
+    // The use case only calls this when there is something to stamp, but a no-op
+    // here means a route calling it for an empty list never sends an empty `IN`.
+    if (chargeIds.length === 0) {
+      return;
+    }
+
+    this.db
+      .update(charges)
+      .set({
+        invoiceId,
+        invoicedAt: new Date(invoicedAt),
+      })
+      .where(and(eq(charges.clinicId, clinicId), inArray(charges.id, chargeIds)))
+      .run();
   }
 }
 

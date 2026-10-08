@@ -17,7 +17,10 @@ import { SQLiteChargeRepository } from './repositories/charge-repository.js';
 import { SQLiteClinicalNoteRepository } from './repositories/clinical-note-repository.js';
 import { SQLiteClinicRepository } from './repositories/clinic-repository.js';
 import { SQLiteDentistRepository } from './repositories/dentist-repository.js';
+import { SQLiteInvoiceRepository } from './repositories/invoice-repository.js';
 import { SQLitePatientRepository } from './repositories/patient-repository.js';
+import { SQLitePaymentAllocationRepository } from './repositories/payment-allocation-repository.js';
+import { SQLitePaymentRepository } from './repositories/payment-repository.js';
 import { SQLitePrescriptionRepository } from './repositories/prescription-repository.js';
 import { SQLiteTreatmentRecordRepository } from './repositories/treatment-record-repository.js';
 import { SQLiteTreatmentRepository } from './repositories/treatment-repository.js';
@@ -36,5 +39,8 @@ export function sqliteRepositoriesFor(db: SqliteDatabase): Repositories {
     clinics: new SQLiteClinicRepository(db),
     dentists: new SQLiteDentistRepository(db),
     chairs: new SQLiteChairRepository(db),
+    invoices: new SQLiteInvoiceRepository(db),
+    payments: new SQLitePaymentRepository(db),
+    paymentAllocations: new SQLitePaymentAllocationRepository(db),
   };
 }

@@ -11,12 +11,13 @@
 
 import type {
   AppointmentId,
+  ChargeId,
   ChairId,
   ClinicId,
   DentistId,
+  InvoiceId,
   IsoDateTime,
   PatientId,
-  PaymentId,
   TreatmentId,
   VisitId,
 } from '@denti-code-u3/types';
@@ -37,7 +38,7 @@ import type {
   PatientProfile,
 } from '../patient/index.js';
 import type { Clinic, ClinicRole } from '../organization/index.js';
-import type { Charge } from '../billing/index.js';
+import type { Charge, Invoice, Payment, PaymentAllocation } from '../billing/index.js';
 import type { Prescription } from '../prescription/index.js';
 
 /**
@@ -83,6 +84,12 @@ export interface UnitOfWork {
  * scopes in the table itself rather than through a join. The implementation exists in
  * both engines before the name enters this set, and the set is eleven now, every one
  * of its eleven constructible in both engines.
+ *
+ * Session 33 adds `invoices`, `payments` and `paymentAllocations` together, because
+ * the settlement use case writes them *together* — a unit of work that could not
+ * build them would be a unit of work that could not do its one job (ADR 0021). All
+ * three implementations exist in both engines before their names enter this set, and
+ * the set is fourteen now, every one of its fourteen constructible in both engines.
  */
 export interface Repositories {
   readonly patients: PatientRepository;
@@ -96,6 +103,9 @@ export interface Repositories {
   readonly clinics: ClinicRepository;
   readonly dentists: DentistRepository;
   readonly chairs: ChairRepository;
+  readonly invoices: InvoiceRepository;
+  readonly payments: PaymentRepository;
+  readonly paymentAllocations: PaymentAllocationRepository;
 }
 
 export interface Page<TItem> {
@@ -616,23 +626,73 @@ export interface PrescriptionRepository {
  * insert lands, so the one refusal it translates is the foreign key — a visit deleted
  * between the read and the insert answers the same `NOT_FOUND` the read would have,
  * rather than a `23503` (or its SQLite twin) reaching the API as a 500.
+ *
+ * `markInvoiced` is the write that ends a charge's "not yet billed" story. It is a
+ * batch over specific ids, scoped by the clinic like every other read and write on
+ * this row: the use case read the charges inside its transaction in this clinic, and
+ * the update repeats that filter because an update has no use case in front of it to
+ * scope with. Setting `invoice_id` and `invoiced_at` is the whole operation — a
+ * charge folded into an invoice is never unpublished, and there is no inverse.
  */
 export interface ChargeRepository {
   findForVisit(clinicId: ClinicId, visitId: VisitId): Promise<readonly Charge[]>;
   save(charge: Charge): Promise<void>;
+  markInvoiced(
+    clinicId: ClinicId,
+    chargeIds: readonly ChargeId[],
+    invoiceId: InvoiceId,
+    invoicedAt: IsoDateTime,
+  ): Promise<void>;
 }
 
-export interface PaymentSummary {
-  readonly id: PaymentId;
-  readonly patientId: PatientId;
-  readonly method: string;
-  readonly amountMinor: number;
-  readonly receivedAt: IsoDateTime;
+/**
+ * One issued invoice, written whole.
+ *
+ * The persistence is deliberately a single `save`. An invoice is a legal document
+ * whose totals are written down, not derived on read (the `invoices` table persists
+ * `subtotal_minor` and `total_minor` on purpose), and nothing in this milestone
+ * edits or retires one — reading invoices is Milestone 9's ledger, not this task.
+ * The implementation computes the totals through the domain's own
+ * `calculateInvoiceTotals`, so a number stored twice cannot disagree with a number
+ * derived once.
+ *
+ * `save` takes no clinic, because the use case has already resolved the visit and the
+ * clinic inside its transaction. The translated refusal is the foreign key — the
+ * patient deleted between the read and the insert answers `NOT_FOUND` rather than a
+ * `23503` reaching the API as a 500.
+ */
+export interface InvoiceRepository {
+  save(invoice: Invoice): Promise<void>;
 }
 
+/**
+ * Money received, scoped to one clinic, and the rows that allocated it.
+ *
+ * `save` inserts a payment; its only translated refusal is the patient's foreign key,
+ * for the same "deleted between the read and the insert" reason every other write
+ * here translates it.
+ *
+ * `findForVisit` is the read that answers a visit's payment register, and it is a
+ * join because a payment does not carry a `visit_id`: the money reaches the visit
+ * through its allocations, its invoice, and the charges that invoice folded in. A
+ * payment recorded for a patient who never paid this visit's bill cannot appear here.
+ * Newest received first, then by id — the order a payment register is read in.
+ */
 export interface PaymentRepository {
-  listForPatient(clinicId: ClinicId, patientId: PatientId): Promise<readonly PaymentSummary[]>;
-  save(payment: PaymentSummary): Promise<void>;
+  findForVisit(clinicId: ClinicId, visitId: VisitId): Promise<readonly Payment[]>;
+  save(payment: Payment): Promise<void>;
+}
+
+/**
+ * The line that says an invoice was paid with a payment.
+ *
+ * A payment may be split across invoices and an invoice settled by several payments,
+ * which is why the allocations are their own table with a composite primary key — a
+ * duplicate split is impossible at the database, not merely discouraged. Nothing in
+ * this milestone edits or recalls an allocation, so `save` is the whole port.
+ */
+export interface PaymentAllocationRepository {
+  save(allocation: PaymentAllocation): Promise<void>;
 }
 
 /** Read access to a user's clinic memberships; authorization is enforced here. */

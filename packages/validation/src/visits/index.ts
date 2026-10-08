@@ -197,6 +197,40 @@ export const createChargeSchema = z.object({
 export type CreateChargeInput = z.infer<typeof createChargeSchema>;
 
 /**
+ * The ways a visit can pay, mirrored from the domain enum's values.
+ *
+ * The same mirror, for the same reason, as `medicationRouteSchema`: two static
+ * copies of one billing fact, kept aligned by the same habit (ADR 0011). The
+ * write path types the request as the domain's `PaymentMethod`, and the
+ * database's own `enumCheck` guards the column.
+ */
+export const paymentMethodSchema = z.enum(['CASH', 'CARD', 'TRANSFER', 'YAPE', 'PLIN', 'OTHER']);
+
+/**
+ * Pay part or all of a visit's bill.
+ *
+ * The body is only the method, the amount and an optional reference — **who and
+ * what the settlement belongs to are not the caller's to say.** `clinicId`,
+ * `patientId` and `currency` are inherited from the visit and the clinic, a
+ * payment always goes against the visit it is filed on, and the reference is an
+ * optional free note (a card's last digits), never restated as money (ADR 0014).
+ *
+ * `amountMinor` is a positive integer minor unit — the wire shape money always
+ * travels in here, never divided or rounded. Whether the amount may exceed what
+ * the visit is owed is the *domain's* judgement and is not repeated here: the
+ * outstanding sum lives in the read, not in the request. The 200-character
+ * ceiling on `reference` is the same number the short clinical fields use; a
+ * blank one is dropped to `null` by the domain, never stored empty.
+ */
+export const createPaymentSchema = z.object({
+  method: paymentMethodSchema,
+  amountMinor: z.number().int().positive('A payment must be a positive amount'),
+  reference: z.string().trim().max(200, 'The payment reference is too long').optional().nullable(),
+});
+
+export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;
+
+/**
  * Deliberately not here: a `visitStatusSchema` mirroring the domain's three statuses.
  *
  * The appointment package mirrors its enum and the API has a startup check that the

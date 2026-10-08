@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   createChargeSchema,
   createClinicalNoteSchema,
+  createPaymentSchema,
   createPrescriptionSchema,
   medicationRouteSchema,
+  paymentMethodSchema,
   recordVisitTreatmentSchema,
   startVisitSchema,
   startWalkInVisitSchema,
@@ -485,5 +487,74 @@ describe('createChargeSchema', () => {
 
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ description: 'Cleaning', unitPriceMinor: 100 });
+  });
+});
+
+describe('paymentMethodSchema', () => {
+  it('spells the same methods the domain does', () => {
+    for (const method of ['CASH', 'CARD', 'TRANSFER', 'YAPE', 'PLIN', 'OTHER']) {
+      expect(paymentMethodSchema.safeParse(method).success).toBe(true);
+    }
+  });
+
+  it('refuses a method the register does not know', () => {
+    for (const method of ['cash', 'BITCOIN', 'CHECK', 'MOBILE']) {
+      expect(paymentMethodSchema.safeParse(method).success).toBe(false);
+    }
+  });
+});
+
+describe('createPaymentSchema', () => {
+  it('accepts a method and an amount, with the reference optional', () => {
+    const sparse = createPaymentSchema.safeParse({ method: 'CARD', amountMinor: 12_000 });
+
+    expect(sparse.success).toBe(true);
+    if (!sparse.success) return;
+    expect(sparse.data).toEqual({ method: 'CARD', amountMinor: 12_000 });
+
+    const full = createPaymentSchema.safeParse({
+      method: 'YAPE',
+      amountMinor: 4_500,
+      reference: '  2345  ',
+    });
+    expect(full.success).toBe(true);
+    if (!full.success) return;
+    expect(full.data).toEqual({ method: 'YAPE', amountMinor: 4_500, reference: '2345' });
+  });
+
+  it('refuses a non-positive or non-integer amount', () => {
+    for (const amountMinor of [0, -1, 10.5, Number.NaN]) {
+      expect(createPaymentSchema.safeParse({ method: 'CASH', amountMinor }).success).toBe(false);
+    }
+  });
+
+  it('refuses a reference beyond the 200-character ceiling', () => {
+    expect(
+      createPaymentSchema.safeParse({
+        method: 'CASH',
+        amountMinor: 100,
+        reference: 'x'.repeat(201),
+      }).success,
+    ).toBe(false);
+    expect(
+      createPaymentSchema.safeParse({ method: 'CASH', amountMinor: 100, reference: null }).success,
+    ).toBe(true);
+  });
+
+  it('drops who and what the settlement belongs to, which are the visit’s and the clinic’s', () => {
+    // clinicId, patientId, currency and the timestamp are the server's: a payment
+    // always goes against the visit it is filed on (ADR 0014).
+    const result = createPaymentSchema.safeParse({
+      method: 'CASH',
+      amountMinor: 100,
+      clinicId: '99999999-9999-4999-8999-999999999999',
+      patientId: PATIENT_ID,
+      visitId: '44444444-4444-4444-8444-444444444444',
+      currency: 'PEN',
+      receivedAt: '2020-01-01T00:00:00.000Z',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ method: 'CASH', amountMinor: 100 });
   });
 });

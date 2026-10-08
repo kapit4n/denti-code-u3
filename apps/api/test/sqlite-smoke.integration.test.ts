@@ -465,6 +465,64 @@ describe('API on SQLite', () => {
     expect(refusedBlank.json().error.code).toBe('VALIDATION_ERROR');
   });
 
+  it('settles the visit’s bill, in the same transaction, on this engine too', async () => {
+    // The charge test above raised a bill of 2 × 12_000 − 1_000 = 23_000 minor units.
+    const paid = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/payments`,
+      payload: { method: 'CARD', amountMinor: 23_000, reference: '  *** 4242  ' },
+    });
+
+    expect(paid.statusCode).toBe(201);
+    // Trimming at the boundary, who the money belongs to inherited from the visit,
+    // and the currency from the clinic's own record — the same envelope PostgreSQL
+    // answers with, so the engines agree about what a payment is.
+    expect(paid.json()).toMatchObject({
+      clinicId,
+      patientId: apiPatientId,
+      method: 'CARD',
+      amountMinor: 23_000,
+      reference: '*** 4242',
+      currency: 'USD',
+    });
+
+    const ours = await app.inject({ method: 'GET', url: `/api/v1/visits/${visitId}/payments` });
+    expect(ours.statusCode).toBe(200);
+    expect(ours.json().payments).toHaveLength(1);
+
+    // The four-table join `findForVisit` runs here is this engine's second
+    // implementation, and it answers the same 404 for another clinic's visit the
+    // notes and charges reads answered (ADR 0014, ADR 0025).
+    const foreignRead = await app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${foreignVisitId}/payments`,
+    });
+    expect(foreignRead.statusCode).toBe(404);
+    expect(foreignRead.json().error.code).toBe('NOT_FOUND');
+
+    // The same transaction that recorded the money raised the invoice and stamped
+    // the charges, so the bill reads "invoiced" a moment after the register does.
+    const charges = await app.inject({ method: 'GET', url: `/api/v1/visits/${visitId}/charges` });
+    const listed = (
+      charges.json() as {
+        charges: { invoiceId: string | null; invoicedAt: string | null }[];
+      }
+    ).charges;
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.invoiceId).toBeTruthy();
+    expect(listed[0]?.invoicedAt).toBeTruthy();
+
+    // And a second payment answers the ledger's boundary — the invoice's remaining
+    // balance is Milestone 9's — rather than writing a second row (docs/open-questions.md).
+    const refused = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/payments`,
+      payload: { method: 'CASH', amountMinor: 1 },
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('summarises the day on the dashboard, occupancy included', async () => {
     // Two disjoint 30-minute bookings from a capacity of 08:00–17:00 × one
     // dentist: 60 of 540 minutes, which rounds to 11% occupancy.

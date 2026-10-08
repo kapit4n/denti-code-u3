@@ -43,7 +43,14 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
-import type { Charge, MedicationRoute, TreatmentRecord, Visit } from '@denti-code-u3/domain';
+import type {
+  Charge,
+  MedicationRoute,
+  Payment,
+  PaymentMethod,
+  TreatmentRecord,
+  Visit,
+} from '@denti-code-u3/domain';
 import { formatMinorUnits } from '@denti-code-u3/domain';
 
 import {
@@ -69,16 +76,25 @@ import { useChairs, useDentists } from '../../agenda/queries/bookable-resources-
 import { chargeLineTotal, chargesTotal, parseMajorUnitsToMinor } from '../charge-presentation.js';
 import { describeChargeFailure } from '../describe-charge-failure.js';
 import { describeNoteFailure } from '../describe-note-failure.js';
+import { describePaymentFailure } from '../describe-payment-failure.js';
 import { describePrescriptionFailure } from '../describe-prescription-failure.js';
 import { describeTreatmentFailure } from '../describe-treatment-failure.js';
 import { describeVisitFailure } from '../describe-visit-failure.js';
 import { useCreateCharge } from '../mutations/use-create-charge.js';
 import { useCreateClinicalNote } from '../mutations/use-create-clinical-note.js';
+import { useCreatePayment } from '../mutations/use-create-payment.js';
 import { useCreatePrescription } from '../mutations/use-create-prescription.js';
 import { useRecordVisitTreatment } from '../mutations/use-record-visit-treatment.js';
 import { useVisitClosure } from '../mutations/use-visit-closure.js';
 import { MEDICATION_ROUTE_OPTIONS, medicationRouteLabel } from '../prescription-presentation.js';
+import {
+  PAYMENT_METHOD_OPTIONS,
+  paymentMethodLabel,
+  paymentsTotal,
+  stillToPayMinor,
+} from '../payment-presentation.js';
 import { useVisitCharges } from '../queries/charges-query.js';
+import { useVisitPayments } from '../queries/payments-query.js';
 import { useVisitPrescriptions } from '../queries/prescriptions-query.js';
 import { useTreatments, useVisitTreatments } from '../queries/treatments-query.js';
 import { useVisitNotes } from '../queries/visit-notes-query.js';
@@ -97,12 +113,13 @@ export interface VisitWorkspaceProps {
 /**
  * The sections this workspace can draw.
  *
- * Five rows today, each with an endpoint behind it. `odontogram`, `files` and
- * `payments` from the brief each arrive with their own endpoint and their own row
- * here — a nav entry with nothing behind it is the "control that looks live and is
- * not" this project refuses to ship.
+ * Six rows today, each with an endpoint behind it. `odontogram` and `files` from
+ * the brief each arrive with their own endpoint and their own row — payments
+ * earned its row when the settlement endpoint landed — and a nav entry with
+ * nothing behind it is the "control that looks live and is not" this project
+ * refuses to ship.
  */
-type VisitSectionId = 'summary' | 'notes' | 'treatments' | 'prescriptions' | 'charges';
+type VisitSectionId = 'summary' | 'notes' | 'treatments' | 'prescriptions' | 'charges' | 'payments';
 
 const VISIT_SECTIONS: readonly { readonly id: VisitSectionId; readonly label: string }[] = [
   { id: 'summary', label: 'Summary' },
@@ -110,6 +127,7 @@ const VISIT_SECTIONS: readonly { readonly id: VisitSectionId; readonly label: st
   { id: 'treatments', label: 'Treatments' },
   { id: 'prescriptions', label: 'Prescriptions' },
   { id: 'charges', label: 'Charges' },
+  { id: 'payments', label: 'Payments' },
 ];
 
 export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
@@ -292,6 +310,9 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
           ) : null}
           {section === 'charges' ? (
             <VisitChargesSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
+          ) : null}
+          {section === 'payments' ? (
+            <VisitPaymentsSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
           ) : null}
         </div>
       </div>
@@ -1198,6 +1219,274 @@ function ChargeRow({
         <p className="font-medium" data-testid="charge-total">
           {formatMinorUnits(total)}
         </p>
+      </div>
+    </li>
+  );
+}
+
+/**
+ * The bill a visit has grown, and the door to settle it.
+ *
+ * Mounted only while the section is open, which is what keeps both requests — the
+ * payments register and the bill it is held against — answers to something on
+ * screen (see `payments-query.ts`). It owns its own hooks rather than taking them
+ * as props for the same reason the charges section does: this is a feature with a
+ * draft, a mutation and a register of its own.
+ *
+ * The section gates on **both** reads before it draws anything. The register is the
+ * subject and the bill from `charges-query.ts` is what the figures are made of, and
+ * neither a "billed" that is still `0.00` nor "still to pay" while the bill is
+ * reading would be a sentence worth showing.
+ *
+ * **Nothing is written optimistically, and the form stays filled until the server
+ * answers.** The payment appears in the register because the invalidation refetched
+ * it — money the front desk shows as received before the API accepted it is a
+ * receipt the record does not contain. The form clears on success, and only there.
+ *
+ * **Record a payment is a door the settlement itself lights.** Whether a settlement
+ * would be accepted is not this screen's choice: it is the un-invoiced bill's. The
+ * charges list reports which rows carry an invoice id, so the form is offered only
+ * while at least one charge is un-invoiced — a "Record payment" button that always
+ * answered 422 is the same "control that looks live and is not" the nav refuses.
+ * When every charge is invoiced the door closes and the section says why, and the
+ * one shape left over — a partial settlement whose remainder the milestone cannot
+ * collect, because collecting an issued invoice is Milestone 9's ledger — is said
+ * out loud with the balance it is owed, not hidden behind the door.
+ *
+ * **Major units are the door, minor units are the wire.** The box takes "120.00"
+ * and `parseMajorUnitsToMinor` hands the mutation an integer of cents, the shape
+ * the API and the domain always use. The three figures are the domain's own sums —
+ * the bill from `chargesTotal`, the register from `paymentsTotal` (both priced in
+ * the charges' currency) and the difference between them, never re-derived and
+ * never in debt.
+ */
+interface VisitPaymentsSectionProps {
+  readonly visitId: string;
+  /** Absent while the clinic is still being fetched; the times then wait for it. */
+  readonly clinicTimeZone: string | undefined;
+}
+
+function VisitPaymentsSection({ visitId, clinicTimeZone }: VisitPaymentsSectionProps) {
+  const paymentsQuery = useVisitPayments(visitId);
+  const chargesQuery = useVisitCharges(visitId);
+  const createPayment = useCreatePayment();
+  const [method, setMethod] = useState<PaymentMethod | ''>('');
+  const [amountMajor, setAmountMajor] = useState('');
+  const [reference, setReference] = useState('');
+
+  const failure = describePaymentFailure(createPayment.error, 'The payment could not be recorded.');
+
+  if (paymentsQuery.isPending || chargesQuery.isPending) {
+    return <p className="text-sm text-muted-foreground">Loading the payments…</p>;
+  }
+
+  if (paymentsQuery.error || chargesQuery.error) {
+    return (
+      <p className="text-sm text-destructive" role="alert">
+        The payments could not be loaded.
+      </p>
+    );
+  }
+
+  const payments = paymentsQuery.data.payments;
+  const charges = chargesQuery.data.charges;
+  // The currency the bill is priced in — the charges' own, and the register's by
+  // the same clinic (a payment can only settle a charge).
+  const currency = charges[0]?.currency ?? payments[0]?.currency;
+  const billedMinor = currency ? chargesTotal(charges, currency) : 0;
+  const paidMinor = currency ? paymentsTotal(payments, currency) : 0;
+  const outstandingMinor = stillToPayMinor(billedMinor, paidMinor);
+  // Whether the settlement door is open: at least one charge the record has not yet
+  // folded into an invoice. The domain refused the empty bill with "There is nothing
+  // left to pay on this visit", and this is the same rule drawn before the click.
+  const canSettle = charges.some((charge) => charge.invoiceId === null);
+
+  const parsedAmount = parseMajorUnitsToMinor(amountMajor);
+  const ready = method.length > 0 && parsedAmount !== undefined && parsedAmount > 0;
+
+  return (
+    <Card data-testid="visit-payments">
+      <CardHeader>
+        <CardTitle>Payments</CardTitle>
+        <CardDescription>Money received against this visit’s bill</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {charges.length > 0 || payments.length > 0 ? (
+          <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3" data-testid="payments-summary">
+            <div className="rounded-md border p-3">
+              <dt className="text-xs text-muted-foreground">Billed</dt>
+              <dd className="mt-0.5 font-medium" data-testid="payments-billed">
+                {formatMinorUnits(billedMinor)}
+              </dd>
+            </div>
+            <div className="rounded-md border p-3">
+              <dt className="text-xs text-muted-foreground">Paid</dt>
+              <dd className="mt-0.5 font-medium" data-testid="payments-paid">
+                {formatMinorUnits(paidMinor)}
+              </dd>
+            </div>
+            <div className="rounded-md border p-3">
+              <dt className="text-xs text-muted-foreground">Still to pay</dt>
+              <dd className="mt-0.5 font-medium" data-testid="payments-still-to-pay">
+                {formatMinorUnits(outstandingMinor)}
+              </dd>
+            </div>
+          </dl>
+        ) : null}
+
+        {payments.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
+        ) : (
+          <ul className="space-y-3">
+            {payments.map((payment) => (
+              <PaymentRow key={payment.id} payment={payment} clinicTimeZone={clinicTimeZone} />
+            ))}
+          </ul>
+        )}
+
+        {!canSettle ? (
+          <p className="text-sm text-muted-foreground">
+            {/* Three different facts, deliberately not one fallback: a visit nothing
+                was charged on, a bill the milestone cannot yet finish collecting, and
+                one the money has fully settled. Collapsing them into a sentence about
+                "settled" would make the second read as the third. */}
+            {charges.length === 0
+              ? 'Nothing has been charged on this visit yet, so there is nothing to pay.'
+              : outstandingMinor > 0
+                ? `The remaining ${formatMinorUnits(outstandingMinor)} is held on this visit’s invoice; collecting it lands with the invoice ledger.`
+                : 'This visit’s bill is fully settled.'}
+          </p>
+        ) : (
+          <form
+            className="space-y-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!ready || parsedAmount === undefined) {
+                return;
+              }
+              createPayment.mutate(
+                {
+                  visitId,
+                  method: method as PaymentMethod,
+                  amountMinor: parsedAmount,
+                  ...(reference.trim().length > 0 ? { reference: reference.trim() } : {}),
+                },
+                {
+                  onSuccess: () => {
+                    setMethod('');
+                    setAmountMajor('');
+                    setReference('');
+                  },
+                },
+              );
+            }}
+          >
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="payment-amount">Amount</Label>
+                <input
+                  id="payment-amount"
+                  data-testid="payment-amount"
+                  value={amountMajor}
+                  onChange={(event) => setAmountMajor(event.target.value)}
+                  inputMode="decimal"
+                  disabled={createPayment.isPending}
+                  className="w-full rounded-md border bg-background p-2 text-sm"
+                  placeholder="120.00"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="payment-method">Method</Label>
+                <Select
+                  value={method}
+                  onValueChange={(value) => setMethod(value as PaymentMethod)}
+                  disabled={createPayment.isPending}
+                >
+                  <SelectTrigger id="payment-method" data-testid="payment-method">
+                    <SelectValue placeholder="Choose a method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAYMENT_METHOD_OPTIONS.map((option) => (
+                      <SelectItem key={option.method} value={option.method}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="payment-reference">Reference (optional)</Label>
+              <input
+                id="payment-reference"
+                data-testid="payment-reference"
+                value={reference}
+                onChange={(event) => setReference(event.target.value)}
+                disabled={createPayment.isPending}
+                className="w-full rounded-md border bg-background p-2 text-sm"
+                placeholder="e.g. Last four card digits"
+                maxLength={200}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="submit"
+                data-testid="record-payment"
+                disabled={createPayment.isPending || !ready}
+              >
+                Record payment
+              </Button>
+              {createPayment.isPending ? (
+                <p className="text-sm text-muted-foreground" role="status">
+                  <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
+                  Saving…
+                </p>
+              ) : null}
+            </div>
+          </form>
+        )}
+
+        {failure ? (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
+            <span>{failure}</span>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PaymentRow({
+  payment,
+  clinicTimeZone,
+}: {
+  readonly payment: Payment;
+  readonly clinicTimeZone: string | undefined;
+}) {
+  return (
+    <li className="rounded-md border p-3 text-sm" data-testid="payment">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">
+            {clinicTimeZone ? (
+              formatClinicDayTime(payment.receivedAt, clinicTimeZone)
+            ) : (
+              <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+            )}
+          </p>
+          {/* The label comes from `payment-presentation.ts`, the same place the
+              picker reads it from: one spelling of each method on this screen. */}
+          <p className="font-medium">{paymentMethodLabel(payment.method)}</p>
+          {payment.reference ? <p className="text-muted-foreground">{payment.reference}</p> : null}
+        </div>
+        <p className="font-medium">{formatMinorUnits(payment.amountMinor)}</p>
       </div>
     </li>
   );

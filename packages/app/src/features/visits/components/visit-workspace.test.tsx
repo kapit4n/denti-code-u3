@@ -161,6 +161,15 @@ interface HarnessOptions {
    * the screen while the request is still in flight.
    */
   readonly chargeGate?: Promise<void>;
+  /** The payments the API answers with when the payments section is opened. */
+  readonly visitPayments?: Record<string, unknown>[];
+  /** When set, recording a payment is refused with this envelope. */
+  readonly paymentRefusal?: { readonly status: number; readonly body: unknown };
+  /**
+   * A promise the payment POST waits on before it answers, so a test can look at
+   * the screen while the request is still in flight.
+   */
+  readonly paymentGate?: Promise<void>;
 }
 
 function renderWorkspace({
@@ -182,6 +191,9 @@ function renderWorkspace({
   visitCharges = [],
   chargeRefusal,
   chargeGate,
+  visitPayments = [],
+  paymentRefusal,
+  paymentGate,
 }: HarnessOptions = {}) {
   const state = {
     visit,
@@ -189,6 +201,7 @@ function renderWorkspace({
     visitTreatments: [...visitTreatments],
     visitPrescriptions: [...visitPrescriptions],
     visitCharges: [...visitCharges],
+    visitPayments: [...visitPayments],
   };
 
   const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
@@ -320,6 +333,44 @@ function renderWorkspace({
       state.visitCharges = [...state.visitCharges, raised];
       await chargeGate;
       return jsonResponse(raised, 201);
+    }
+    if (path === `/api/v1/visits/${VISIT_ID}/payments` && method === 'GET') {
+      return jsonResponse({ payments: state.visitPayments });
+    }
+    if (path === `/api/v1/visits/${VISIT_ID}/payments` && method === 'POST') {
+      if (paymentRefusal) {
+        return jsonResponse(paymentRefusal.body, paymentRefusal.status);
+      }
+      const written = JSON.parse(String(init?.body)) as {
+        method: string;
+        amountMinor: number;
+        reference?: string;
+      };
+      const recorded = {
+        id: `payment-${state.visitPayments.length + 1}`,
+        clinicId: 'clinic-1',
+        patientId: PATIENT_ID,
+        method: written.method,
+        currency: state.visitCharges[0]?.currency ?? 'USD',
+        amountMinor: written.amountMinor,
+        reference: written.reference ?? null,
+        receivedAt: '2026-10-05T14:35:00.000Z',
+      };
+      state.visitPayments = [...state.visitPayments, recorded];
+      // The server's promise, kept the same way the closure keeps it: a settlement
+      // folds every un-invoiced charge into an invoice and stamps it, so the charges
+      // list the invalidation refetches answers with them invoiced — one row for
+      // both the answer and the refetch, so a harness where they differ could not
+      // catch the divergence it is built to catch.
+      state.visitCharges = state.visitCharges.map((charge) => ({
+        ...charge,
+        invoiceId: charge.invoiceId ?? 'invoice-1',
+        invoicedAt: charge.invoicedAt ?? '2026-10-05T14:35:00.000Z',
+      }));
+      // The answer waits on the gate: the request has been made, and the screen has
+      // not been told about it yet.
+      await paymentGate;
+      return jsonResponse(recorded, 201);
     }
     if (method === 'GET' && path === `/api/v1/patients/${PATIENT_ID}`) {
       return profile === null
@@ -1053,5 +1104,221 @@ describe('VisitWorkspace', () => {
     expect(screen.getByTestId('charge-description')).toHaveValue('Cleaning');
     expect(fetchImplementation).toHaveBeenCalled();
     expect(screen.queryByTestId('charge')).toBeNull();
+  });
+
+  it('lists the payments on the visit, in the clinic’s clock, only once the section is open', async () => {
+    const { fetchImplementation } = renderWorkspace({
+      visitCharges: [
+        {
+          id: 'charge-1',
+          clinicId: 'clinic-1',
+          patientId: PATIENT_ID,
+          visitId: VISIT_ID,
+          invoiceId: 'invoice-1',
+          invoicedAt: '2026-10-05T14:20:00.000Z',
+          createdAt: '2026-10-05T14:00:00.000Z',
+          treatmentId: null,
+          description: 'Composite restoration',
+          quantity: 1,
+          unitPriceMinor: 8500,
+          discountMinor: 0,
+          taxRatePercent: 0,
+          currency: 'USD',
+        },
+      ],
+      visitPayments: [
+        {
+          id: 'payment-1',
+          clinicId: 'clinic-1',
+          patientId: PATIENT_ID,
+          method: 'CARD',
+          currency: 'USD',
+          amountMinor: 8500,
+          reference: '4242',
+          receivedAt: '2026-10-05T14:00:00.000Z',
+        },
+      ],
+    });
+
+    // The summary is what the workspace opens on, and neither the bill nor the
+    // register were asked for: a request whose answer no pixel can show is a
+    // request waiting to be stale.
+    await screen.findByTestId('visit-workspace');
+    expect(
+      fetchImplementation.mock.calls.filter(([url]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}/payments`),
+      ),
+    ).toHaveLength(0);
+
+    await user.click(screen.getByTestId('visit-section-payments'));
+
+    const row = await screen.findByTestId('payment');
+    expect(row).toHaveTextContent('Card');
+    expect(row).toHaveTextContent('4242');
+    expect(row).toHaveTextContent('85.00');
+    // 14:00Z is 09:00 in Lima — the clinic's hour again, on a receipt this time.
+    expect(row).toHaveTextContent('09:00');
+    expect(screen.queryByText('No payments recorded yet.')).toBeNull();
+    // The bill the register settles against is drawn beside it: the charges' total,
+    // the payments' total, and the difference — the domain's own sums, not the
+    // screen's.
+    expect(screen.getByTestId('payments-billed')).toHaveTextContent('85.00');
+    expect(screen.getByTestId('payments-paid')).toHaveTextContent('85.00');
+    expect(screen.getByTestId('payments-still-to-pay')).toHaveTextContent('0.00');
+    // Every charge is invoiced and the money covered the whole bill, so the door is
+    // closed and the sentence says so — a "Record payment" button that always
+    // answered 422 would be a control that looks live and is not.
+    expect(await screen.findByText(/fully settled/)).toBeTruthy();
+    expect(screen.queryByTestId('record-payment')).toBeNull();
+  });
+
+  it('says there are no payments rather than showing an empty list as an error', async () => {
+    renderWorkspace({ visitCharges: [], visitPayments: [] });
+
+    await user.click(await screen.findByTestId('visit-section-payments'));
+
+    expect(await screen.findByText('No payments recorded yet.')).toBeTruthy();
+    expect(screen.queryByTestId('payment')).toBeNull();
+    // The door stays shut there too: nothing has been charged, so there is no bill
+    // for a settlement to accept — the domain's "nothing left to pay", drawn before
+    // the click instead of as the answer to it.
+    expect(screen.getByText(/nothing has been charged/i)).toBeTruthy();
+    expect(screen.queryByTestId('record-payment')).toBeNull();
+  });
+
+  it('records a payment and shows it only once the server has answered', async () => {
+    let release: () => void = () => {};
+    const paymentGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { fetchImplementation } = renderWorkspace({
+      visitCharges: [
+        {
+          id: 'charge-1',
+          clinicId: 'clinic-1',
+          patientId: PATIENT_ID,
+          visitId: VISIT_ID,
+          invoiceId: null,
+          invoicedAt: null,
+          createdAt: '2026-10-05T14:00:00.000Z',
+          treatmentId: null,
+          description: 'Composite restoration',
+          quantity: 1,
+          unitPriceMinor: 8500,
+          discountMinor: 0,
+          taxRatePercent: 0,
+          currency: 'USD',
+        },
+      ],
+      visitPayments: [],
+      paymentGate,
+    });
+
+    await user.click(await screen.findByTestId('visit-section-payments'));
+    await screen.findByText('No payments recorded yet.');
+
+    await user.type(screen.getByTestId('payment-amount'), '50.00');
+    await chooseFrom('payment-method', /Cash/);
+    await user.type(screen.getByTestId('payment-reference'), '  1234  ');
+    await user.click(screen.getByTestId('record-payment'));
+
+    // The POST is on the wire and the payment is not on screen: nothing is written
+    // optimistically, because money the API has not accepted is not a receipt.
+    expect(screen.queryByTestId('payment')).toBeNull();
+    const post = fetchImplementation.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}/payments`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'POST',
+    );
+    expect(post).toBeTruthy();
+    // Trimmed on the way out, so the server is not asked to store what the box's
+    // edges happen to hold.
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      method: 'CASH',
+      amountMinor: 5000,
+      reference: '1234',
+    });
+
+    release();
+
+    // The invalidation refetched both registers, and the server's rows are on screen.
+    expect(await screen.findByTestId('payment')).toHaveTextContent('Cash');
+    expect(screen.getByTestId('payment')).toHaveTextContent('50.00');
+    expect(screen.getByTestId('payments-paid')).toHaveTextContent('50.00');
+    expect(screen.getByTestId('payments-still-to-pay')).toHaveTextContent('35.00');
+
+    // The settlement stamped the whole bill invoiced, so the door closes with a
+    // sentence that says where the remainder lives — the milestone's boundary, told
+    // to the front desk instead of answered as a 422.
+    expect(await screen.findByText(/The remaining 35\.00 is held on this visit/)).toBeTruthy();
+    expect(screen.queryByTestId('record-payment')).toBeNull();
+
+    // Recording a payment changes nothing about the visit itself, so neither the
+    // visit nor the patient's profile was refetched — invalidating `['visits']`
+    // wholesale would have done both for pixels that cannot differ.
+    const visitReads = fetchImplementation.mock.calls.filter(
+      ([url, init]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'GET',
+    );
+    expect(visitReads).toHaveLength(1);
+    // The payments register was refetched for the new row, and the charges list
+    // beside it, because the bill it draws is now stamped invoiced.
+    const paymentsReads = fetchImplementation.mock.calls.filter(([url]) =>
+      String(url).endsWith(`/visits/${VISIT_ID}/payments`),
+    );
+    expect(paymentsReads.length).toBeGreaterThanOrEqual(2);
+    const chargesReads = fetchImplementation.mock.calls.filter(([url]) =>
+      String(url).endsWith(`/visits/${VISIT_ID}/charges`),
+    );
+    expect(chargesReads.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('keeps what the front desk typed and says why when the payment is refused', async () => {
+    const { fetchImplementation } = renderWorkspace({
+      visitCharges: [
+        {
+          id: 'charge-1',
+          clinicId: 'clinic-1',
+          patientId: PATIENT_ID,
+          visitId: VISIT_ID,
+          invoiceId: null,
+          invoicedAt: null,
+          createdAt: '2026-10-05T14:00:00.000Z',
+          treatmentId: null,
+          description: 'Composite restoration',
+          quantity: 1,
+          unitPriceMinor: 8500,
+          discountMinor: 0,
+          taxRatePercent: 0,
+          currency: 'USD',
+        },
+      ],
+      visitPayments: [],
+      paymentRefusal: {
+        status: 422,
+        body: {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'The payment reference is too long',
+            requestId: 'test',
+          },
+        },
+      },
+    });
+
+    await user.click(await screen.findByTestId('visit-section-payments'));
+    await user.type(screen.getByTestId('payment-amount'), '50.00');
+    await chooseFrom('payment-method', /Cash/);
+    await user.type(screen.getByTestId('payment-reference'), 'Too much text');
+    await user.click(screen.getByTestId('record-payment'));
+
+    // The refusal reaches the screen in the API's own words, and the draft is still
+    // there: a network error that took the front desk's amount with it would be the
+    // most destructive thing this panel does.
+    expect(await screen.findByRole('alert')).toHaveTextContent('The payment reference is too long');
+    expect(screen.getByTestId('payment-amount')).toHaveValue('50.00');
+    expect(fetchImplementation).toHaveBeenCalled();
+    expect(screen.queryByTestId('payment')).toBeNull();
   });
 });
