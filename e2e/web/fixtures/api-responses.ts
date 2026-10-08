@@ -816,7 +816,57 @@ export function visitPrescriptions(
  * spec makes only when it is looking at a visit, and registering them everywhere
  * would let a spec that forgot its subject pass on fixtures it never intended to use.
  *
- * The section reads — `/notes`, `/treatments`, `/prescriptions` — are *not* here, for
+
+/**
+ * A charge already on the open visit, as
+ * `GET /api/v1/visits/:visitId/charges` answers for it.
+ *
+ * Priced in the clinic's currency, with no invoice yet.
+ */
+export const visitCharge = {
+  id: '11111111-cccc-4ddd-8eee-000000000005',
+  clinicId: '11111111-1111-4111-8111-111111111111',
+  patientId: ANA_ID,
+  visitId: VISIT_ID,
+  invoiceId: null,
+  invoicedAt: null,
+  createdAt: '2026-10-05T13:10:00.000Z',
+  treatmentId: null,
+  description: 'Composite restoration',
+  quantity: 1,
+  unitPriceMinor: 8500,
+  discountMinor: 0,
+  taxRatePercent: 0,
+  currency: 'USD',
+} as const;
+
+/**
+ * The row a spec writes, and the row the API answers the POST with.
+ *
+ * Its `id` and `createdAt` are the server's, not the client's.
+ */
+export const raisedCharge = {
+  id: '11111111-cccc-4ddd-8eee-000000000006',
+  clinicId: '11111111-1111-4111-8111-111111111111',
+  patientId: ANA_ID,
+  visitId: VISIT_ID,
+  invoiceId: null,
+  invoicedAt: null,
+  createdAt: '2026-10-05T13:35:00.000Z',
+  treatmentId: null,
+  description: 'Composite',
+  quantity: 2,
+  unitPriceMinor: 8500,
+  discountMinor: 0,
+  taxRatePercent: 0,
+  currency: 'USD',
+} as const;
+
+export function visitCharges(charges: readonly Record<string, unknown>[]): Fixture['body'] {
+  return { charges };
+}
+/**
+ * The section reads — `/notes`, `/treatments`, `/prescriptions`, `/charges` — are *not* here, for
  * the stronger reason that they must not happen at all until their section is opened.
  * Each spec registers the one it needs, so an over-eager client draws a 501 instead of
  * a silently-mocked row.

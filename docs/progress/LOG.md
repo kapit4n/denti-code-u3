@@ -2122,3 +2122,79 @@ that changes the visit or the patient (a prescription does not — so invalidati
 `['visits']` would refetch pixels that cannot differ); linking to the treatment plan
 (Milestone 8); charges and payments remain the next "per visit" book under the visits
 milestone.
+
+---
+
+## Session 32 — charges (the fifth workspace section) — Task 1
+
+**Started from:** clean tree at session 31's end. Next roadmap item: "Charges — per
+visit", the fifth row of the workspace's section nav and the fourth "per visit" book.
+The `charges` table had sat in both baseline migrations since Phase 1 with only a
+scaffold entity, a port stub (removed in session 23 when it had no engines) and one
+fee-for-service seed row.
+
+**What changed**
+
+- **Domain.** `Charge` lives with the invoice machinery in `billing/invoice.ts`
+  (it is a billing row; `calculateChargeTotal` already existed for the invoice
+  total). `visit-charges.ts` adds `listVisitCharges` and `addVisitCharge`: both
+  read the visit first (a foreign visit is `NOT_FOUND` before any row moves), and a
+  charge is the **first of the five books to carry its own `clinic_id`** — so
+  `findForVisit(clinicId, visitId)` scopes on the charge's column, `save(charge)`
+  takes no clinic id (the row carries it), and the visit-FK violation still
+  translates to `NOT_FOUND`. The write inherits `patientId`/`visitId` from the
+  visit, `currency` from the clinic, stamps `createdAt` from the `Clock`, defaults
+  `quantity = 1` / `discountMinor = 0` / `taxRatePercent = 0`, and refuses a blank
+  description or non-positive quantity or negative money inline. No
+  `UnitOfWork` — one insert needs no transaction. Ordering is `created_at, id`
+  (the order the bill grew, with an id tiebreak).
+- **Validation.** `createChargeSchema`: description trimmed then 1–200, quantity
+  integer ≥ 1, `unitPriceMinor` integer ≥ 0, `discountMinor` integer ≥ 0 optional.
+- **API.** `DrizzleChargeRepository` + `SQLiteChargeRepository` (both engines,
+  twin implementations), wired into `app.ts`, the postgres `repositoriesFor` and the
+  sqlite `repositories`; `GET`/`POST /api/v1/visits/:visitId/charges` added to
+  `routes/visits.ts`. `Repositories` went ten → eleven with `charges` — four
+  sessions running that the set only grows when both engines exist.
+- **App.** `charges-query.ts` (key `['visits','charges',visitId]`),
+  `use-create-charge.ts` (non-optimistic, invalidates only its own key, drops a
+  zero discount and a blank quantity, trims the description),
+  `describe-charge-failure.ts` (its own sentences, so it cannot drift from the
+  prescription's), and `charge-presentation.ts` — `parseMajorUnitsToMinor` (integer
+  arithmetic, never `Number × 100` on a decimal), `chargeLineTotal`,
+  `chargesTotal`. `VisitChargesSection` is the nav's fifth row: major-unit boxes,
+  line totals drawn from `calculateChargeTotal`, a "Total so far" row, and the
+  draft kept on a refusal.
+- **Seed.** A third charge on Luis's open visit in both engines (fixed id,
+  "Scaling and prophylaxis", 8500 minor units), `seedSummary` now reads "3 charges,
+  2 payments".
+- **Tests.** Domain (the subject read first, totals via `calculateChargeTotal`,
+  blank never reaching `save`, integer money rules, foreign 404 on both verbs,
+  clock-stamped `createdAt`, ordering with the id tiebreak), 8 validation, 4
+  workspace component tests (ask only when opened; empty sentence; non-optimistic
+  raise with the exact POST body and no `['visits']` refetch; 422 keeps the
+  draft), a SQLite-smoke block, the `visits-route.integration.test.ts` charges
+  suite (skips here — no `TEST_DATABASE_URL`), and 3 e2e specs. The e2e raise spec
+  swaps the mock's static `GET …/charges` fixture from `[]` to the raised row
+  _after_ the section's first fetch and _before_ the write, because only then is
+  the post-POST refetch the observable source of the row on screen.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run guard:boundaries OK (one pre-existing warning)
+pnpm run build            5/5 successful (web rebuilt — dist drives e2e)
+pnpm run test             12/12 tasks — domain 238, validation 99, app 266,
+                          API 74 passed / 232 skipped (PG suite needs a database)
+pnpm run test:e2e         99/99 passed (3 new charge specs)
+```
+
+Code committed as `2a31be3 feat: add visit charges (Task 1)`; this entry covers the
+docs and e2e that finished it.
+
+**NOT done and deliberately.** Editing or deleting a charge; any invoice — a charge
+exists before any invoice exists (Milestone 9); tax, which is `0` until
+`docs/open-questions.md` question 4 / T6 decides where it lives. Next: payments
+against a visit's charges.

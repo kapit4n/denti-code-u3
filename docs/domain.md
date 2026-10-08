@@ -214,12 +214,28 @@ visit's dentist — inherited, never accepted from the body, and nullable
 enum (Oral, Topical, Inhaled, Injection, Rectal, Other), `durationDays` is whole
 days 1–365 with a `CHECK` on the column, and `issuedAt` is the clinic's clock.
 
+A `Charge` (session 32) is the **first billing row with a clinic of its own**, and
+the first of the five per-visit books to carry `clinic_id`: `clinical_notes`,
+`visit_treatment_executions` and `prescriptions` take their tenancy from the visit,
+while a charge is priced against the clinic itself, so `findForVisit(clinicId,
+visitId)` filters on the charge's own column (defence in depth on a read) and both
+verbs still read the visit first — a foreign visit is a 404 before any row moves.
+`patientId` and `visitId` are inherited from the visit, `currency` comes from the
+clinic (a request must never name the currency its own charge is priced in),
+`createdAt` is the clinic's clock, and `taxRatePercent` lands as `0` — the tax field
+is deliberately not in the body yet (open question, `docs/open-questions.md`).
+Money on the row is integer minor units throughout: the line total is
+`calculateChargeTotal` (quantity × unit price − discount + tax), never recomputed a
+second way. `invoicedAt`/`invoiceId` are what Milestone 9 will fill; until then a
+charge exists before any invoice, exactly as the split in section 1 intends.
+
 ### 2.9 Payment, Invoice, Inventory
 
 ```
 Invoice        { id, clinicId, patientId, visitId?, number, status, issuedAt, dueAt?, subtotal, discount, tax, total, paid }
 Charge         { id, clinicId, visitId?, patientId, treatmentId?, description,
-                 quantity, unitPrice, discount, total, invoicedAt? }
+                 quantity, unitPriceMinor, discountMinor, taxRatePercent, currency,
+                 invoiceId?, invoicedAt?, createdAt }
 Payment        { id, clinicId, patientId, method, amount, receivedAt, reference? }
 PaymentAllocation { paymentId, invoiceId, amount }
 InventoryItem  { id, clinicId, name, sku?, unit, stock, minStock, cost, isActive }

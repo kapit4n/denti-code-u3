@@ -94,8 +94,10 @@ Web E2E (Playwright) against the **built** app served by `vite preview`:
 3. **Patients** (`web/patients.spec.ts`) — list, search, profile and header
    search, including the empty, error and not-found paths.
 
-Appointment lifecycle, visit workspace and agenda specs arrive with Milestones
-5–6.
+Agenda, booking and visit-workspace specs (`web/agenda.spec.ts`,
+`web/visit-workspace.spec.ts`) followed with Milestones 5–6; the workspace file now
+covers all five sections — notes, treatments, prescriptions, charges and the visit's
+own lifecycle.
 
 ### The API is mocked, by default
 
@@ -114,6 +116,14 @@ load-bearing:
   `/api/patients` — the signature of `VITE_API_URL` missing its `/api/v1`
   prefix — fails with `No API fixture for /api/patients`. Matching all of `/api`
   rather than only `/api/v1` is what makes that catchable.
+- **A read fixture can be swapped mid-spec, and that is how a refetch is proved.**
+  Fixtures are static, so after a mutation's invalidation the refetch would answer
+  exactly what it did before — and a row that "appears after the POST" could have
+  been rendered by anything. Re-registering the read _after_ the section's own
+  first fetch and _before_ the write (so the swap itself cannot be what populated
+  the page) makes the refetch the only possible source of the new row. The charges
+  raise spec does this; its comment explains why the first read has to precede the
+  swap or the swap proves nothing.
 
 Fixtures are frozen copies of real responses (`web/fixtures/api-responses.ts`),
 so specs stay deterministic and `pnpm run test:e2e` needs no database, like the

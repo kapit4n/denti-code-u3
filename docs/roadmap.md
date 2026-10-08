@@ -222,7 +222,7 @@ same reason — nothing can put an appointment in a room yet.
     deliberately absent (a Milestone 8 concern) and recording on a closed visit is
     allowed, like a note. The catalogue's read side shipped early: `GET /api/v1/
 treatments` names it so the workspace's third row can resolve a record's name
-    client-side. Charges remain the next "per visit" book.
+    client-side. Charges shipped next, in session 32.
 - Prescriptions per visit
   - **Done (session 31).** `addVisitPrescription` / `listVisitPrescriptions` over a
     `PrescriptionRepository`. Scope comes through the visit (both verbs read it first;
@@ -235,10 +235,24 @@ treatments` names it so the workspace's third row can resolve a record's name
     **Prescriptions** section — the nav's fourth row — lists what was written (route
     labelled through one presentation file) and writes a course with a route picker,
     keeping the clinician's draft on a refusal.
-  - **Not done:** editing or deleting a prescription. `Repositories` is ten now, and
-    every member has both engines — the session 23 policy has grown a member three
-    sessions running.
+  - **Not done:** editing or deleting a prescription. Every member of `Repositories`
+    has both engines (the session 23 policy); session 32 then grew the set to eleven
+    with `charges`.
 - Charges per visit
+  - **Done (session 32).** `listVisitCharges` / `addVisitCharge` over an eleventh
+    port, `ChargeRepository` — the first visit book that owns a `clinic_id`, so its
+    scoping reads the charge's own column rather than joining `visits` (both verbs
+    still read the visit first; a foreign visit is a 404 before any row moves). Two
+    endpoints, `GET`/`POST /api/v1/visits/:visitId/charges`, one `INSERT` and no
+    transaction, `createdAt` from the clinic's clock, `taxRatePercent` landed as `0`
+    (no tax field in the product yet — see `docs/open-questions.md`). The workspace's
+    **Charges** section — the nav's fifth row — draws line totals through the domain's
+    own `calculateChargeTotal`, parses major-unit boxes to integer minor units in one
+    place, and keeps the front desk's draft when the API refuses a charge. The seed's
+    third charge sits on Luis's open visit.
+  - **Not done:** editing or deleting a charge, and any notion of an invoice — that is
+    Milestone 9. `Repositories` is eleven now, every member with both engines (the
+    session 23 policy, four sessions running).
 - Files/attachments (platform capability)
 - Payments recorded against the visit's charges
 - Visit completion / reopening

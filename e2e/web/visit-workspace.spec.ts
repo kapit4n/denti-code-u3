@@ -29,6 +29,10 @@
  *     when their section opens (never before), written non-optimistically (the row
  *     appears by refetch, carrying the server's `issuedAt`), and kept on screen
  *     when refused.
+ *  7. **Charges too, with money on the wire**: the boxes leave as integer minor
+ *     units, the row appears only by refetch (the mock's read fixture is swapped
+ *     between the section's first fetch and the write, so the refetch is the only
+ *     possible source of it), and a refusal keeps the front desk's draft.
  *
  * What is *not* here: the rules. Which moves are legal is the domain's, tested
  * against the domain and against a real API elsewhere. This file asserts that
@@ -54,6 +58,9 @@ import {
   visitPrescriptions,
   visitTreatments,
   visitWorkspaceFixtures,
+  visitCharge,
+  visitCharges,
+  raisedCharge,
 } from './fixtures/api-responses.js';
 import { watchForConsoleErrors } from './fixtures/console-errors.js';
 import { installApi, notFound } from './fixtures/mock-api.js';
@@ -111,6 +118,21 @@ function prescriptionsReads(
     (entry) =>
       entry.method === 'GET' &&
       new URL(entry.url).pathname === `/api/v1/visits/${VISIT_ID}/prescriptions`,
+  ).length;
+}
+
+/**
+ * How many times this visit's charges were read — one when the section opened,
+ * one after the write. The spec's whole claim about non-optimism rests on this
+ * number and on what the second answer carried.
+ */
+function chargesReads(
+  recorded: readonly { readonly method: string; readonly url: string }[],
+): number {
+  return recorded.filter(
+    (entry) =>
+      entry.method === 'GET' &&
+      new URL(entry.url).pathname === `/api/v1/visits/${VISIT_ID}/charges`,
   ).length;
 }
 
@@ -577,6 +599,133 @@ test.describe('Visit workspace', () => {
     await expect(page.getByRole('alert')).toHaveText(/A prescription needs a medication name/);
     await expect(page.getByTestId('prescription-medication')).toHaveValue('Ibuprofen');
     await expect(page.getByTestId('prescription')).toHaveCount(0);
+
+    expect(expectedResourceFailures(errors)).toEqual([]);
+  });
+
+  test('lists charges on the visit only once the section is open', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...visitWorkspaceFixtures({
+        [`/api/v1/visits/${VISIT_ID}/charges`]: {
+          body: visitCharges([visitCharge]),
+        },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+    await expect(page.getByTestId('visit-workspace')).toBeVisible();
+
+    // The summary is what the workspace opens on, and the charges were not asked
+    // for until somebody asked to see them.
+    expect(chargesReads(api.recorded)).toBe(0);
+
+    await page.getByTestId('visit-section-charges').click();
+
+    // 13:10Z is 08:10 in Lima: the clinic's clock again, and a line total drawn
+    // by the domain's own arithmetic — 85.00, in the charge's own currency.
+    await expect(page.getByTestId('charge')).toBeVisible();
+    await expect(page.getByTestId('charge')).toContainText('Composite restoration');
+    await expect(page.getByTestId('charge-total')).toContainText('85.00');
+    await expect(page.getByTestId('charge')).toContainText('08:10');
+    await expect(page.getByTestId('charge')).not.toContainText('13:10');
+    await expect(page.getByTestId('charges-total')).toContainText('85.00');
+
+    expect(expectedResourceFailures(errors)).toEqual([]);
+  });
+
+  test('raises a charge and shows it after the server answers', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...visitWorkspaceFixtures({
+        [`/api/v1/visits/${VISIT_ID}/charges`]: {
+          body: visitCharges([]),
+        },
+        [`POST /api/v1/visits/${VISIT_ID}/charges`]: {
+          status: 201,
+          body: raisedCharge,
+        },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+    await page.getByTestId('visit-section-charges').click();
+    await expect(page.getByText('No charges raised yet.')).toBeVisible();
+    expect(chargesReads(api.recorded)).toBe(1);
+
+    // The mock answers reads statically, so without this the refetch after the
+    // POST would keep returning the empty list. Swapping the read fixture after
+    // the section's own first fetch — and before the write — is what makes the
+    // invalidation the observable source of the row: nothing on screen could have
+    // come from anything but that second answer.
+    await installApi(page, {
+      [`GET /api/v1/visits/${VISIT_ID}/charges`]: {
+        body: visitCharges([raisedCharge]),
+      },
+    });
+
+    await page.getByTestId('charge-description').fill('  Composite  ');
+    await page.getByTestId('charge-unit-price').fill('85.00');
+    await page.getByTestId('charge-quantity').fill('2');
+    await page.getByTestId('raise-charge').click();
+
+    const row = page.getByTestId('charge').filter({ hasText: 'Composite' });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('08:35');
+    await expect(row).not.toContainText('13:35');
+    await expect(page.getByTestId('charge-total')).toContainText('170.00');
+    await expect(page.getByTestId('charges-total')).toContainText('170.00');
+    await expect(page.getByTestId('charge-description')).toHaveValue('');
+
+    // Money leaves the boxes as integer minor units, description trimmed, and
+    // nothing the caller does not get to choose (currency, tax, ids) is sent.
+    const post = api.recorded.find(
+      (entry) => entry.method === 'POST' && entry.url.includes(`/visits/${VISIT_ID}/charges`),
+    );
+    expect(post).toBeTruthy();
+    expect(post?.body).toEqual({ description: 'Composite', quantity: 2, unitPriceMinor: 8500 });
+
+    // Two reads, not one: the section's own, and the one the invalidation asked for.
+    await expect.poll(() => chargesReads(api.recorded)).toBe(2);
+
+    expect(expectedResourceFailures(errors)).toEqual([]);
+  });
+
+  test('keeps the draft when a charge is refused', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    await installApi(page, {
+      ...visitWorkspaceFixtures({
+        [`/api/v1/visits/${VISIT_ID}/charges`]: {
+          body: visitCharges([]),
+        },
+        [`POST /api/v1/visits/${VISIT_ID}/charges`]: {
+          status: 422,
+          body: {
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'A charge needs a description',
+              requestId: 'e2e',
+            },
+          },
+        },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+    await page.getByTestId('visit-section-charges').click();
+    await expect(page.getByText('No charges raised yet.')).toBeVisible();
+
+    await page.getByTestId('charge-description').fill('Cleaning');
+    await page.getByTestId('charge-unit-price').fill('85.00');
+    await page.getByTestId('raise-charge').click();
+
+    // The refusal reaches the screen in the API's own words, and the price the
+    // front desk typed is still in the boxes — a failed request that cleared them
+    // would be the most destructive thing this panel does.
+    await expect(page.getByRole('alert')).toHaveText(/A charge needs a description/);
+    await expect(page.getByTestId('charge-description')).toHaveValue('Cleaning');
+    await expect(page.getByTestId('charge-unit-price')).toHaveValue('85.00');
+    await expect(page.getByTestId('charge')).toHaveCount(0);
 
     expect(expectedResourceFailures(errors)).toEqual([]);
   });

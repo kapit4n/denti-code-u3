@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 31 (prescriptions — the fourth workspace section)
+> Last updated: session 32 (charges — the fifth workspace section)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -15,6 +15,20 @@ by an enforced guard, the three write endpoints with the tenant foreign keys tha
 drag/resize/status UI, the bookable-resources endpoints, the rule that an inactive
 clinician or chair cannot be booked (ADR 0020), and a booking dialog reachable from all
 three doors a receptionist starts from.
+
+Session 32 delivered **charges** — the fifth workspace section and the fourth "per
+visit" book (Task 1 of the session's plan). `listVisitCharges` and `addVisitCharge`
+sit over a real `ChargeRepository` (taking `Repositories` from ten to eleven), `GET`/
+`POST /api/v1/visits/:visitId/charges` list and raise what the visit was priced at,
+and a **Charges** section draws the line total through the domain's own
+`calculateChargeTotal` and writes a new charge from major-unit boxes parsed to integer
+minor units. Unlike the other four books, **a charge carries its own `clinic_id`**, so
+`findForVisit(clinicId, visitId)` scopes on the charge's own column rather than
+joining — and both verbs still read the visit first (a foreign visit is a 404,
+ADR 0014). `patientId` and `visitId` are inherited from the visit, `currency` from the
+clinic, `taxRatePercent` is `0` (no tax field in the body yet — the open question in
+`docs/open-questions.md`), and `createdAt` is the clinic's clock. The seed's third
+charge sits on Luis's open visit.
 
 Session 31 delivered **prescriptions** — the fourth workspace section and the third
 "per visit" book. `listVisitPrescriptions` and `addVisitPrescription` sit over a real
@@ -132,29 +146,52 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 31)
+## Verification log (last run, session 32 — Task 1, charges)
 
-| Command                     | Result                                                           |
-| --------------------------- | ---------------------------------------------------------------- |
-| `pnpm run typecheck`        | 12/12 tasks pass                                                 |
-| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning) |
-| `pnpm run format:check`     | clean                                                            |
-| `pnpm run test`             | 12/12 tasks pass — 672 tests (26 new), PG suite skips            |
-| `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**           |
-| `pnpm run build`            | 5/5 tasks pass                                                   |
-| `pnpm run guard:boundaries` | OK                                                               |
-| `pnpm run test:e2e`         | 96/96 pass — 2 new prescriptions specs                           |
+| Command                     | Result                                                                             |
+| --------------------------- | ---------------------------------------------------------------------------------- |
+| `pnpm run typecheck`        | 12/12 tasks pass                                                                   |
+| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)                   |
+| `pnpm run format:check`     | clean                                                                              |
+| `pnpm run test`             | 12/12 tasks pass — domain 238, validation 99, app 266, API 74 passed / 232 skipped |
+| `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                             |
+| `pnpm run build`            | 5/5 tasks pass (web rebuilt after the app change)                                  |
+| `pnpm run guard:boundaries` | OK                                                                                 |
+| `pnpm run test:e2e`         | 99/99 pass — 3 new charge specs                                                    |
 
 **The PostgreSQL integration suite could not be executed this session: Docker and every
 PostgreSQL client are absent from this environment** (no `docker`, no `podman`, no
-`psql`, no `/var/run/docker.sock`). The new route tests in `visits-route.integration.test.ts`
-(the prescription endpoint suite and its refusals) are written, typecheck and will run
-wherever `TEST_DATABASE_URL` exists; here they report as part of the skipped suite. What
-covers the same path without a database is the always-on SQLite smoke suite, which gained
-a prescriptions block — list, file through the endpoint, foreign-visit 404s on both verbs,
-a blank medication refused — and did run.
+`psql`, no `/var/run/docker.sock`). The new charges block in `visits-route.integration.test.ts`
+(list and raise with a row assertion, defaults, ordering that grew, the four validation
+refusals, foreign 404 on both verbs, missing-visit 404, non-uuid 422) is written, typechecks
+and will run wherever `TEST_DATABASE_URL` exists; here it reports as part of the skipped
+suite. What covers the same path without a database is the always-on SQLite smoke suite,
+which gained a charges test — raise through the endpoint priced in the clinic's own
+record, foreign 404 on both verbs, blank refused — and did run.
 
-**What session 31's work is verified by.** 15 domain tests — a prescription is only ever
+**What session 32 Task 1's work is verified by.** The domain's charge tests (the
+subject is read before the write; a blank description never reaches `save`; integer-only
+money rules; quantity × price then discount then tax; a foreign visit is a 404 for both
+verbs and nothing is written; the clock stamps `createdAt`; the listing order is
+`createdAt` ASC with an id tiebreak), 8 validation tests (trim before the minimum
+counts, integer and non-negative money, a positive quantity), 4 workspace component
+tests (the charges section asks only when opened, an empty list is "No charges raised
+yet", a raised charge appears only after the refetch with the form clearing and the
+visit never refetched, a 422 keeps the draft), and 3 e2e specs: one asserting no
+charges are requested before the section opens, that the row carries the server's
+`createdAt` in the clinic's zone and its line total, that the POST body is exactly
+`{description, quantity, unitPriceMinor}` trimmed and in integer minor units with no
+tax or currency the caller could choose, that the charges were read twice — once by the
+section, once by the invalidation, with the mock's read fixture swapped between the two
+so only the refetch can be what put the row on screen — and one that a 422 leaves the
+whole draft in the boxes. The API's own suite (74 passed) covers the route's shape.
+
+**The seed gained a third charge on Luis's open visit** (`Scaling and prophylaxis`,
+8500 minor units, `createdAt` 10:35 in clinic time), in both engines;
+`seedSummary` now reads "3 charges, 2 payments". `db:migrate` + `db:seed` verified
+against the SQLite file.
+
+**Session 31's verification (prescriptions)** — 15 domain tests — a prescription is only ever
 written under its visit's patient and dentist; the course fields are trimmed and capped
 (blank medication never reaches `save`), the course is whole days 1–365, a blank
 instruction becomes `null`, a foreign visit is a 404 for both verbs and nothing is written;
@@ -238,6 +275,56 @@ router — a `<Link>` with no router context renders nothing — and the mock is
 the new suite failed for a reason that had nothing to do with the workspace.
 
 ## Decisions made this session (not yet in ADRs)
+
+### Decisions from session 32 (charges)
+
+- **A charge is the first visit book with a `clinic_id` of its own.** The other four
+  (notes, treatments, records, prescriptions) have no clinic column and scope through
+  `visits`; `charges` does have one, so `findForVisit(clinicId, visitId)` filters on the
+  charge's own column and returns `ORDER BY created_at, id` — the order a bill grew in,
+  with the id as the deterministic tiebreak for charges raised in the same instant.
+  Both verbs still read the visit first: a foreign visit is a `NOT_FOUND` before any
+  row is read or written (ADR 0014). `save(charge)` takes no clinic id because the row
+  carries its own; the visit-FK violation (`23503` /
+  `SQLITE_CONSTRAINT_FOREIGNKEY`) is still translated to `NOT_FOUND`, since a stray
+  statement could name a visit the tenant FK refuses.
+- **The write is one statement, no transaction, non-optimistic, and invalidates only
+  its own key.** `addVisitCharge` takes a single `INSERT`: the visit was just read, the
+  tenant FK patrols the boundary, and a charge does not change the visit row. The
+  mutation invalidates only `['visits','charges',visitId]` — never `['visits']`, never
+  the patient's profile — and the raised row arrives by refetch with the server's `id`
+  and `createdAt`, the discipline notes/treatments/prescriptions established. The form
+  clears on success and only there: a refused charge is still the front desk's draft.
+- **Money leaves the form as integer minor units, parsed in exactly one place.** The
+  boxes take major units ("120.50"); `parseMajorUnitsToMinor` in
+  `charge-presentation.ts` splits digits with integer arithmetic and never multiplies
+  a decimal by 100, so a cent cannot be gained or lost in a screen. The list draws
+  `calculateChargeTotal` — quantity × unit price, minus discount, plus tax — and never
+  re-derives a total a second way. The line total and the "Total so far" row are the
+  domain's own arithmetic in the charge's own currency.
+- **A zero discount is dropped, and a blank `quantity` is no quantity at all.**
+  `discountMinor > 0` is only sent when present, so a charge without a discount is not
+  stored with one, and the domain defaults both fields (`quantity = 1`,
+  `discountMinor = 0`) rather than the body restating what is already true.
+  `taxRatePercent` is deliberately absent from the body and lands as `0` — no tax field
+  in the product's forms yet; the open question is recorded in
+  `docs/open-questions.md`.
+- **`Repositories` grew from ten to eleven, again only with both engines.** `charges`
+  entered the set only once the PostgreSQL and SQLite implementations existed — the
+  session 23 policy's fourth growth in as many sessions.
+- **The refusal has its own sentence file.** `describe-charge-failure` quotes
+  `ApiClientError`'s message (`VALIDATION_ERROR`/`DOMAIN_RULE_VIOLATION` → the API's
+  sentence, `NOT_FOUND` → "This visit no longer exists in the current clinic.",
+  `NETWORK_ERROR` → "Could not reach the server. The charge was not raised."), separate
+  from the prescription's for the same reason the note's is: different write, different
+  subject in the sentence, and each one keeps its own file so they cannot drift.
+- **The e2e mock's read fixture is swapped between the section's first fetch and the
+  write.** The mock answers reads statically, so without the swap the refetch after the
+  POST would keep returning the empty list and "the row on screen came from the
+  refetch" would be unobservable. Swapping `GET …/charges` from `[]` to the raised row
+  after the section's own fetch — before the write — is what makes the invalidation the
+  only possible source of the row. The comment in the spec records the trick, because
+  the first read has to happen before the swap or the swap proves nothing.
 
 ### Decisions from session 31 (prescriptions)
 
@@ -951,10 +1038,11 @@ editing. Both sides now go through `PatientRepository`. Remaining:
      restate them wrongly, and the clinical record would then be evidence of something
      that did not happen.
 
-   **Still to do, in order:** charges and payments. The clinical notes (session 29),
-   the treatment records (session 30), the prescriptions (session 31), the walk-in
-   (session 26), the read side (session 25), closing and reopening (session 24) and the
-   workspace UI (session 28) are done.
+   **Still to do, in order:** payments (charges done, session 32). The clinical
+   notes (session 29), the treatment records (session 30), the prescriptions
+   (session 31), the charges (session 32), the walk-in (session 26), the read side
+   (session 25), closing and reopening (session 24) and the workspace UI (session 28)
+   are done.
 
 **Milestone 6 onward** — the rest of visits, odontogram, treatments, payments,
 inventory, reports, auth: not started.
@@ -1757,6 +1845,29 @@ e2e: **90/90** — 5 new visit-workspace specs, plus the harness-clock fix that 
 the 14 date-drift failures · Playwright chromium reinstalled
 (`pnpm exec playwright install chromium`) after it had been cleared from the machine's
 cache.
+
+Session 32: charges — the fifth workspace section, and the fourth "per visit" book.
+`Charge` sits with the invoice machinery in `billing/invoice.ts` (`calculateChargeTotal`
+already belonged there), and `visit-charges.ts` holds `listVisitCharges` and
+`addVisitCharge` over an eleventh port. A charge is **the first of the five books to
+carry its own `clinic_id`**, so `findForVisit(clinicId, visitId)` scopes on the charge's
+own column while `save(charge)` takes no clinic id — the row carries it — and both verbs
+still read the visit first (a foreign visit is 404 before any row moves, the FK
+translation kept for a stray statement). The write inherits `patientId`/`visitId` from
+the visit and `currency` from the clinic, stamps `createdAt` from the clock, defaults
+`quantity = 1`/`discountMinor = 0`/`taxRatePercent = 0` (no tax field in the body yet —
+open question recorded), refuses blank descriptions and non-positive or negative money
+inline, and needs no `UnitOfWork`: one insert. `GET`/`POST
+/api/v1/visits/:visitId/charges` sit beside the other three per-visit pairs, with
+`DrizzleChargeRepository` + `SQLiteChargeRepository` behind them. The workspace's fifth
+row draws line totals from `calculateChargeTotal` and parses major-unit boxes to integer
+minor units in one place (`parseMajorUnitsToMinor`), keeps the front desk's draft on a
+refusal, and invalidates only `['visits','charges',visitId]`. The seed's third charge
+sits on Luis's open visit; `seedSummary` reads "3 charges, 2 payments". Domain,
+validation, component, SQLite-smoke and route tests written (PG skips here); 3 e2e specs
+— one swaps the mock's static charges read from `[]` to the raised row between the
+section's first fetch and the write, so the post-POST refetch is the only possible
+source of the row on screen. Verified 99/99 e2e after rebuilding `apps/web`.
 
 Session 31: prescriptions — the fourth workspace section, and the third "per visit"
 book after notes and treatments. `prescription.ts` was rewritten around the
