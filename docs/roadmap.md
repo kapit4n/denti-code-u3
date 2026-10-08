@@ -255,6 +255,22 @@ treatments` names it so the workspace's third row can resolve a record's name
     session 23 policy, four sessions running).
 - Files/attachments (platform capability)
 - Payments recorded against the visit's charges
+  - **Done (session 32).** `payVisitCharges` settles a visit's charges with a
+    payment: `POST /api/v1/visits/:visitId/payments` records the money and folds
+    **every un-invoiced charge into one invoice** in the same transaction
+    (partial payments are allowed; overpayment is refused). `listVisitPayments`
+    answers via `GET /api/v1/visits/:visitId/payments`, and the workspace's
+    **Payments** section — the nav's sixth row — draws billed/paid/outstanding
+    beside a register in the clinic's clock and offers a record form only while a
+    settlement would accept one (the door closes once the bill is invoiced).
+    Three new repositories (`invoice`, `payment`, `paymentAllocation`) took
+    `Repositories` from eleven to fourteen, every member with both engines.
+    A follow-up payment after a settlement is refused until Milestone 9's
+    invoice-ledger — the boundary is told to the desk with words
+    (open question 20) rather than answered as a 422.
+  - **Not done:** editing or deleting a payment; allocation across a bill that
+    spans invoices; partial invoice settlement; invoice numbering and statements.
+    That is Milestone 9, where the receipt becomes a balance.
 - Visit completion / reopening
   - **Done (session 24), minus the audit.** `POST /api/v1/visits/:visitId/complete` and
     `.../reopen`, both bodyless, both scoped to the request's clinic. The end time is the

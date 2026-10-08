@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 32 (charges — the fifth workspace section)
+> Last updated: session 32 (payments — the sixth workspace section, Task 2)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -15,6 +15,21 @@ by an enforced guard, the three write endpoints with the tenant foreign keys tha
 drag/resize/status UI, the bookable-resources endpoints, the rule that an inactive
 clinician or chair cannot be booked (ADR 0020), and a booking dialog reachable from all
 three doors a receptionist starts from.
+
+Session 32 delivered **payments** — the sixth workspace section and the sixth "per
+visit" book, the settlement that turns a bill into a receipt (Task 2 of the
+session's plan). `payVisitCharges` records the money and folds **every un-invoiced
+charge into one invoice** in one transaction (partial payments allowed, overpayment
+refused); `listVisitPayments` answers through the same endpoints pair,
+`GET`/`POST /api/v1/visits/:visitId/payments`. Three new repositories (`invoice`,
+`payment`, `paymentAllocation`) took `Repositories` from eleven to fourteen, every
+member with both engines. The workspace's **Payments** section — the nav's sixth
+row — draws billed/paid/outstanding in the clinic's clock and offers the record
+form only while a settlement would accept one: the door closes the moment the bill
+is invoiced, and what cannot be recorded yet is said out loud — "The remaining
+35.00 is held on this visit's invoice; collecting it lands with the invoice
+ledger" — a Milestone 9, open question 20 boundary told to the desk instead of
+answered as a 422.
 
 Session 32 delivered **charges** — the fifth workspace section and the fourth "per
 visit" book (Task 1 of the session's plan). `listVisitCharges` and `addVisitCharge`
@@ -146,50 +161,58 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 32 — Task 1, charges)
+## Verification log (last run, session 32 — Task 2, payments)
 
-| Command                     | Result                                                                             |
-| --------------------------- | ---------------------------------------------------------------------------------- |
-| `pnpm run typecheck`        | 12/12 tasks pass                                                                   |
-| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)                   |
-| `pnpm run format:check`     | clean                                                                              |
-| `pnpm run test`             | 12/12 tasks pass — domain 238, validation 99, app 266, API 74 passed / 232 skipped |
-| `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                             |
-| `pnpm run build`            | 5/5 tasks pass (web rebuilt after the app change)                                  |
-| `pnpm run guard:boundaries` | OK                                                                                 |
-| `pnpm run test:e2e`         | 99/99 pass — 3 new charge specs                                                    |
+| Command                     | Result                                                                              |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| `pnpm run typecheck`        | 12/12 tasks pass                                                                    |
+| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)                    |
+| `pnpm run format:check`     | clean                                                                               |
+| `pnpm run test`             | 12/12 tasks pass — domain 252, validation 105, app 270, API 75 passed / 239 skipped |
+| `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                              |
+| `pnpm run build`            | 5/5 tasks pass (web rebuilt before e2e)                                             |
+| `pnpm run guard:boundaries` | OK                                                                                  |
+| `pnpm run test:e2e`         | 102/102 pass — 3 new payment specs                                                  |
 
 **The PostgreSQL integration suite could not be executed this session: Docker and every
 PostgreSQL client are absent from this environment** (no `docker`, no `podman`, no
-`psql`, no `/var/run/docker.sock`). The new charges block in `visits-route.integration.test.ts`
-(list and raise with a row assertion, defaults, ordering that grew, the four validation
-refusals, foreign 404 on both verbs, missing-visit 404, non-uuid 422) is written, typechecks
-and will run wherever `TEST_DATABASE_URL` exists; here it reports as part of the skipped
-suite. What covers the same path without a database is the always-on SQLite smoke suite,
-which gained a charges test — raise through the endpoint priced in the clinic's own
-record, foreign 404 on both verbs, blank refused — and did run.
+`psql`, no `/var/run/docker.sock`). The new payments block in `visits-route.integration.test.ts`
+(a full settlement with the row assertions, the derived invoice statuses, partial over
+full and follow-up refused, the four validation refusals, foreign 404 on both verbs,
+missing-visit 404, non-uuid 422, a payment-list ordering test, and `clearFixtures`
+deleting payments and invoices before charges) is written, typechecks and will run
+wherever `TEST_DATABASE_URL` exists; here it reports as part of the skipped suite. What
+covers the same path without a database is the always-on SQLite smoke suite, which
+gained a settlement test — a real payment through the endpoint, its invoice stamped on
+the charges, the derived status, and the read-back — and did run.
 
-**What session 32 Task 1's work is verified by.** The domain's charge tests (the
-subject is read before the write; a blank description never reaches `save`; integer-only
-money rules; quantity × price then discount then tax; a foreign visit is a 404 for both
-verbs and nothing is written; the clock stamps `createdAt`; the listing order is
-`createdAt` ASC with an id tiebreak), 8 validation tests (trim before the minimum
-counts, integer and non-negative money, a positive quantity), 4 workspace component
-tests (the charges section asks only when opened, an empty list is "No charges raised
-yet", a raised charge appears only after the refetch with the form clearing and the
-visit never refetched, a 422 keeps the draft), and 3 e2e specs: one asserting no
-charges are requested before the section opens, that the row carries the server's
-`createdAt` in the clinic's zone and its line total, that the POST body is exactly
-`{description, quantity, unitPriceMinor}` trimmed and in integer minor units with no
-tax or currency the caller could choose, that the charges were read twice — once by the
-section, once by the invalidation, with the mock's read fixture swapped between the two
-so only the refetch can be what put the row on screen — and one that a 422 leaves the
-whole draft in the boxes. The API's own suite (74 passed) covers the route's shape.
+**What session 32 Task 2's work is verified by.** The domain's payment tests (the subject
+is read and the bill computed before any write; a refusal never reaches the repositories;
+integer-only money and the `PAYMENT_METHODS` enum; the outstanding balance is the
+honest `max(0, billed − paid)`; every un-invoiced charge is folded into one invoice with
+the clock's invoice number and id; `PAID`/`PARTIALLY_PAID` derivation; six validation
+refusals incl. overpayment, negative and non-integer amounts, blank and over-long
+reference; the listing joins each payment to its invoice and the charges it settles,
+newest first — all asserted in both the domain and, where the shape is the two
+engines', against both), 6 new validation tests for the request schema, 4 workspace
+component tests (the section asks only when opened, an empty register is "No payments
+recorded yet", a recorded payment appears only after the refetch and invalidates the
+charges register too — the bill redraws with every charge invoiced and the door closes —
+without refetching the visit, and a 422 keeps the amount, method and reference), a
+SQLite-smoke settlement block, and 3 e2e specs: one asserting no payments are requested
+before the section opens, that a settled register draws billed/paid/outstanding and the
+row carries the server's own `receivedAt` in the clinic's zone; one that writes a
+partial payment whose POST body is exactly `{method, amountMinor}` (minor units,
+reference dropped when blank), whose row can only have come from the refetch (the read
+fixtures are swapped between the section's first fetch and the write), whose register
+was read twice and the visit once, whom the settlement moved to "held on this visit's
+invoice" and closed the record form; and one that a 422 keeps the draft.
 
-**The seed gained a third charge on Luis's open visit** (`Scaling and prophylaxis`,
-8500 minor units, `createdAt` 10:35 in clinic time), in both engines;
-`seedSummary` now reads "3 charges, 2 payments". `db:migrate` + `db:seed` verified
-against the SQLite file.
+**Task 1's story carries over unchanged** — a charge's seed row and `seedSummary` (now
+"3 charges, 2 payments") are untouched by payments; the settlement writes rows, the
+seed does not need to show a settlement for the workspace's register to have one,
+because the workspace's own e2e covers a payment flowing from empty register to
+invoiced bill. `db:migrate` + `db:seed` verified against the SQLite file.
 
 **Session 31's verification (prescriptions)** — 15 domain tests — a prescription is only ever
 written under its visit's patient and dentist; the course fields are trimmed and capped
@@ -325,6 +348,53 @@ the new suite failed for a reason that had nothing to do with the workspace.
   after the section's own fetch — before the write — is what makes the invalidation the
   only possible source of the row. The comment in the spec records the trick, because
   the first read has to happen before the swap or the swap proves nothing.
+
+### Decisions from session 32 (payments)
+
+- **A settlement is a transaction, and the transaction is the decision.** `payVisitCharges`
+  takes `{ unitOfWork, clock, newInvoiceId, newPaymentId }` and runs fully inside
+  `unitOfWork.transaction(body)`: it writes the payment, folds **every un-invoiced
+  charge** into one invoice for the patient and visit, allocates the whole payment
+  against it, stamps each charge `invoiceId`/`invoicedAt` via the new `markInvoiced`,
+  and derives the invoice status from `deriveInvoiceStatus` over `ISSUED` — `PAID`
+  when the payment covered the whole bill, `PARTIALLY_PAID` otherwise. "The charges you
+  settle are the charges that were un-invoiced" is decided by the use case, not by the
+  body: the request names a method and an amount, never an invoice or a charge id. The
+  joining read (`listVisitPayments`) walks payments → allocations → invoices → charges
+  so a receipt is drawn beside exactly what it settled.
+- **A partial payment is allowed; an overpayment is not; a follow-up after settlement
+  is refused.** `amountMinor ≤ outstanding` is the one money rule, refused with
+  `INVALID_INPUT`; a second `payVisitCharges` after the bill is invoiced also answers
+  `INVALID_INPUT` — "There is nothing left to pay on this visit", a 422 `VALIDATION_ERROR`.
+  The instalment-shaped hole this leaves is **open question 20** — a real instalment needs
+  Milestone 9's invoice ledger, and until then the refusal is the boundary that keeps
+  "what has this patient paid" answerable, because the patient balance (T6) is one
+  invoice and one allocation away from the truth.
+- **`Repositories` grew from eleven to fourteen, three at once, all with both engines.**
+  `invoice`, `payment`, `paymentAllocation` entered the set only when their PostgreSQL
+  and SQLite implementations existed — the session 23 policy's fifth growth.
+  `clearFixtures` deletes them before charges, because the settlement's rows now hold a
+  clinic's invoices in place.
+- **The register is drawn in the clinic's clock and the bill beside it.** The section
+  renders only once **both** registers (payments and charges) have answered, computes
+  `billed`/`paid`/`stillToPay` from the two lists in the shared currency, and closes the
+  record form unless an un-invoiced charge exists — `canSettle` is never derived from
+  what the front desk typed. The three closed-door stories are told in words: nothing
+  charged, "The remaining X is held on this visit's invoice; collecting it lands with
+  the invoice ledger", and "fully settled". Success clears the boxes; a refusal never
+  does.
+- **The POST invalidates two keys and never `['visits']`.** A settlement stamps the
+  bill invoiced, so `useCreatePayment` invalidates `['visits','payments',visitId]`
+  **and** `['visits','charges',visitId]` — the register and the bill it redraws — while
+  the visit row itself is untouched. The e2e asserts both were read twice and the visit
+  once. A blank reference is dropped on the way out rather than sent (the server stores
+  null), and money leaves the box as integer minor units through
+  `parseMajorUnitsToMinor`, the same single parser charges use.
+- **The refusal has its own sentence file.** `describe-payment-failure` mirrors the
+  charge's: the API's message for `VALIDATION_ERROR`/`DOMAIN_RULE_VIOLATION`,
+  "This visit no longer exists in the current clinic." for `NOT_FOUND`, and a
+  "The payment was not recorded." `NETWORK_ERROR` fallback — separate files so the
+  sentences about different writes cannot drift into one shared helper.
 
 ### Decisions from session 31 (prescriptions)
 
@@ -1038,11 +1108,11 @@ editing. Both sides now go through `PatientRepository`. Remaining:
      restate them wrongly, and the clinical record would then be evidence of something
      that did not happen.
 
-   **Still to do, in order:** payments (charges done, session 32). The clinical
-   notes (session 29), the treatment records (session 30), the prescriptions
-   (session 31), the charges (session 32), the walk-in (session 26), the read side
-   (session 25), closing and reopening (session 24) and the workspace UI (session 28)
-   are done.
+   **Still to do, in order:** the six per-visit books (notes, treatments,
+   prescriptions, charges, payments, walk-in) and the read side, closing,
+   reopening and the workspace UI are done — all of session 29–32, 23–26, 24, 25
+   and 28 are in. Remaining in this milestone's spread: files/attachments
+   (platform capability), and then Milestone 7 (odontogram).
 
 **Milestone 6 onward** — the rest of visits, odontogram, treatments, payments,
 inventory, reports, auth: not started.
@@ -1846,7 +1916,29 @@ the 14 date-drift failures · Playwright chromium reinstalled
 (`pnpm exec playwright install chromium`) after it had been cleared from the machine's
 cache.
 
-Session 32: charges — the fifth workspace section, and the fourth "per visit" book.
+Session 32 (Task 2): payments — the sixth workspace section, and the settlement that
+turns a bill into a receipt. `visit-payments.ts` holds `payVisitCharges` and
+`listVisitPayments`; a settlement writes the payment, folds **every un-invoiced charge
+into one invoice** (`markInvoiced` on both charge repositories, status derived `PAID`/
+`PARTIALLY_PAID`), and allocates the whole payment against it — all inside the
+`unitOfWork` transaction, with the payment's `id`, `receivedAt` and the invoice's
+`number`/`issuedAt` from the clock. `amountMinor ≤ outstanding` is the money rule
+(partial allowed, overpayment refused, follow-up after settlement refused — open
+question 20); a payment is a `PAYMENT_METHODS` enum plus an optional reference. Three
+new ports — `invoice`, `payment`, `paymentAllocation` — took `Repositories` from
+eleven to fourteen, both engines, and `clearFixtures` deletes them before charges. The
+API gained `GET`/`POST /api/v1/visits/:visitId/payments` (POST passes `reference`
+only when present). The workspace's sixth row gates on both registers, draws
+billed/paid/still-to-pay, closes the record form when no charge is un-invoiced, and
+tells the closure story in words; the mutation invalidates payments + charges keys,
+never `['visits']`. 12 settled-use-case domain tests (bad amount never written,
+every un-invoiced charge folded, statuses derived both ways, follow-up refused,
+list order), 6 validation, 4 component, a SQLite-smoke settlement
+block and 3 e2e specs — the write spec swaps both read fixtures between the section's
+first fetch and the write, so the row's server-owned `receivedAt` can have come from
+nothing but the refetch. Verified 102/102 e2e after rebuilding `apps/web`.
+
+Session 32 (Task 1): charges — the fifth workspace section, and the fourth "per visit" book.
 `Charge` sits with the invoice machinery in `billing/invoice.ts` (`calculateChargeTotal`
 already belonged there), and `visit-charges.ts` holds `listVisitCharges` and
 `addVisitCharge` over an eleventh port. A charge is **the first of the five books to

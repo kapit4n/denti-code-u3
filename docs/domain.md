@@ -229,6 +229,18 @@ Money on the row is integer minor units throughout: the line total is
 second way. `invoicedAt`/`invoiceId` are what Milestone 9 will fill; until then a
 charge exists before any invoice, exactly as the split in section 1 intends.
 
+`payVisitCharges` (session 32, `domain/billing/visit-payments.ts`) is the first
+billing **write**: it records a payment against a visit's bill and, in the same
+transaction, folds **every un-invoiced charge into one invoice** whose status comes
+from `deriveInvoiceStatus` over `ISSUED` — `PAID` when the payment covered the bill,
+`PARTIALLY_PAID` otherwise. Money that exceeds the outstanding bill is refused in the
+domain (a negative receipt is a validation error, never a credit), a blank or
+over-long `reference` is refused, and a visit whose charges are already invoiced has
+nothing left to pay — the settlement made the receipt, so a second payment is refused
+until Milestone 9's invoice ledger generalises the case. `listVisitPayments` joins
+payments → allocations → invoices → charges, newest first, and a payment's `method`
+is the `PAYMENT_METHODS` enum (`CASH`, `CARD`, `TRANSFER`, `YAPE`, `PLIN`, `OTHER`).
+
 ### 2.9 Payment, Invoice, Inventory
 
 ```

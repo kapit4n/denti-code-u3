@@ -810,14 +810,6 @@ export function visitPrescriptions(
 }
 
 /**
- * Every endpoint the visit workspace opens, in one call.
- *
- * Separate from `bookingFixtures()` for the usual reason: these are the requests a
- * spec makes only when it is looking at a visit, and registering them everywhere
- * would let a spec that forgot its subject pass on fixtures it never intended to use.
- *
-
-/**
  * A charge already on the open visit, as
  * `GET /api/v1/visits/:visitId/charges` answers for it.
  *
@@ -865,11 +857,66 @@ export const raisedCharge = {
 export function visitCharges(charges: readonly Record<string, unknown>[]): Fixture['body'] {
   return { charges };
 }
+
 /**
- * The section reads — `/notes`, `/treatments`, `/prescriptions`, `/charges` — are *not* here, for
- * the stronger reason that they must not happen at all until their section is opened.
- * Each spec registers the one it needs, so an over-eager client draws a 501 instead of
- * a silently-mocked row.
+ * The charge a settlement folds into an invoice — the state a visit's charges hold
+ * once a payment has landed.
+ *
+ * The settlement's promise is that the charges list the invalidation refetches
+ * answers with every row stamped invoiced. A payments spec swaps this in after the
+ * write, so the "settled" sentence on screen can only have come from that refetch.
+ */
+export const invoicedCharge = {
+  ...visitCharge,
+  invoiceId: '11111111-eeee-4fff-8aaa-000000000001',
+  invoicedAt: '2026-10-05T13:20:00.000Z',
+} as const;
+
+/**
+ * A payment already on the open visit, as `GET /api/v1/visits/:visitId/payments`
+ * answers for it.
+ *
+ * The full row, `reference`, `method` and all: the row a spec sees on screen is the
+ * row the endpoint holds. `receivedAt` is 13:20Z so a spec can read the clinic's
+ * hour (08:20 in Lima) off the register — the same clock every other row reads.
+ */
+export const visitPayment = {
+  id: '11111111-cccc-4ddd-8eee-000000000007',
+  clinicId: '11111111-1111-4111-8111-111111111111',
+  patientId: ANA_ID,
+  method: 'CARD',
+  currency: 'USD',
+  amountMinor: 8500,
+  reference: '4242',
+  receivedAt: '2026-10-05T13:20:00.000Z',
+} as const;
+
+/**
+ * The row a spec writes, and the row the API answers the POST with.
+ *
+ * Its `id` and `receivedAt` are the server's, not the client's: a spec asserting
+ * that the register shows *this* row is asserting that the refetch is what put it
+ * on screen, because nothing in the browser could have produced those two values.
+ */
+export const recordedPayment = {
+  id: '11111111-cccc-4ddd-8eee-000000000008',
+  clinicId: '11111111-1111-4111-8111-111111111111',
+  patientId: ANA_ID,
+  method: 'CASH',
+  currency: 'USD',
+  amountMinor: 5500,
+  reference: null,
+  receivedAt: '2026-10-05T13:45:00.000Z',
+} as const;
+
+export function visitPayments(payments: readonly Record<string, unknown>[]): Fixture['body'] {
+  return { payments };
+}
+/**
+ * The section reads — `/notes`, `/treatments`, `/prescriptions`, `/charges`,
+ * `/payments` — are *not* here, for the stronger reason that they must not happen
+ * at all until their section is opened. Each spec registers the one it needs, so
+ * an over-eager client draws a 501 instead of a silently-mocked row.
  *
  * The `overrides` argument comes last so a spec can replace one answer — the 409
  * refusal, a 404 for a visit this clinic does not hold — without restating the rest.

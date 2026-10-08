@@ -33,6 +33,10 @@
  *     units, the row appears only by refetch (the mock's read fixture is swapped
  *     between the section's first fetch and the write, so the refetch is the only
  *     possible source of it), and a refusal keeps the front desk's draft.
+ *  8. **Payments close on the charges**: a payment is asked for when its section
+ *     opens, arrives by refetch carrying the server's own `id` and `receivedAt`,
+ *     and — because a settlement stamps the bill invoiced — closes the door it
+ *     came through, with the still-there-balance told out loud.
  *
  * What is *not* here: the rules. Which moves are legal is the domain's, tested
  * against the domain and against a real API elsewhere. This file asserts that
@@ -50,10 +54,14 @@ import {
   existingVisitTreatment,
   filedNote,
   filedPrescription,
+  invoicedCharge,
   openVisit,
+  recordedPayment,
   recordedTreatment,
   treatmentsCatalogue,
   visitNote,
+  visitPayment,
+  visitPayments,
   visitPrescription,
   visitPrescriptions,
   visitTreatments,
@@ -133,6 +141,21 @@ function chargesReads(
     (entry) =>
       entry.method === 'GET' &&
       new URL(entry.url).pathname === `/api/v1/visits/${VISIT_ID}/charges`,
+  ).length;
+}
+
+/**
+ * How many times this visit's payments were read — one when the section opened,
+ * another after the write. The spec's claim about non-optimism rests on this number
+ * and on what the second answer carried.
+ */
+function paymentsReads(
+  recorded: readonly { readonly method: string; readonly url: string }[],
+): number {
+  return recorded.filter(
+    (entry) =>
+      entry.method === 'GET' &&
+      new URL(entry.url).pathname === `/api/v1/visits/${VISIT_ID}/payments`,
   ).length;
 }
 
@@ -726,6 +749,172 @@ test.describe('Visit workspace', () => {
     await expect(page.getByTestId('charge-description')).toHaveValue('Cleaning');
     await expect(page.getByTestId('charge-unit-price')).toHaveValue('85.00');
     await expect(page.getByTestId('charge')).toHaveCount(0);
+
+    expect(expectedResourceFailures(errors)).toEqual([]);
+  });
+
+  test('lists payments on the visit only once the section is open', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...visitWorkspaceFixtures({
+        [`/api/v1/visits/${VISIT_ID}/charges`]: {
+          body: visitCharges([invoicedCharge]),
+        },
+        [`/api/v1/visits/${VISIT_ID}/payments`]: {
+          body: visitPayments([visitPayment]),
+        },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+    await expect(page.getByTestId('visit-workspace')).toBeVisible();
+
+    // The summary is what the workspace opens on, and the payments were not asked
+    // for until somebody asked to see them.
+    expect(paymentsReads(api.recorded)).toBe(0);
+
+    await page.getByTestId('visit-section-payments').click();
+
+    // 13:20Z is 08:20 in Lima: the clinic's clock again, on a receipt nothing but
+    // the endpoint could have produced.
+    const row = page.getByTestId('payment').filter({ hasText: 'Card' });
+    await expect(row).toContainText('4242');
+    await expect(row).toContainText('85.00');
+    await expect(row).toContainText('08:20');
+    await expect(row).not.toContainText('13:20');
+
+    // The bill the register settles against is drawn beside it: 85.00 billed, 85.00
+    // paid, nothing left — and the door a settlement would open is closed, because
+    // the money covered the whole bill.
+    await expect(page.getByTestId('payments-billed')).toHaveText('85.00');
+    await expect(page.getByTestId('payments-paid')).toHaveText('85.00');
+    await expect(page.getByTestId('payments-still-to-pay')).toHaveText('0.00');
+    await expect(page.getByText(/fully settled/)).toBeVisible();
+
+    expect(expectedResourceFailures(errors)).toEqual([]);
+  });
+
+  test('records a payment and shows it after the server answers', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...visitWorkspaceFixtures({
+        [`/api/v1/visits/${VISIT_ID}/charges`]: {
+          body: visitCharges([visitCharge]),
+        },
+        [`/api/v1/visits/${VISIT_ID}/payments`]: {
+          body: visitPayments([]),
+        },
+        [`POST /api/v1/visits/${VISIT_ID}/payments`]: {
+          status: 201,
+          body: recordedPayment,
+        },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+    await page.getByTestId('visit-section-payments').click();
+    await expect(page.getByText('No payments recorded yet.')).toBeVisible();
+
+    // Billed 85.00, nothing paid yet, nothing left outstanding.
+    await expect(page.getByTestId('payments-billed')).toHaveText('85.00');
+    await expect(page.getByTestId('payments-paid')).toHaveText('0.00');
+    await expect(page.getByTestId('payments-still-to-pay')).toHaveText('85.00');
+
+    // The mock answers reads statically, so without this the refetch after the POST
+    // would keep returning the empty register and the un-invoiced bill. Swapping
+    // both read fixtures after the section's own fetches — and before the write —
+    // is what makes the invalidation the observable source of the new row: nothing
+    // on screen could have come from anything but those second answers.
+    await installApi(page, {
+      [`GET /api/v1/visits/${VISIT_ID}/charges`]: {
+        body: visitCharges([invoicedCharge]),
+      },
+      [`GET /api/v1/visits/${VISIT_ID}/payments`]: {
+        body: visitPayments([recordedPayment]),
+      },
+    });
+
+    await page.getByTestId('payment-amount').fill('55.00');
+    await page.getByTestId('payment-method').click();
+    await page.getByRole('option', { name: /Cash/ }).click();
+    await page.getByTestId('record-payment').click();
+
+    // Money leaves the box as integer minor units, the method is sent, and the row
+    // that appears carries the server's own `receivedAt` — nothing in the browser
+    // could have produced it, so nothing but the refetch could have put it on screen.
+    const row = page.getByTestId('payment').filter({ hasText: 'Cash' });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('55.00');
+    await expect(row).toContainText('08:45');
+    await expect(row).not.toContainText('13:45');
+
+    await expect(page.getByTestId('payments-billed')).toHaveText('85.00');
+    await expect(page.getByTestId('payments-paid')).toHaveText('55.00');
+    await expect(page.getByTestId('payments-still-to-pay')).toHaveText('30.00');
+
+    // The settlement folded the whole bill into an invoice, so the door closed with
+    // the sentence that says where the remainder lives — the milestone's boundary,
+    // told to the front desk instead of answered as a 422.
+    await expect(page.getByText(/The remaining 30\.00 is held on this visit/)).toBeVisible();
+    await expect(page.getByTestId('record-payment')).toHaveCount(0);
+
+    const post = api.recorded.find(
+      (entry) => entry.method === 'POST' && entry.url.includes(`/visits/${VISIT_ID}/payments`),
+    );
+    expect(post).toBeTruthy();
+    // Minor units on the wire, and a blank reference dropped rather than sent.
+    expect(post?.body).toEqual({ method: 'CASH', amountMinor: 5500 });
+
+    // Two reads of each register, not one: the section's own, and the invalidation's.
+    await expect.poll(() => paymentsReads(api.recorded)).toBe(2);
+    await expect.poll(() => chargesReads(api.recorded)).toBe(2);
+
+    // Recording a payment changes nothing about the visit itself — the invalidations
+    // were the registers', not `['visits']` wholesale.
+    await expect.poll(() => visitReads(api.requests)).toBe(1);
+
+    expect(expectedResourceFailures(errors)).toEqual([]);
+  });
+
+  test('keeps the draft when a payment is refused', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    await installApi(page, {
+      ...visitWorkspaceFixtures({
+        [`/api/v1/visits/${VISIT_ID}/charges`]: {
+          body: visitCharges([visitCharge]),
+        },
+        [`/api/v1/visits/${VISIT_ID}/payments`]: {
+          body: visitPayments([]),
+        },
+        [`POST /api/v1/visits/${VISIT_ID}/payments`]: {
+          status: 422,
+          body: {
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'The payment reference is too long',
+              requestId: 'e2e',
+            },
+          },
+        },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+    await page.getByTestId('visit-section-payments').click();
+    await expect(page.getByText('No payments recorded yet.')).toBeVisible();
+
+    await page.getByTestId('payment-amount').fill('55.00');
+    await page.getByTestId('payment-method').click();
+    await page.getByRole('option', { name: /Cash/ }).click();
+    await page.getByTestId('payment-reference').fill('Too much text');
+    await page.getByTestId('record-payment').click();
+
+    // The refusal reaches the screen in the API's own words, and the amount the
+    // front desk typed is still in the box — a failed request that cleared it would
+    // be the most destructive thing this panel does.
+    await expect(page.getByRole('alert')).toHaveText(/The payment reference is too long/);
+    await expect(page.getByTestId('payment-amount')).toHaveValue('55.00');
+    await expect(page.getByTestId('payment')).toHaveCount(0);
 
     expect(expectedResourceFailures(errors)).toEqual([]);
   });

@@ -2198,3 +2198,79 @@ docs and e2e that finished it.
 exists before any invoice exists (Milestone 9); tax, which is `0` until
 `docs/open-questions.md` question 4 / T6 decides where it lives. Next: payments
 against a visit's charges.
+
+## Session 32 — payments (the sixth workspace section) — Task 2
+
+The settlement that turns a bill into a receipt. `payVisitCharges` records a
+payment against a visit's charges and folds **every un-invoiced charge into one
+invoice** in the same transaction; `listVisitPayments` joins the register back to
+exactly what each payment settled. Three new repositories took `Repositories` from
+eleven to fourteen. The workspace's **Payments** section is the nav's sixth row.
+
+### Delivered
+
+- **Domain.** `visit-payments.ts` (with `visit-payments.test.ts`, plus the
+  `invoice.ts` additions it reads): `payVisitCharges(clinicId, visitId, { method,
+amountMinor, reference? }, { unitOfWork, clock, newInvoiceId, newPaymentId })` runs
+  fully inside `unitOfWork.transaction` — write the payment, fold every charge with
+  `invoiceId === null` into one invoice for the patient and visit, allocate the whole
+  payment against it, stamp each charge `invoiceId`/`invoicedAt` through the new
+  `markInvoiced`, and derive the invoice status via `deriveInvoiceStatus` → `PAID`
+  (covered the bill) or `PARTIALLY_PAID`. The one money rule: `amountMinor` is an
+  integer ≤ the outstanding bill (`max(0, billed − paid)`); overpayment, negative and
+  non-integer money, blank and over-long references are `INVALID_INPUT`. Once no
+  charge is un-invoiced there is nothing left to pay: a second settlement answers `INVALID_INPUT`, "There is nothing left to pay
+  on this visit" — the instalment-shaped hole is **open question 20**, deferred to
+  Milestone 9's invoice ledger. `listVisitPayments` reads the visit first (foreign visit is
+  `NOT_FOUND`) and joins payments → allocations → invoices → charges, newest first.
+  `Payment.method` is a `PAYMENT_METHODS` enum (`CASH`, `CARD`, `TRANSFER`, `YAPE`,
+  `PLIN`, `OTHER`).
+- **Validation.** `paymentMethodSchema` + `createPaymentSchema` — the method enum,
+  an integer minor-unit amount, an optional reference trimmed then 1–200.
+- **API.** Three repository pairs (postgres + sqlite): `invoice-repository.ts`,
+  `payment-repository.ts`, `payment-allocation-repository.ts`; `markInvoiced` on both
+  charge repositories; `GET`/`POST /api/v1/visits/:visitId/payments` beside the other
+  five pairs (POST passes `reference` only when it is not null). `Repositories` is
+  fourteen, every member with both engines; `clearFixtures` deletes payments and
+  invoices before charges so the settlement's rows cannot leak into the next suite.
+- **App.** `payments-query.ts` (key `['visits','payments',visitId]`, mounted not
+  `enabled` — nothing asked until the section opens), `use-create-payment.ts`
+  (non-optimistic; invalidates `['visits','payments',visitId]` **and**
+  `['visits','charges',visitId]` because a settlement stamps the bill invoiced; never
+  `['visits']`; a blank reference is dropped on the way out),
+  `describe-payment-failure.ts` (its own sentences), `payment-presentation.ts`
+  (`paymentsTotal`, `stillToPayMinor`, `PAYMENT_METHOD_OPTIONS`). `VisitPaymentsSection`
+  renders once both registers answer, computes billed/paid/outstanding in the shared
+  currency, offers the record form only while an un-invoiced charge exists, and says
+  where a remaining balance lives ("held on this visit's invoice") instead of keeping
+  the door open.
+- **Seed.** No change — the existing two seed payments stay unallocated (open
+  question 20's decision); a settlement is demonstrated by the e2e, not the seed.
+- **Tests.** 12 domain use-case tests, 6 validation, 4 workspace component tests, a
+  SQLite-smoke settlement block (a real payment through the endpoint with the invoice
+  stamped and the read-back), the `visits-route.integration.test.ts` payments suite
+  (skips here — no `TEST_DATABASE_URL`), and 3 e2e specs. The write spec swaps both
+  read fixtures `/charges` and `/payments` after the section's first fetches and before
+  the write, so the row's server-owned `receivedAt` and the invoiced bill can have come
+  from nothing but the refetch; it asserts the POST body is exactly
+  `{ method, amountMinor }` (a blank reference dropped), both registers were read twice
+  and the visit once, and the closure sentence named the exact remaining balance.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run guard:boundaries OK (one pre-existing warning)
+pnpm run build            5/5 successful (web rebuilt — dist drives e2e)
+pnpm run test             12/12 tasks — domain 252, validation 105, app 270,
+                          API 75 passed / 239 skipped (PG suite needs a database)
+pnpm run test:e2e         102/102 passed (3 new payment specs)
+```
+
+**NOT done and deliberately.** Editing or deleting a payment; allocating a payment
+across a bill that spans invoices; partial invoice settlement; invoice numbering and
+statements; a follow-up payment after settlement — all Milestone 9, all folded into
+open question 20. In this phase a payment is one settlement per visit's un-invoiced
+bill, and the receipt is the visit's record, not yet a ledger.
