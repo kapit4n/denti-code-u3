@@ -132,7 +132,12 @@ export const odontogramEntries = pgTable(
     recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index('odontogram_patient_tooth_idx').on(table.patientId, table.tooth),
+    /**
+     * A chart holds one current state per tooth (ADR — session 34): the write
+     * upserts on this key, so the constraint is what makes "re-chart a tooth"
+     * an update rather than a second row.
+     */
+    uniqueIndex('odontogram_patient_tooth_unique').on(table.patientId, table.tooth),
     index('odontogram_visit_idx').on(table.visitId),
   ],
 );

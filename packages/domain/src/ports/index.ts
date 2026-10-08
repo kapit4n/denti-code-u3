@@ -30,6 +30,7 @@ import type {
 } from '../appointment/index.js';
 import type { Visit, VisitStatus, ClinicalNote, VisitAttachment } from '../visit/index.js';
 import type { TreatmentRecord } from '../treatment/index.js';
+import type { OdontogramEntryRecord } from '../odontogram/index.js';
 import type {
   EditablePatientDetails,
   Patient,
@@ -90,6 +91,11 @@ export interface UnitOfWork {
  * build them would be a unit of work that could not do its one job (ADR 0021). All
  * three implementations exist in both engines before their names enter this set, and
  * the set is fifteen now, every one of its fifteen constructible in both engines.
+ *
+ * Session 34 adds `odontogramEntries` as the first patient-scoped book: charting a
+ * tooth upserts under the `(patient_id, tooth)` unique index, and both engines
+ * implement the one `save`. The set is sixteen now, every one of its sixteen
+ * constructible in both engines.
  */
 export interface Repositories {
   readonly patients: PatientRepository;
@@ -107,6 +113,7 @@ export interface Repositories {
   readonly payments: PaymentRepository;
   readonly paymentAllocations: PaymentAllocationRepository;
   readonly attachments: VisitAttachmentRepository;
+  readonly odontogramEntries: OdontogramEntryRepository;
 }
 
 export interface Page<TItem> {
@@ -434,6 +441,29 @@ export interface ClinicalNoteRepository {
 export interface VisitAttachmentRepository {
   findForVisit(clinicId: ClinicId, visitId: VisitId): Promise<readonly VisitAttachment[]>;
   save(attachment: VisitAttachment): Promise<void>;
+}
+
+/**
+ * The patient's odontogram chart — the write half of `odontogram-entry.ts`.
+ *
+ * **`save` is an upsert, and the unique index is the contract.** `odontogram_entries`
+ * has no `clinic_id`, so tenancy comes through the patient: the use case reads the
+ * patient in this clinic (via `PatientRepository.findOdontogram`) before it saves,
+ * exactly as a note's write reads its visit (ADR 0014). But the row keyed on
+ * `(patient_id, tooth)` must never double: the chart holds one current state per
+ * tooth, and the repository's conflict resolution is what makes a second charting a
+ * *replacement* — the same unique index a foreign key would be if the write were a
+ * plain insert. `surfaces` is written in the canonical order the use case reduced,
+ * and `recordedAt` is whatever the clinic's clock said when the tooth was charted.
+ *
+ * `save` takes no clinic, for the same reason the other subject-first writes do not.
+ * What it cannot know is whether the patient still exists by the time the upsert
+ * lands, so the one refusal it translates is the foreign key — a patient deleted
+ * between the read and the write answers the same `NOT_FOUND` the read would have,
+ * rather than a `23503` (or its SQLite twin) reaching the API as a 500.
+ */
+export interface OdontogramEntryRepository {
+  save(entry: OdontogramEntryRecord): Promise<void>;
 }
 
 /**

@@ -128,7 +128,12 @@ export const odontogramEntries = sqliteTable(
     recordedAt: integer('recorded_at', { mode: 'timestamp_ms' }).notNull().default(nowDefault),
   },
   (table) => [
-    index('odontogram_patient_tooth_idx').on(table.patientId, table.tooth),
+    /**
+     * A chart holds one current state per tooth (ADR — session 34): the write
+     * upserts on this key, so the constraint is what makes "re-chart a tooth"
+     * an update rather than a second row.
+     */
+    uniqueIndex('odontogram_patient_tooth_unique').on(table.patientId, table.tooth),
     index('odontogram_visit_idx').on(table.visitId),
     enumCheck('odontogram_entries_dentition_in_values', 'dentition', DENTITIONS),
     enumCheck('odontogram_entries_condition_in_values', 'condition', ODONTOGRAM_CONDITIONS),

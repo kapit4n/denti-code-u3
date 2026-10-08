@@ -33,6 +33,7 @@ export type InventoryItemId = Brand<string, 'InventoryItemId'>;
 export type ClinicalNoteId = Brand<string, 'ClinicalNoteId'>;
 export type VisitTreatmentExecutionId = Brand<string, 'VisitTreatmentExecutionId'>;
 export type VisitAttachmentId = Brand<string, 'VisitAttachmentId'>;
+export type OdontogramEntryId = Brand<string, 'OdontogramEntryId'>;
 
 /** Every identifier the clinic domain uses. */
 export type ClinicIdentifier =
@@ -54,7 +55,8 @@ export type ClinicIdentifier =
   | InventoryItemId
   | ClinicalNoteId
   | VisitTreatmentExecutionId
-  | VisitAttachmentId;
+  | VisitAttachmentId
+  | OdontogramEntryId;
 
 export const asClinicId = (value: string): ClinicId => value as ClinicId;
 export const asUserId = (value: string): UserId => value as UserId;
@@ -76,3 +78,4 @@ export const asClinicalNoteId = (value: string): ClinicalNoteId => value as Clin
 export const asVisitTreatmentExecutionId = (value: string): VisitTreatmentExecutionId =>
   value as VisitTreatmentExecutionId;
 export const asVisitAttachmentId = (value: string): VisitAttachmentId => value as VisitAttachmentId;
+export const asOdontogramEntryId = (value: string): OdontogramEntryId => value as OdontogramEntryId;

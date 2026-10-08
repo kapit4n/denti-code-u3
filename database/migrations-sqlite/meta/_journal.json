@@ -29,6 +29,13 @@
       "when": 1791467975607,
       "tag": "0003_fresh_quicksilver",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791469944813,
+      "tag": "0004_stiff_richard_fisk",
+      "breakpoints": true
     }
   ]
 }

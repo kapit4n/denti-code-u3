@@ -21,19 +21,41 @@
 
 import type { FastifyInstance } from 'fastify';
 
-import type { Clock, IdGenerator, PatientRepository } from '@denti-code-u3/domain';
-import { registerPatient, updatePatient } from '@denti-code-u3/domain';
-import { createPatientSchema, updatePatientSchema } from '@denti-code-u3/validation';
-import { asPatientId, type ClinicId, type PatientId } from '@denti-code-u3/types';
+import type {
+  Clock,
+  IdGenerator,
+  OdontogramEntryRepository,
+  PatientRepository,
+} from '@denti-code-u3/domain';
+import { recordOdontogramEntry, registerPatient, updatePatient } from '@denti-code-u3/domain';
+import {
+  createOdontogramEntrySchema,
+  createPatientSchema,
+  updatePatientSchema,
+} from '@denti-code-u3/validation';
+import {
+  asOdontogramEntryId,
+  asPatientId,
+  type ClinicId,
+  type OdontogramEntryId,
+  type PatientId,
+} from '@denti-code-u3/types';
 import { sendProblem } from '../problem.js';
 
 export interface PatientsDependencies {
   /**
    * Handles registration, editing and every read. Allocation of a record number
    * is atomic inside it, and every read it performs is clinic-scoped, so neither
-   * is something a route handler has to be trusted with.
+   * is something a route handler has to be trusted with. The chart is this
+   * repository's `findOdontogram`, not a second door.
    */
   readonly patients: PatientRepository;
+  /**
+   * The chart's write half, one upsert per charting, no read of its own (ADR
+   * 0014): the use case reads the patient in this clinic through `patients`
+   * first, so the chart is never handed a clinic of its own.
+   */
+  readonly odontogramEntries: OdontogramEntryRepository;
   readonly ids: IdGenerator;
   readonly clock: Clock;
 }
@@ -57,7 +79,7 @@ function resolvePage(raw: unknown): number {
 
 export async function registerPatientsRoutes(
   app: FastifyInstance,
-  { patients, ids, clock }: PatientsDependencies,
+  { patients, odontogramEntries, ids, clock }: PatientsDependencies,
 ): Promise<void> {
   /**
    * Register a patient.
@@ -283,6 +305,59 @@ export async function registerPatientsRoutes(
       return odontogram;
     } catch (error) {
       return sendProblem(reply, request, error, 'Failed to read the odontogram');
+    }
+  });
+
+  /**
+   * Chart one tooth of a patient.
+   *
+   * The body is only the finding — tooth, condition, surfaces, notes — because the
+   * subject is the patient on the path, the dentition is a fact about the tooth
+   * number, and the id and the clock belong to the server (ADR 0014). Charting the
+   * same tooth twice is not an error: the entry keyed on `(patient_id, tooth)` is
+   * replaced, so the chart always holds one current state per tooth.
+   *
+   * A patient this clinic does not hold answers 404 whether the finding is well
+   * formed or not; a finding that is not a finding answers 422 before the domain
+   * is asked.
+   */
+  app.post('/api/v1/patients/:patientId/odontogram/entries', async (request, reply) => {
+    const clinicId = request.clinicId as ClinicId;
+    const { patientId } = request.params as { patientId: string };
+    const parsed = createOdontogramEntrySchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.status(422).send({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'The odontogram entry could not be accepted',
+          details: { issues: parsed.error.issues },
+          requestId: request.id,
+        },
+      });
+    }
+
+    try {
+      const entry = await recordOdontogramEntry(clinicId, asPatientId(patientId), parsed.data, {
+        patients,
+        entries: odontogramEntries,
+        clock,
+        newId: (): OdontogramEntryId => asOdontogramEntryId(ids.nextId()),
+      });
+
+      return reply.status(201).send({
+        id: entry.id,
+        patientId: entry.patientId,
+        visitId: entry.visitId,
+        dentition: entry.dentition,
+        tooth: entry.tooth,
+        surfaces: entry.surfaces,
+        condition: entry.condition,
+        notes: entry.notes,
+        recordedAt: entry.recordedAt,
+      });
+    } catch (error) {
+      return sendProblem(reply, request, error);
     }
   });
 }

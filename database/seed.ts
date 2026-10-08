@@ -52,7 +52,7 @@ const currencyCode = 'USD';
 const now = new Date();
 
 function seedSummary(): string {
-  return `clinic ${DEVELOPMENT_CLINIC_ID}, 3 patients, 2 dentists, 2 rooms, 4 chairs, 4 appointments, 2 visits (1 completed, 1 open), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 attachments, 3 charges, 2 payments`;
+  return `clinic ${DEVELOPMENT_CLINIC_ID}, 3 patients, 2 dentists, 2 rooms, 4 chairs, 4 appointments, 2 visits (1 completed, 1 open), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 attachments, 2 odontogram entries, 3 charges, 2 payments`;
 }
 
 /**
@@ -652,6 +652,35 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
       },
     ])
     .onConflictDoNothing();
+
+  // Luis's chart, so the odontogram opens to a tally rather than an empty map: a
+  // site finding on 16 and a whole-tooth one on 36, both recorded ten minutes into
+  // his open visit. One page of data beats one row of theory.
+  await db
+    .insert(pgSchema.odontogramEntries)
+    .values([
+      {
+        id: '11111111-cccc-4ddd-8eee-000000000007',
+        patientId: '11111111-3333-4444-8555-000000000002',
+        dentition: 'PERMANENT',
+        tooth: '16',
+        surfaces: ['MESIAL'],
+        condition: 'CARIES',
+        notes: 'Composite patch scheduled; checked at the last visit.',
+        recordedAt: at(0, 10, 20),
+      },
+      {
+        id: '11111111-cccc-4ddd-8eee-000000000008',
+        patientId: '11111111-3333-4444-8555-000000000002',
+        dentition: 'PERMANENT',
+        tooth: '36',
+        surfaces: [],
+        condition: 'CROWN',
+        notes: null,
+        recordedAt: at(0, 10, 20),
+      },
+    ])
+    .onConflictDoNothing();
 }
 
 async function insertVisitsAndPlansSqlite(
@@ -792,6 +821,32 @@ async function insertVisitsAndPlansSqlite(
         fileName: 'referral-orthodontics.pdf',
         contentType: 'application/pdf',
         sizeBytes: 81_240,
+      },
+    ])
+    .onConflictDoNothing();
+
+  await db
+    .insert(sqliteSchema.odontogramEntries)
+    .values([
+      {
+        id: '11111111-cccc-4ddd-8eee-000000000007',
+        patientId: '11111111-3333-4444-8555-000000000002',
+        dentition: 'PERMANENT',
+        tooth: '16',
+        surfaces: ['MESIAL'],
+        condition: 'CARIES',
+        notes: 'Composite patch scheduled; checked at the last visit.',
+        recordedAt: at(0, 10, 20),
+      },
+      {
+        id: '11111111-cccc-4ddd-8eee-000000000008',
+        patientId: '11111111-3333-4444-8555-000000000002',
+        dentition: 'PERMANENT',
+        tooth: '36',
+        surfaces: [],
+        condition: 'CROWN',
+        notes: null,
+        recordedAt: at(0, 10, 20),
       },
     ])
     .onConflictDoNothing();

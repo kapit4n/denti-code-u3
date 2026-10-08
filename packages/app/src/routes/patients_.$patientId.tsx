@@ -52,6 +52,7 @@ import {
 } from '../features/clinic/format-clinic-time.js';
 import { useClinicSettings } from '../features/clinic/queries/clinic-settings-query.js';
 import { usePatient } from '../features/patients/hooks/use-patients.js';
+import { PatientOdontogramSection } from '../features/patients/components/patient-odontogram-section.js';
 
 export const Route = createFileRoute('/patients_/$patientId')({
   component: PatientProfile,
@@ -293,6 +294,13 @@ function PatientProfile() {
           </CardContent>
         </Card>
       </div>
+
+      {/*
+        The clinical map: its own request and its own write, mounted as a sibling of
+        the profile cards rather than one of them, because charting is clinical work
+        with a form and a refusal of its own.
+      */}
+      <PatientOdontogramSection patientId={patient.id} clinicTimeZone={timeZone} />
 
       {/*
         The agenda's dialog, with this patient already chosen and no slot — there is no

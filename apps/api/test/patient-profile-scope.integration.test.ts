@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 import * as schema from '@denti-code-u3/database/schema';
 import { registerPatientsRoutes } from '../src/http/routes/patients.js';
 import { DrizzlePatientRepository } from '../src/infrastructure/persistence/repositories/patient-repository.js';
+import { DrizzleOdontogramEntryRepository } from '../src/infrastructure/persistence/repositories/odontogram-entry-repository.js';
 import { systemClock } from '../src/infrastructure/clock/system-clock.js';
 import { uuidGenerator } from '../src/infrastructure/id/uuid-generator.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
@@ -80,6 +81,7 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
     // uses, so the registration path is exercised against real PostgreSQL.
     await registerPatientsRoutes(app, {
       patients: new DrizzlePatientRepository(db),
+      odontogramEntries: new DrizzleOdontogramEntryRepository(db),
       ids: uuidGenerator,
       clock: systemClock,
     });
@@ -198,5 +200,61 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
     const response = await getProfile(otherClinicPatient, clinicId);
 
     expect(response.statusCode).toBe(404);
+  });
+
+  it('charts a tooth on the patient, deriving the dentition from the number', async () => {
+    const chartered = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${patientWithHistory}/odontogram/entries`,
+      payload: { tooth: ' 16 ', condition: 'CARIES', surfaces: ['MESIAL', 'OCCLUSAL'] },
+    });
+
+    expect(chartered.statusCode).toBe(201);
+    expect(chartered.json()).toMatchObject({
+      patientId: patientWithHistory,
+      visitId: null,
+      dentition: 'PERMANENT',
+      tooth: '16',
+      surfaces: ['MESIAL', 'OCCLUSAL'],
+      condition: 'CARIES',
+    });
+    expect(chartered.json().recordedAt).toBeTruthy();
+  });
+
+  it('re-charting a tooth replaces its state rather than adding a row', async () => {
+    await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${patientWithHistory}/odontogram/entries`,
+      payload: { tooth: '16', condition: 'FILLED', surfaces: ['MESIAL'] },
+    });
+
+    const read = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${patientWithHistory}/odontogram`,
+    });
+    expect(read.statusCode).toBe(200);
+    expect(read.json().entries).toHaveLength(1);
+    expect(read.json().entries[0]).toMatchObject({ tooth: '16', condition: 'FILLED' });
+  });
+
+  it('does not chart a tooth on another clinic’s patient', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${otherClinicPatient}/odontogram/entries`,
+      payload: { tooth: '16', condition: 'CARIES', surfaces: ['MESIAL'] },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe('NOT_FOUND');
+  });
+
+  it('answers an empty chart for a patient no one has charted', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${patientWithoutHistory}/odontogram`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().entries).toEqual([]);
   });
 });

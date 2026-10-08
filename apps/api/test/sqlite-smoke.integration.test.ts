@@ -475,6 +475,75 @@ describe('API on SQLite', () => {
     expect(reread.json().attachments).toHaveLength(2);
   });
 
+  it('charts teeth on the patient, one current state per tooth', async () => {
+    // The chart is scoped through the patient on the path, and the dentition is
+    // derived from the tooth number — a body could not restate either (ADR 0014).
+    const charted = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${apiPatientId}/odontogram/entries`,
+      payload: {
+        tooth: ' 16 ',
+        condition: 'CARIES',
+        surfaces: ['MESIAL', 'OCCLUSAL'],
+        notes: '  Composite patch scheduled.  ',
+      },
+    });
+    expect(charted.statusCode).toBe(201);
+    expect(charted.json()).toMatchObject({
+      patientId: apiPatientId,
+      visitId: null,
+      dentition: 'PERMANENT',
+      tooth: '16',
+      surfaces: ['MESIAL', 'OCCLUSAL'],
+      condition: 'CARIES',
+      notes: 'Composite patch scheduled.',
+    });
+    expect(charted.json().recordedAt).toBeTruthy();
+
+    const foreign = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${foreignPatientId}/odontogram/entries`,
+      payload: { tooth: '16', condition: 'CARIES', surfaces: ['MESIAL'] },
+    });
+    expect(foreign.statusCode).toBe(404);
+    expect(foreign.json().error.code).toBe('NOT_FOUND');
+
+    const invalidTooth = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${apiPatientId}/odontogram/entries`,
+      payload: { tooth: '99', condition: 'CARIES', surfaces: ['MESIAL'] },
+    });
+    expect(invalidTooth.statusCode).toBe(422);
+    expect(invalidTooth.json().error.code).toBe('VALIDATION_ERROR');
+
+    // A site condition must name a surface: refused by the domain, folded into the
+    // same VALIDATION_ERROR envelope by sendProblem.
+    const noSurface = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${apiPatientId}/odontogram/entries`,
+      payload: { tooth: '36', condition: 'CARIES', surfaces: [] },
+    });
+    expect(noSurface.statusCode).toBe(422);
+    expect(noSurface.json().error.code).toBe('VALIDATION_ERROR');
+
+    // Re-charting the same tooth replaces the state instead of adding a row: the
+    // upsert under the (patient_id, tooth) unique index, on this engine too.
+    const recharted = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${apiPatientId}/odontogram/entries`,
+      payload: { tooth: '16', condition: 'FILLED', surfaces: ['MESIAL'] },
+    });
+    expect(recharted.statusCode).toBe(201);
+
+    const read = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/odontogram`,
+    });
+    expect(read.statusCode).toBe(200);
+    expect(read.json().entries).toHaveLength(1);
+    expect(read.json().entries[0]).toMatchObject({ tooth: '16', condition: 'FILLED' });
+  });
+
   it('raises a charge on the visit, priced in the clinic’s own record', async () => {
     const raised = await app.inject({
       method: 'POST',

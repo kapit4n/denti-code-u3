@@ -110,9 +110,14 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   });
   // One repository for the whole patient feature: the handlers get a port, so a
   // route cannot forget the clinic filter, and adding a read does not require
-  // handing out the connection again.
+  // handing out the connection again. The odontogram chart joins it here as a
+  // plain repository: charting a tooth is one upsert, and the use case reads the
+  // patient in this clinic before it writes — the notes' read-then-write shape
+  // (ADR 0014). The chart itself is read through the patient repository's
+  // `findOdontogram`, not through a second door.
   await registerPatientsRoutes(app, {
     patients: connection.repositories.patients,
+    odontogramEntries: connection.repositories.odontogramEntries,
     ids: uuidGenerator,
     clock: systemClock,
   });
