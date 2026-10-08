@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 33 (files — the seventh workspace section, Task 1)
+> Last updated: session 34 (odontogram — the patient's chart, Task 2)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -15,6 +15,26 @@ by an enforced guard, the three write endpoints with the tenant foreign keys tha
 drag/resize/status UI, the bookable-resources endpoints, the rule that an inactive
 clinician or chair cannot be booked (ADR 0020), and a booking dialog reachable from all
 three doors a receptionist starts from.
+
+Session 34 delivered the **odontogram** — the per-tooth clinical map (Task 2 of the
+session's plan), the moment Milestone 7's "reusable component backed by domain
+validity rules" left the roadmap. The chart is the **patient's**, not the visit's:
+`listPatientOdontogram` and `recordOdontogramEntry` sit over the
+`OdontogramEntryRepository` (taking `Repositories` from fifteen to sixteen),
+`GET`/`POST /api/v1/patients/:patientId/odontogram(.entries)` read and write what
+the chart holds, and the profile's **Odontogram** card draws the FDI arches and
+exports its rows in the clinic's clock. Like the visit books, the entry carries no
+`clinic_id` — tenancy comes through the patient (both verbs read the patient first;
+a patient this clinic does not hold is a 404 in both engines via the FK
+translation). The write is a **per-tooth upsert**: the unique index is
+`(patient_id, tooth)` in both engines and `save` replaces the tooth's state, so the
+chart holds exactly one current state per tooth — charting twice edits, never
+duplicates. The body is only the finding; the tooth number tells its own dentition,
+`condition`/`surfaces` follow the domain's own validity rules (a site finding must
+name a surface, a surface must apply to the tooth), and both `id` and `recordedAt`
+are the server's (ADR 0014) — the same line the e2e asserts. The network read model
+spells `condition`/`dentition` as strings the database enum guard keeps truthful.
+The seed carries 2 charted teeth on Luis (both engines).
 
 Session 33 delivered **files** — the seventh workspace section and the seventh "per
 visit" book (Task 1 of the session's plan), the moment Milestone 6's "Files/attachments
@@ -179,18 +199,18 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 33 — Task 1, attachments)
+## Verification log (last run, session 34 — Task 2, odontogram)
 
 | Command                     | Result                                                                              |
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                                                    |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)                    |
 | `pnpm run format:check`     | clean                                                                               |
-| `pnpm run test`             | 12/12 tasks pass — domain 259, validation 110, app 280, API 76 passed / 245 skipped |
+| `pnpm run test`             | 12/12 tasks pass — domain 267, validation 122, app 292, API 77 passed / 249 skipped |
 | `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                              |
 | `pnpm run build`            | 5/5 tasks pass (web rebuilt before e2e)                                             |
 | `pnpm run guard:boundaries` | OK                                                                                  |
-| `pnpm run test:e2e`         | 105/105 pass — 3 new attachment specs                                               |
+| `pnpm run test:e2e`         | 108/108 pass — 3 new odontogram specs                                               |
 
 **The PostgreSQL integration suite could not be executed this session: Docker and every
 PostgreSQL client are absent from this environment** (no `docker`, no `podman`, no
@@ -202,6 +222,37 @@ and a not-a-uuid pair) is written, typechecks and will run wherever `TEST_DATABA
 exists; here it reports as part of the skipped suite. What covers the same path without
 a database is the always-on SQLite smoke suite, which gained an attach-through-the-endpoint
 test — normalized POST, both verbs scoped through the visit — and did run.
+
+**What session 34 Task 2's work is verified by.** 8 domain use-case tests (permanent/
+primary dentition derived from the tooth number; a tooth outside the dentition, a
+surface that cannot apply, and a site finding without a surface are refused before
+any write; a patient this clinic does not hold is a `NOT_FOUND`; charting the same
+tooth twice is a second `save` — the upsert, never a second row; sites are
+deduplicated into canonical order; a blank note is stored null), 12 validation tests
+(the FDI regex for both dentitions, the 2000-char note cap, the surface refusals, the
+condition/surface enums), 6 workspace component tests (the section renders on the
+profile, the chart pins each row's own `condition` in `data-condition` and renders an
+uncharted tooth selectable, an exported row carries the clinic's hour, a written
+finding appears only after the refetch, a refusal keeps the draft with nothing
+written optimistically), 6 `describe-odontogram-failure` tests, one always-on
+SQLite-smoke block (normalized POST with the derived dentition, both verbs scoped
+through the patient, a re-chart replacing a tooth's state so the GET still returns
+one row), the `patient-profile-scope.integration.test.ts` odontogram suite (charts a
+tooth with the derived dentition, a re-chart replaces state, another clinic's patient
+is a 404, an empty chart is `[]` — written, typechecked, skipped here for the reason
+above), and 3 e2e specs: one that the chart is asked for when the profile opens and
+**once only**, draws each tooth's own `condition` (a charted 16 is `CARIES`, an
+uncharted 36 is `UNCHARTED`) and exports its rows in the clinic's zone; one that a
+charted crown arrives only via the refetch (the mock's GET is swapped for the second
+fetch, the row carries the server's `id` and 09:00 hour, the POST body is exactly
+`{ tooth, condition, surfaces }` with the blank note and the patient id left off the
+wire, and the chart is read twice while the profile is read once); and one that a 422
+keeps the tooth, condition and notes in the form and does not refetch a chart it did
+not change. `db:migrate` + `db:seed` re-verified against the SQLite file, including
+the 2 odontogram rows and `seedSummary`'s "2 odontogram entries". The chart's
+row-title swap ("Upper permanent" drawing the primary-lower arch, the real upper arch
+untitled) was caught because the e2e renders the map no unit test did; fixed, and the
+four rows now read Primary upper / Primary lower / Upper permanent / Lower permanent.
 
 **What session 33 Task 1's work is verified by.** 7 domain use-case tests (the visit is
 read before any write; a foreign visit is a 404 for both verbs and nothing is ever
@@ -334,6 +385,57 @@ router — a `<Link>` with no router context renders nothing — and the mock is
 the new suite failed for a reason that had nothing to do with the workspace.
 
 ## Decisions made this session (not yet in ADRs)
+
+### Decisions from session 34 (odontogram)
+
+- **The chart is the patient's, not the visit's, and the write is a per-tooth
+  upsert.** `odontogram_entries` carries `patient_id` and a unique index on
+  `(patient_id, tooth)` in both engines; `recordOdontogramEntry` is a single
+  `INSERT … ON CONFLICT (patient_id, tooth) DO UPDATE` (SQLite: the equivalent
+  `.run` with `OR REPLACE`), so the chart holds exactly **one current state per
+  tooth** — charting the same tooth twice edits its state, never adds a row. That
+  is also what makes the client honest: a second charting is not an error on the
+  wire, the server replaces (the e2e asserts it: re-charting a tooth leaves the GET
+  with one row).
+- **No `clinic_id` — tenancy comes through the patient, the visit books' rule
+  applied to the patient.** Both verbs read the patient first (`findOdontogram`
+  scopes by clinic and ignores anonymized patients): a patient this clinic does not
+  hold answers **404 to both verbs** and nothing is ever read or written. `save`
+  takes no clinic id, and the foreign-key violation (`23503` /
+  `SQLITE_CONSTRAINT_FOREIGNKEY`) is translated to `NOT_FOUND`, so a raw statement
+  can never chart a tooth for a patient the clinic cannot see.
+- **The body is only the finding.** The endpoint schema and the use case accept
+  `tooth`, `condition`, `surfaces[]` and an optional `notes`: the patient is the
+  path, the dentition is a fact about the tooth number, and both `id` and
+  `recordedAt` are the server's (ADR 0014). The domain refuses with its own
+  sentences (`assertValidOdontogramEntry`: a site finding without a surface, a
+  tooth outside the dentition, a surface that cannot apply to the tooth) and the
+  endpoint schema mirrors it — the FDI regex `/^([1-4][1-8]|[5-8][1-5])$/` is
+  duplicated in `packages/validation` because that package must not depend on
+  `domain`, and both copies are pinned by their own tests. `notes` is trimmed and
+  blank → null; the client drops a blank note from the POST body but always sends
+  `surfaces` (even `[]`), because only the server decides whether a finding needed a
+  surface.
+- **`Repositories` grew from fifteen to sixteen, again only with both engines.**
+  `odontogramEntries` entered the set only once the PostgreSQL and SQLite
+  implementations existed — the session 23 policy's seventh growth.
+- **The app draws rows the API returned, reservations included.**
+  `PatientOdontogramEntry.condition`/`dentition` are strings the database enum
+  guard keeps truthful, so the chart indexes its `CONDITION_CELL` map through an
+  `as OdontogramCondition` cast at exactly the point the write path types them; an
+  uncharted tooth renders a neutral cell with `data-condition="UNCHARTED"` and is
+  just as selectable, because charting starts with a tooth that has no state. The
+  mutation is non-optimistic, invalidates only `['patients','odontogram',patientId]`
+  (a charted tooth does not touch the profile row, a visit, or any other patient),
+  reads only when the profile does, and keeps the whole draft on a refusal — with
+  its own sentence file (`describe-odontogram-failure`), the same discipline as
+  every visit book.
+- **The e2e caught a presentation bug the unit suite could not.** The chart's
+  second arch was titled "Upper permanent" while drawing the primary-lower teeth,
+  and the actual upper permanent arch had no title — both labels were straight from
+  the component's arrays, visible to no test that did not render the map. The rows
+  are now Primary upper / Primary lower / Upper permanent / Lower permanent, and
+  every tooth cell carries `data-condition` so a spec can pin the row's own state.
 
 ### Decisions from session 33 (files/attachments)
 

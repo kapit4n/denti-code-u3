@@ -152,12 +152,13 @@ Visit {
 }
 
 Visit → ClinicalNote[]         (typed notes: anamnesis, evolution, …)
-Visit → OdontogramEntry[]      (per-tooth state)
 Visit → TreatmentRecord[]      (what was actually done)
 Visit → Prescription[]
 Visit → Charge[]
 Visit → PaymentAllocation[]    (payments linked through the invoice)
 Visit → VisitAttachment[]      (files: radiographs, photos; reference — name, type, size, clock)
+
+Patient → OdontogramEntry[]    (the per-tooth chart; see §2.7 — not a visit book)
 ```
 
 Rules:
@@ -173,21 +174,26 @@ Rules:
 
 ```
 OdontogramEntry {
-  id, clinicId, patientId, visitId?,
-  dentition: Permanent | Primary | Mixed,
+  id, patientId, visitId?,
+  dentition: Permanent | Primary,
   tooth: FDI notation ("16", "51", …),
   surfaces: Mesial, Distal, Buccal, Lingual, Occlusal, Incisal,
   condition,           // Healthy, Caries, Filled, Missing, Crown, Implant,
                        // RootCanal, ExtractionIndicated, Extracted, Sealant,
-                       // Veneer, Fracture, Mobility
-  notes?
+                       // Veneer, Fracture, Mobility, Prosthesis
+  notes?:              // a blank note is stored null
 }
 ```
 
-`dentition + tooth` is the natural key of an odontogram entry (one active entry
-per tooth per patient). FDI notation is chosen over the universal system because
-it is unambiguous across countries and directly expresses quadrants; the
-mapping table lives in `packages/domain/src/odontogram/`.
+`(patient, tooth)` is the natural key of an odontogram entry — **one current state
+per tooth** — and charting is an upsert (delivered, session 34):
+`GET /api/v1/patients/:patientId/odontogram` reads the chart and the
+`.entries` POST replaces one tooth's state; tenancy comes through the patient (the
+entry carries no `clinic_id`), and the dentition is a fact about the tooth number,
+never a body field. The read model spells `condition`/`dentition` as strings; the
+database enum guard keeps them truthful. FDI notation is chosen over the universal
+system because it is unambiguous across countries and directly expresses quadrants;
+the mapping table lives in `packages/domain/src/odontogram/`.
 
 ### 2.8 Treatment, TreatmentPlan, Prescription
 
@@ -339,6 +345,7 @@ Rules:
 | Visit state machine                                 | `domain/visit`        | `canTransitionVisit`, `reopenVisit`                 |
 | FDI tooth notation + dentition validation           | `domain/odontogram`   | `toothNumberSchema`, tooth catalogs                 |
 | Odontogram condition set                            | `domain/odontogram`   | `ODONTOGRAM_CONDITIONS`                             |
+| Odontogram entry validity (denture, surfaces)       | `domain/odontogram`   | `assertValidOdontogramEntry`                        |
 | Treatment plan progress                             | `domain/treatment`    | `calculateTreatmentPlanProgress`                    |
 | Invoice totals, balances, money as integers         | `domain/billing`      | `calculateInvoiceTotals`, `calculatePatientBalance` |
 | Roles and permissions                               | `domain/organization` | `ROLE_PERMISSIONS`, `hasPermission`                 |

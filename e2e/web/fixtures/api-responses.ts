@@ -161,6 +161,55 @@ export const luisProfile = {
   },
 } as const;
 
+/**
+ * Ana's chart, as `GET /api/v1/patients/:id/odontogram` answers for her: one
+ * charted tooth, recorded at 13:00Z so a spec can read the clinic's hour (08:00
+ * in Lima) off an exported row.
+ */
+export const anaOdontogram = {
+  entries: [
+    {
+      id: '11111111-cccc-4ddd-8eee-000000000010',
+      patientId: ANA_ID,
+      visitId: null,
+      dentition: 'PERMANENT',
+      tooth: '16',
+      surfaces: ['MESIAL'],
+      condition: 'CARIES',
+      notes: 'Composite patch scheduled.',
+      recordedAt: '2026-10-05T13:00:00.000Z',
+    },
+  ],
+} as const;
+
+/** Luis's chart — a real patient whose chart no tooth has been drawn on yet. */
+export const luisOdontogram = {
+  entries: [],
+} as const;
+
+/**
+ * The row a spec writes, and the row the API answers the POST with.
+ *
+ * Its `id` and `recordedAt` are the server's, not the client's: a spec asserting
+ * that the listing shows this row is asserting that the refetch is what put it on
+ * screen, because nothing in the browser could have produced those two values.
+ */
+export const recordedOdontogramEntry = {
+  id: '11111111-cccc-4ddd-8eee-000000000011',
+  patientId: ANA_ID,
+  visitId: null,
+  dentition: 'PERMANENT',
+  tooth: '36',
+  surfaces: [],
+  condition: 'CROWN',
+  notes: null,
+  recordedAt: '2026-10-05T14:00:00.000Z',
+} as const;
+
+export function patientOdontogram(entries: readonly Record<string, unknown>[]): Fixture['body'] {
+  return { entries };
+}
+
 export const dashboardStats = {
   today: {
     appointments: 3,
@@ -951,6 +1000,11 @@ export function visitAttachments(attachments: readonly Record<string, unknown>[]
   return { attachments };
 }
 /**
+ * The read that fires the moment a patient's profile opens is `GET
+ * /api/v1/patients/:id/odontogram`, so it is part of the shared profile wiring
+ * here like the profile itself is. The *section* reads below are not, for the
+ * reason stated under them.
+ *
  * The section reads — `/notes`, `/treatments`, `/prescriptions`, `/charges`,
  * `/payments`, `/attachments` — are *not* here, for the stronger reason that they
  * must not happen at all until their section is opened. Each spec registers the
@@ -965,6 +1019,7 @@ export function visitWorkspaceFixtures(overrides: MockedResponses = {}): MockedR
     [`/api/v1/visits/${VISIT_ID}`]: { body: openVisit },
     [`/api/v1/visits/${COMPLETED_VISIT_ID}`]: { body: completedVisit },
     [`/api/v1/patients/${ANA_ID}`]: { body: anaProfile },
+    [`/api/v1/patients/${ANA_ID}/odontogram`]: { body: anaOdontogram },
     '/api/v1/clinic': { body: clinicSettings },
     '/api/v1/dentists': { body: everyDentistList },
     '/api/v1/chairs': { body: everyChairList },

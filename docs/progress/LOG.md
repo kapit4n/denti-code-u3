@@ -2355,3 +2355,59 @@ pnpm run test:e2e         105/105 passed (3 new file specs)
 Milestone 6 decision (roadmap's "Files/attachments (platform capability)"). Editing or
 deleting an attachment. Mirrors every other visit book: last-in-first, and the read
 side was never behind the write.
+
+---
+
+## Session 34 — Odontogram (the patient's chart, Task 2)
+
+**Started from:** Task 1 commits `93b69eb` (`feat: add visit attachments (Task 1)`)
+and `cc63767` (`test: cover …`) clean at HEAD; everything below is Task 2.
+
+**Work performed**
+
+- **Domain.** `recordOdontogramEntry` and `listPatientOdontogram` in
+  `domain/odontogram/odontogram-entry.ts`; `OdontogramEntryRepository { save }` and
+  `Repositories.odontogramEntries` added to the ports (fifteen → sixteen).
+  The entity type keeps optional `visitId`/`notes`; the _record_ type uses nulls,
+  and the use case builds each separately. `dentitionForTooth` derives the
+  dentition from the FDI number, surfaces are deduplicated, a site finding must
+  name a surface and a surface must apply to the tooth.
+- **Validation.** `createOdontogramEntrySchema` (FDI regex duplicated because
+  `validation` cannot depend on `domain`), condition/surface enums, 2000-char note.
+- **API.** PostgreSQL + SQLite `DrizzleOdontogramEntryRepository` (save = upsert on
+  `(patient_id, tooth)`; FK violation → `NOT_FOUND`). `GET
+/api/v1/patients/:patientId/odontogram` and `POST …/odontogram/entries` scoped
+  through the patient (foreign/missing patient = 404 on both verbs). Seed rests at
+  2 charted teeth on Luis (both engines); `db:migrate` + `db:seed` applied.
+- **App.** `usePatientOdontogram` already existed in `use-patients.ts`; added
+  `useRecordOdontogramEntry` (non-optimistic, invalidates only the odontogram key,
+  blank note dropped from the body), `describe-odontogram-failure.ts`, the
+  `OdontogramChart` FDI arches and the profile's **Odontogram** card (condition
+  select, surface checkboxes, notes, clinic-clock rows). Chart rows labelled
+  Primary upper / Primary lower / Upper permanent / Lower permanent.
+- **Tests.** 8 domain, 12 validation, 6 component, 6 failure-sentence, one
+  SQLite-smoke block, a `patient-profile-scope.integration.test.ts` odontogram suite
+  (skips here — no `TEST_DATABASE_URL`), and 3 e2e specs in
+  `web/patient-odontogram.spec.ts`. The profile e2e specs that already opened a
+  profile now register the odontogram read too (it fires the moment the profile
+  opens), and `visitWorkspaceFixtures` gained Ana's chart for the one spec that
+  navigates to a profile.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run guard:boundaries OK (one pre-existing warning)
+pnpm run build            5/5 successful (web rebuilt — dist drives e2e)
+pnpm run test             12/12 tasks — domain 267, validation 122, app 292,
+                          API 77 passed / 249 skipped (PG suite needs a database)
+pnpm run test:e2e         108/108 passed (3 new odontogram specs)
+```
+
+**NOT done and deliberately.** "Treatment recommendation from an odontogram finding"
+(roadmap M7) stays deferred — it needs the treatment-plan link, which is Milestone 8.
+Exporting/reprinting the chart, a mixed-dentition selector, and editing a charted
+finding's history are product-shaped, not this milestone's proof. The PostgreSQL
+odontogram suite skips in this environment exactly as every integration suite does.

@@ -18,8 +18,10 @@ import {
   ANA_ID,
   LUIS_ID,
   PATIENT_LIST_RESPONSE,
+  anaOdontogram,
   anaProfile,
   clinicFixture,
+  luisOdontogram,
   luisProfile,
   patientSummaries,
 } from './fixtures/api-responses.js';
@@ -109,6 +111,7 @@ test.describe('Patient profile', () => {
     await installApi(page, {
       ...clinicFixture(),
       [`${LIST_PATH}/${ANA_ID}`]: { body: anaProfile },
+      [`${LIST_PATH}/${ANA_ID}/odontogram`]: { body: anaOdontogram },
       [LIST_PATH]: { body: PATIENT_LIST_RESPONSE },
     });
 
@@ -133,6 +136,7 @@ test.describe('Patient profile', () => {
     await installApi(page, {
       ...clinicFixture(),
       [`${LIST_PATH}/${LUIS_ID}`]: { body: luisProfile },
+      [`${LIST_PATH}/${LUIS_ID}/odontogram`]: { body: luisOdontogram },
     });
 
     await page.goto(`/patients/${LUIS_ID}`);
@@ -150,6 +154,7 @@ test.describe('Patient profile', () => {
     await installApi(page, {
       ...clinicFixture(),
       [`${LIST_PATH}/${LUIS_ID}`]: { body: luisProfile },
+      [`${LIST_PATH}/${LUIS_ID}/odontogram`]: { body: luisOdontogram },
     });
 
     await page.goto(`/patients/${LUIS_ID}`);
@@ -178,9 +183,11 @@ test.describe('Global patient search', () => {
       },
       // Needed as well as the list: landing on the profile fires the detail
       // query, and an unmocked endpoint answers 501 by design. So does the
-      // clinic's settings, which the profile now reads its times through.
+      // clinic's settings, which the profile now reads its times through. The
+      // chart is part of the profile's own reads too.
       ...clinicFixture(),
       [`${LIST_PATH}/${ANA_ID}`]: { body: anaProfile },
+      [`${LIST_PATH}/${ANA_ID}/odontogram`]: { body: anaOdontogram },
     });
 
     await page.goto('/');

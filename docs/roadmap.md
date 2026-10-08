@@ -308,6 +308,17 @@ and the doors that _start_ a visit, neither of which this criterion asked for.
 - Surfaces, conditions, notes, history per tooth
 - Treatment recommendation from an odontogram finding
 
+**Delivered (session 34):** `GET`/`POST /api/v1/patients/:patientId/odontogram(.entries)`
+backed by the domain's own validity rules (FDI regex, dentition derived from the
+tooth number, sites must name a surface, surfaces must apply to the tooth), with
+the profile's **Odontogram** card drawing the FDI arches and exporting its rows in
+the clinic's clock. Charting is a per-tooth **upsert**: one current state per tooth,
+re-charting edits rather than duplicates. Tenancy comes through the patient (a
+foreign or missing patient is a 404 on both verbs). History per tooth (the read is
+current-state-only by design) and the **treatment recommendation** bullet remain:
+the recommendation needs the treatment plan's write and its link to planned items,
+which are Milestone 8.
+
 **Exit criteria:** the odontogram is a reusable component backed by domain
 validity rules, not a drawing hack.
 
