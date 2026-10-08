@@ -2274,3 +2274,84 @@ across a bill that spans invoices; partial invoice settlement; invoice numbering
 statements; a follow-up payment after settlement — all Milestone 9, all folded into
 open question 20. In this phase a payment is one settlement per visit's un-invoiced
 bill, and the receipt is the visit's record, not yet a ledger.
+
+---
+
+## Session 33 — files/attachments (the seventh workspace section) — Task 1
+
+**Started from:** session 32's verified state — 14 repositories, six workspace
+sections, 102/102 e2e.
+
+**Work performed**
+
+- **Schema + migrations.** `visit_attachments` in both engines (PG `DrizzleExtra`
+  terms: `fileName text`, nullable `contentType`/`sizeBytes`, `createdAt` timestamp
+  tz default now, index on `visit_id`, CHECK `size_bytes >= 0`). Like `clinical_notes`,
+  the table carries **no `clinic_id`** — tenancy comes through `visits` — and the FK
+  `ON DELETE CASCADE` (a visit's folder dies with the visit). SQLite twin mirrors it.
+  `db:generate` produced `database/migrations/0004_chunky_korath.sql` and
+  `database/migrations-sqlite/0003_fresh_quicksilver.sql` (clean — the only delta is
+  the new table); `db:migrate` + `db:seed` applied both against the local SQLite file.
+- **Seed.** Two attachment rows on Luis's open visit `11111111-7777-4888-8999-000000000002`
+  in both engine inserters — `periapical-26-left.png` (image/png, 512400 bytes) and
+  `referral-orthodontics.pdf` (application/pdf, 81240 bytes); `seedSummary` now reads
+  "2 attachments, 3 charges, 2 payments".
+- **Types.** `VisitAttachmentId` brand + `asVisitAttachmentId` in
+  `packages/types/src/identifiers.ts` (union entry included).
+- **Domain.** `packages/domain/src/visit/visit-attachments.ts` — `VisitAttachment`
+  entity, `listVisitAttachments` / `addVisitAttachment` over `VisitAttachmentRepository`.
+  Both verbs read the visit first: a visit this clinic does not hold is a 404 before
+  any row moves (ADR 0014). The name is trimmed and must not be blank ("A file needs a
+  name"); `sizeBytes < 0` is refused ("A file size cannot be negative"); `contentType`
+  is trimmed, lower-cased, blank → null. The write is one `save`, no `UnitOfWork`,
+  `id` from `newId()` and `createdAt` from the clinic's clock.
+- **Ports.** `VisitAttachmentRepository { findForVisit, save }` added; `Repositories`
+  grew from **fourteen to fifteen**, both engines before either entered the set (the
+  session 23 policy's sixth growth).
+- **Validation.** `createVisitAttachmentSchema` — fileName trimmed 1–255, contentType
+  trimmed ≤100, sizeBytes integer ≥ 0, the two optionals absent-or-null.
+- **Repositories + wiring.** `DrizzleVisitAttachmentRepository` (join `visits` for
+  scoping, `ORDER BY created_at, id` — the order a folder grew in) and
+  `SQLiteVisitAttachmentRepository` (synchronous `.run()`); both translate the FK
+  violation (`23503` / `SQLITE_CONSTRAINT_FOREIGNKEY`) to `NOT_FOUND`. Wired into
+  `postgres/unit-of-work.ts` and `sqlite/repositories.ts`.
+- **Routes.** `GET`/`POST /api/v1/visits/:visitId/attachments` — the reference only
+  (fileName REQUIRED, contentType/sizeBytes optional, nulls sent as null); 201 with
+  the server's row; 404 for a foreign/missing visit on both verbs. `newId` is
+  `ids.nextId()` cast through `asVisitAttachmentId`.
+- **App.** `useVisitAttachments` (query key `['visits','attachments',visitId]`,
+  mounted-not-enabled) and `useCreateVisitAttachment` (non-optimistic; invalidates only
+  its own key — attaching a file does not change the visit row; absent optionals dropped
+  from the body; the name trimmed on the way out). `describe-attachment-failure.ts` has
+  its own sentences. The workspace's **Files** section — the nav's seventh row — lists
+  a file's name, type and size (`N bytes`) in the clinic's clock and writes a new one,
+  keeping the front desk's draft when the API refuses it.
+- **Tests.** 7 domain use-case tests, 5 validation, 4 workspace component tests (the
+  section asks for its files only when opened, an empty folder is "No files attached
+  yet.", an attached file appears only after the refetch and clears the form, a 422
+  keeps the draft), 6 `describe-attachment-failure` tests, a SQLite-smoke block (normalised
+  POST + both verbs scoped through the visit), the `visits-route.integration.test.ts`
+  attachments suite (skips here — no `TEST_DATABASE_URL`), and 3 e2e specs: not asked
+  for before the section opens, clinic-clock listing and an attach whose row could only
+  have come from the refetch (server-owned `id`, POST body exactly
+  `{ fileName, contentType, sizeBytes }` trimmed, two reads of the register and one of
+  the visit), and a 422 keeping the draft.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run guard:boundaries OK (one pre-existing warning)
+pnpm run build            5/5 successful (web rebuilt — dist drives e2e)
+pnpm run test             12/12 tasks — domain 259, validation 110, app 280,
+                          API 76 passed / 245 skipped (PG suite needs a database)
+pnpm run test:e2e         105/105 passed (3 new file specs)
+```
+
+**NOT done and deliberately.** The upload itself — the endpoint stores a reference
+(name, type, size, clock), not bytes; the transport for the actual file is a deferred
+Milestone 6 decision (roadmap's "Files/attachments (platform capability)"). Editing or
+deleting an attachment. Mirrors every other visit book: last-in-first, and the read
+side was never behind the write.

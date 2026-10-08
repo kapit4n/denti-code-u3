@@ -254,6 +254,20 @@ treatments` names it so the workspace's third row can resolve a record's name
     Milestone 9. `Repositories` is eleven now, every member with both engines (the
     session 23 policy, four sessions running).
 - Files/attachments (platform capability)
+  - **Done (session 33): the record.** `listVisitAttachments` / `addVisitAttachment`
+    over a fifteenth port, `VisitAttachmentRepository`. Like `clinical_notes`,
+    `visit_attachments` has no `clinic_id` — tenancy comes through `visits` (both verbs
+    read the visit first; a foreign visit is a 404) and the FK is `ON DELETE CASCADE`.
+    `GET`/`POST /api/v1/visits/:visitId/attachments` store a _reference only_ — the
+    name (trimmed, 1–255), the type (normalized, blank → null), the integer size
+    (guarded by the schema, the use case and a column CHECK), and the clinic's clock.
+    The workspace's **Files** section — the nav's seventh row — lists a file's name,
+    type and size in clinic time and writes a new one, keeping the front desk's draft
+    on a refusal.
+  - **Not done:** the bytes. Uploading the actual file (multipart, a Tauri local path,
+    a store) is a transport this slice deliberately defers; the reference, its register
+    and its tenancy are the part Milestone 6 has to prove, and the table is the shelf
+    the transport will hang on. Editing or deleting an attachment is also still absent.
 - Payments recorded against the visit's charges
   - **Done (session 32).** `payVisitCharges` settles a visit's charges with a
     payment: `POST /api/v1/visits/:visitId/payments` records the money and folds

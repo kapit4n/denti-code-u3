@@ -37,6 +37,10 @@
  *     opens, arrives by refetch carrying the server's own `id` and `receivedAt`,
  *     and — because a settlement stamps the bill invoiced — closes the door it
  *     came through, with the still-there-balance told out loud.
+ *  9. **Files are asked for when their section opens, and an attached file arrives
+ *     by refetch.** The list shows the server's `fileName` and `createdAt` — the
+ *     latter read in the clinic's clock — and a refused file keeps the front
+ *     desk's draft on screen.
  *
  * What is *not* here: the rules. Which moves are legal is the domain's, tested
  * against the domain and against a real API elsewhere. This file asserts that
@@ -69,6 +73,9 @@ import {
   visitCharge,
   visitCharges,
   raisedCharge,
+  attachedFile,
+  visitAttachment,
+  visitAttachments,
 } from './fixtures/api-responses.js';
 import { watchForConsoleErrors } from './fixtures/console-errors.js';
 import { installApi, notFound } from './fixtures/mock-api.js';
@@ -156,6 +163,21 @@ function paymentsReads(
     (entry) =>
       entry.method === 'GET' &&
       new URL(entry.url).pathname === `/api/v1/visits/${VISIT_ID}/payments`,
+  ).length;
+}
+
+/**
+ * How many times the files were read — one when the section opened, one after the
+ * write. The spec's claim about non-optimism rests on this number and on what the
+ * second answer carried.
+ */
+function attachmentsReads(
+  recorded: readonly { readonly method: string; readonly url: string }[],
+): number {
+  return recorded.filter(
+    (entry) =>
+      entry.method === 'GET' &&
+      new URL(entry.url).pathname === `/api/v1/visits/${VISIT_ID}/attachments`,
   ).length;
 }
 
@@ -915,6 +937,135 @@ test.describe('Visit workspace', () => {
     await expect(page.getByRole('alert')).toHaveText(/The payment reference is too long/);
     await expect(page.getByTestId('payment-amount')).toHaveValue('55.00');
     await expect(page.getByTestId('payment')).toHaveCount(0);
+
+    expect(expectedResourceFailures(errors)).toEqual([]);
+  });
+
+  test('lists the files on the visit, in the clinic’s clock, only once the section is open', async ({
+    page,
+  }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...visitWorkspaceFixtures({
+        [`/api/v1/visits/${VISIT_ID}/attachments`]: {
+          body: visitAttachments([visitAttachment]),
+        },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+
+    // The summary is what the workspace opens on, and the files were not asked for
+    // until somebody asked to see them.
+    await expect(page.getByTestId('visit-workspace')).toBeVisible();
+    expect(attachmentsReads(api.recorded)).toBe(0);
+
+    await page.getByTestId('visit-section-attachments').click();
+
+    // 13:00Z is 08:00 in Lima: a file's time is the clinic's clock again, on a row
+    // nothing but the endpoint could have produced.
+    await expect(page.getByTestId('attachment').first()).toContainText(visitAttachment.fileName);
+    await expect(page.getByTestId('attachment').first()).toContainText('image/png');
+    await expect(page.getByTestId('attachment').first()).toContainText('512400 bytes');
+    await expect(page.getByTestId('attachment').first()).toContainText('08:00');
+    await expect(page.getByTestId('attachment').first()).not.toContainText('13:00');
+
+    expect(expectedResourceFailures(errors)).toEqual([]);
+  });
+
+  test('attaches a file and shows it only once the server has stored it', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...visitWorkspaceFixtures({
+        [`/api/v1/visits/${VISIT_ID}/attachments`]: {
+          body: visitAttachments([visitAttachment]),
+        },
+        [`POST /api/v1/visits/${VISIT_ID}/attachments`]: { body: attachedFile, status: 201 },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+    await page.getByTestId('visit-section-attachments').click();
+
+    await expect(page.getByTestId('attachment').first()).toContainText(visitAttachment.fileName);
+
+    await page.getByTestId('attachment-name').fill(`  ${attachedFile.fileName}  `);
+    await page.getByTestId('attachment-content-type').fill(attachedFile.contentType ?? '');
+    await page.getByTestId('attachment-size').fill(String(attachedFile.sizeBytes ?? ''));
+    await page.getByTestId('attach-file').click();
+
+    // The server's answer to the POST is installed before the POST can resolve, so
+    // the refetch the mutation triggers reads the file list as it now stands. The
+    // row that appears carries the server's own `id` — which is the point: nothing
+    // in the browser could have produced it, so nothing but the refetch could have
+    // put it on screen.
+    await installApi(page, {
+      [`/api/v1/visits/${VISIT_ID}/attachments`]: {
+        body: visitAttachments([visitAttachment, attachedFile]),
+      },
+    });
+
+    const filed = page.getByTestId('attachment').filter({ hasText: 'referral-orthodontics.pdf' });
+    await expect(filed).toBeVisible();
+    await expect(filed).toContainText('08:35');
+    await expect(page.getByTestId('attachment-name')).toHaveValue('');
+    await expect(page.getByTestId('attachment-content-type')).toHaveValue('');
+
+    const post = api.recorded.find(
+      (entry) => entry.method === 'POST' && entry.url.includes(`/visits/${VISIT_ID}/attachments`),
+    );
+    expect(post).toBeTruthy();
+    // Trimmed on the way out, so the server is not asked to store what the box's
+    // edges happen to hold; and the visit's id is in the URL, not on the wire.
+    expect(post?.body).toEqual({
+      fileName: attachedFile.fileName,
+      contentType: attachedFile.contentType,
+      sizeBytes: attachedFile.sizeBytes,
+    });
+
+    // Two reads, not one: the section's own, and the one the invalidation asked for.
+    await expect.poll(() => attachmentsReads(api.recorded)).toBe(2);
+
+    // Attaching a file changes nothing about the visit itself — the invalidation was
+    // the section's, not `['visits']` wholesale.
+    await expect.poll(() => visitReads(api.requests)).toBe(1);
+
+    expect(expectedResourceFailures(errors)).toEqual([]);
+  });
+
+  test('keeps the draft when a file is refused', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    await installApi(page, {
+      ...visitWorkspaceFixtures({
+        [`/api/v1/visits/${VISIT_ID}/attachments`]: {
+          body: visitAttachments([]),
+        },
+        [`POST /api/v1/visits/${VISIT_ID}/attachments`]: {
+          status: 422,
+          body: {
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'A file needs a name',
+              requestId: 'e2e',
+            },
+          },
+        },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+    await page.getByTestId('visit-section-attachments').click();
+    await expect(page.getByText('No files attached yet.')).toBeVisible();
+
+    await page.getByTestId('attachment-name').fill('Half a name');
+    await page.getByTestId('attach-file').click();
+
+    // The refusal reaches the screen in the API's own words, and the name the front
+    // desk typed is still in the box — a failed request that took it away would be
+    // the most destructive thing this panel does.
+    await expect(page.getByRole('alert')).toHaveText(/A file needs a name/);
+    await expect(page.getByTestId('attachment-name')).toHaveValue('Half a name');
+    await expect(page.getByTestId('attachment')).toHaveCount(0);
 
     expect(expectedResourceFailures(errors)).toEqual([]);
   });

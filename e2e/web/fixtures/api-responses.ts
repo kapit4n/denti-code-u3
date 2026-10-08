@@ -912,11 +912,50 @@ export const recordedPayment = {
 export function visitPayments(payments: readonly Record<string, unknown>[]): Fixture['body'] {
   return { payments };
 }
+
+/**
+ * A file already on the open visit, as
+ * `GET /api/v1/visits/:visitId/attachments` answers for it.
+ *
+ * `contentType` and `sizeBytes` are the row as the API stores it: a spec that read a
+ * size off a row without one would be asserting a rendering the endpoint cannot
+ * produce. `createdAt` is 13:00Z so a spec can read the clinic's hour (08:00 in
+ * Lima) off the row — the same clock the notes and treatments specs read theirs from.
+ */
+export const visitAttachment = {
+  id: '11111111-cccc-4ddd-8eee-000000000005',
+  visitId: VISIT_ID,
+  fileName: 'periapical-26-left.png',
+  contentType: 'image/png',
+  sizeBytes: 512400,
+  createdAt: '2026-10-05T13:00:00.000Z',
+} as const;
+
+/**
+ * The row a spec writes, and the row the API answers the POST with.
+ *
+ * Its `id` and `createdAt` are the server's, not the client's: a spec asserting that
+ * the list shows *this* row is asserting that the refetch is what put it on screen,
+ * because nothing in the browser could have produced those two values.
+ */
+export const attachedFile = {
+  id: '11111111-cccc-4ddd-8eee-000000000006',
+  visitId: VISIT_ID,
+  fileName: 'referral-orthodontics.pdf',
+  contentType: 'application/pdf',
+  sizeBytes: 81240,
+  createdAt: '2026-10-05T13:35:00.000Z',
+} as const;
+
+export function visitAttachments(attachments: readonly Record<string, unknown>[]): Fixture['body'] {
+  return { attachments };
+}
 /**
  * The section reads — `/notes`, `/treatments`, `/prescriptions`, `/charges`,
- * `/payments` — are *not* here, for the stronger reason that they must not happen
- * at all until their section is opened. Each spec registers the one it needs, so
- * an over-eager client draws a 501 instead of a silently-mocked row.
+ * `/payments`, `/attachments` — are *not* here, for the stronger reason that they
+ * must not happen at all until their section is opened. Each spec registers the
+ * one it needs, so an over-eager client draws a 501 instead of a
+ * silently-mocked row.
  *
  * The `overrides` argument comes last so a spec can replace one answer — the 409
  * refusal, a 404 for a visit this clinic does not hold — without restating the rest.

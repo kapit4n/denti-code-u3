@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 32 (payments — the sixth workspace section, Task 2)
+> Last updated: session 33 (files — the seventh workspace section, Task 1)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -15,6 +15,24 @@ by an enforced guard, the three write endpoints with the tenant foreign keys tha
 drag/resize/status UI, the bookable-resources endpoints, the rule that an inactive
 clinician or chair cannot be booked (ADR 0020), and a booking dialog reachable from all
 three doors a receptionist starts from.
+
+Session 33 delivered **files** — the seventh workspace section and the seventh "per
+visit" book (Task 1 of the session's plan), the moment Milestone 6's "Files/attachments
+(platform capability)" became a record. `listVisitAttachments` and `addVisitAttachment`
+sit over a real `VisitAttachmentRepository` (taking `Repositories` from fourteen to
+fifteen), `GET`/`POST /api/v1/visits/:visitId/attachments` list and file what the
+visit's folder holds, and a **Files** section in the workspace draws a file's name,
+type and size in the clinic's clock and writes a new one whose body is exactly
+`{ fileName, contentType?, sizeBytes? }`. Like `clinical_notes`, the table carries no
+`clinic_id` of its own — tenancy comes through `visits` (both verbs read the visit
+first; a foreign visit is a 404 in both engines via the FK translation) — and the FK
+is `ON DELETE CASCADE`: a visit's folder dies with the visit. The file name is trimmed
+on the way out and must not be blank, `contentType` is normalized lower-cased (blank →
+null), a negative `sizeBytes` is refused by the domain _and_ by a column CHECK, and
+the app keeps the front desk's draft when the API refuses it, as every other section
+does. It is a **reference only** — name, type, size, the clinic's clock, no bytes; the
+upload transport is a deferred Milestone 6 concern, recorded in the roadmap. The seed
+carries 2 attachments on Luis's open visit (both engines).
 
 Session 32 delivered **payments** — the sixth workspace section and the sixth "per
 visit" book, the settlement that turns a bill into a receipt (Task 2 of the
@@ -161,30 +179,48 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 32 — Task 2, payments)
+## Verification log (last run, session 33 — Task 1, attachments)
 
 | Command                     | Result                                                                              |
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                                                    |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)                    |
 | `pnpm run format:check`     | clean                                                                               |
-| `pnpm run test`             | 12/12 tasks pass — domain 252, validation 105, app 270, API 75 passed / 239 skipped |
+| `pnpm run test`             | 12/12 tasks pass — domain 259, validation 110, app 280, API 76 passed / 245 skipped |
 | `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                              |
 | `pnpm run build`            | 5/5 tasks pass (web rebuilt before e2e)                                             |
 | `pnpm run guard:boundaries` | OK                                                                                  |
-| `pnpm run test:e2e`         | 102/102 pass — 3 new payment specs                                                  |
+| `pnpm run test:e2e`         | 105/105 pass — 3 new attachment specs                                               |
 
 **The PostgreSQL integration suite could not be executed this session: Docker and every
 PostgreSQL client are absent from this environment** (no `docker`, no `podman`, no
-`psql`, no `/var/run/docker.sock`). The new payments block in `visits-route.integration.test.ts`
-(a full settlement with the row assertions, the derived invoice statuses, partial over
-full and follow-up refused, the four validation refusals, foreign 404 on both verbs,
-missing-visit 404, non-uuid 422, a payment-list ordering test, and `clearFixtures`
-deleting payments and invoices before charges) is written, typechecks and will run
-wherever `TEST_DATABASE_URL` exists; here it reports as part of the skipped suite. What
-covers the same path without a database is the always-on SQLite smoke suite, which
-gained a settlement test — a real payment through the endpoint, its invoice stamped on
-the charges, the derived status, and the read-back — and did run.
+`psql`, no `/var/run/docker.sock`). The new attachments block in
+`visits-route.integration.test.ts` (an attach-and-list-back with the clock's `createdAt`
+and the DB row asserted, an oldest-first ordering test, foreign and missing visits
+answering 404 to both verbs with nothing written, the blank-name/negative-size 422s,
+and a not-a-uuid pair) is written, typechecks and will run wherever `TEST_DATABASE_URL`
+exists; here it reports as part of the skipped suite. What covers the same path without
+a database is the always-on SQLite smoke suite, which gained an attach-through-the-endpoint
+test — normalized POST, both verbs scoped through the visit — and did run.
+
+**What session 33 Task 1's work is verified by.** 7 domain use-case tests (the visit is
+read before any write; a foreign visit is a 404 for both verbs and nothing is ever
+written; a blank name and a negative size never reach `save`; contentType is normalized
+with blank and absent both stored as null; the writes carry the clock's instant and the
+generator's id; an empty folder is `[]`, listed with a recorded read), 5 validation tests
+(trim before the minimum counts, the 255 cap, negative size refused with 0 allowed), 4
+workspace component tests (the section asks for its files only when opened, an empty
+folder is "No files attached yet.", an attached file appears only after the refetch —
+the invalidation refetches the register and not the visit — and clears the form, a 422
+keeps the draft), 6 `describe-attachment-failure` tests, a SQLite-smoke block, and 3 e2e
+specs: one asserting no attachment requests happen before the section opens and that a
+file's row draws name/type/size in the clinic's zone; one that attaches a file whose
+POST body is exactly `{ fileName, contentType, sizeBytes }` (trimmed on the way out,
+ids in the URL not on the wire), whose row can only have come from the refetch (the
+mock's read fixture is swapped for the section's second fetch), was read twice and the
+visit once; and one that a 422 keeps the draft. `db:migrate` + `db:seed` re-verified
+against the SQLite file, including the new `visit_attachments` rows and
+`seedSummary`'s "2 attachments".
 
 **What session 32 Task 2's work is verified by.** The domain's payment tests (the subject
 is read and the bill computed before any write; a refusal never reaches the repositories;
@@ -298,6 +334,41 @@ router — a `<Link>` with no router context renders nothing — and the mock is
 the new suite failed for a reason that had nothing to do with the workspace.
 
 ## Decisions made this session (not yet in ADRs)
+
+### Decisions from session 33 (files/attachments)
+
+- **A file is a reference, not bytes.** The endpoint stores the name, the type, the
+  size and the clinic's clock — `sizeBytes` is an integer, `contentType` nullable —
+  and nothing else. Uploading the actual bytes (multipart, a Tauri local-file path, a
+  store, a signed object URL) is a transport decision the roadmap defers: the record,
+  the register and the tenancy are the part Milestone 6 must prove, and the workspace
+  already has a book to hang the bytes on when the transport lands.
+- **`visit_attachments` carries no `clinic_id` — tenancy comes through `visits`, like
+  `clinical_notes`, and the FK is `ON DELETE CASCADE`.** A folder belongs to its visit
+  exactly as a note does (ADR 0014), so `findForVisit(clinicId, visitId)` inner-joins
+  `visits`, both use cases read the visit first, and a visit this clinic does not hold
+  answers **404 to both verbs**. The visit's folder dies with the visit — the same
+  cascade the charge/clinical-note store expects — and both repositories translate the
+  FK violation into `NOT_FOUND` so a raw statement can never write an orphan row.
+  `ORDER BY created_at, id` is the order a folder grew in, ids breaking the tie.
+- **`Repositories` grew from fourteen to fifteen, again only with both engines.**
+  `attachments` entered the set only once the PostgreSQL and SQLite implementations
+  existed — the session 23 policy's sixth growth.
+- **The size is guarded at three levels, and the name is trimmed exactly once.** The
+  request schema takes an integer `≥ 0`; the use case re-refuses a negative size with
+  its own sentence ("A file size cannot be negative") because a schema is a boundary
+  and the column is a backstop — and the column literally is one: a CHECK on
+  `size_bytes`. The file name is trimmed by the schema and by the use case, so what is
+  stored is what the box's edges did not add; `contentType` is trimmed and lower-cased
+  with blank and absent both stored as `null`.
+- **The write is one statement, no transaction, non-optimistic, and invalidates only
+  its own key.** Attaching a file does not change the visit row, so the mutation
+  invalidates `['visits','attachments',visitId]` and nothing else; the row arrives by
+  refetch with the server's `id` and `createdAt`. Absent optional fields are dropped
+  from the POST body rather than sent; the raw name is trimmed on the way out. The
+  form clears on success and only there — a refused file is still the front desk's
+  draft, and `describe-attachment-failure` has its own sentence file, the same
+  discipline as every book before it.
 
 ### Decisions from session 32 (charges)
 

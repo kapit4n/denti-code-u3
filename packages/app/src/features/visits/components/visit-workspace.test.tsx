@@ -132,6 +132,15 @@ interface HarnessOptions {
    * optimistically" has no moment to be observed at.
    */
   readonly noteGate?: Promise<void>;
+  /** The files the API answers with when the files section is opened. */
+  readonly visitAttachments?: Record<string, unknown>[];
+  /** When set, attaching a file is refused with this envelope. */
+  readonly attachmentRefusal?: { readonly status: number; readonly body: unknown };
+  /**
+   * A promise the attachment POST waits on before it answers, so a test can look at
+   * the screen while the request is still in flight.
+   */
+  readonly attachmentGate?: Promise<void>;
   /** The catalogue the `/treatments` read answers with when the section opens. */
   readonly catalogue?: Record<string, unknown>[];
   /** The treatments the API answers with when the treatments section is opened. */
@@ -181,6 +190,9 @@ function renderWorkspace({
   notes = [],
   noteRefusal,
   noteGate,
+  visitAttachments = [],
+  attachmentRefusal,
+  attachmentGate,
   catalogue = TREATMENTS_ITEMS,
   visitTreatments = [],
   treatmentRefusal,
@@ -198,6 +210,7 @@ function renderWorkspace({
   const state = {
     visit,
     notes: [...notes],
+    visitAttachments: [...visitAttachments],
     visitTreatments: [...visitTreatments],
     visitPrescriptions: [...visitPrescriptions],
     visitCharges: [...visitCharges],
@@ -235,6 +248,32 @@ function renderWorkspace({
       // not been told about it yet.
       await noteGate;
       return jsonResponse(note, 201);
+    }
+    if (path === `/api/v1/visits/${VISIT_ID}/attachments` && method === 'GET') {
+      return jsonResponse({ attachments: state.visitAttachments });
+    }
+    if (path === `/api/v1/visits/${VISIT_ID}/attachments` && method === 'POST') {
+      if (attachmentRefusal) {
+        return jsonResponse(attachmentRefusal.body, attachmentRefusal.status);
+      }
+      const written = JSON.parse(String(init?.body)) as {
+        fileName: string;
+        contentType?: string;
+        sizeBytes?: number;
+      };
+      const attached = {
+        id: `attachment-${state.visitAttachments.length + 1}`,
+        visitId: VISIT_ID,
+        fileName: written.fileName,
+        contentType: written.contentType ?? null,
+        sizeBytes: written.sizeBytes ?? null,
+        createdAt: '2026-10-05T14:35:00.000Z',
+      };
+      state.visitAttachments = [...state.visitAttachments, attached];
+      // The answer waits on the gate: the request has been made, and the screen has
+      // not been told about it yet.
+      await attachmentGate;
+      return jsonResponse(attached, 201);
     }
     // The catalogue is its own read; the visit's treatments are routed by their own
     // path before the closure branch below, which matches any path under the visit.
@@ -732,6 +771,125 @@ describe('VisitWorkspace', () => {
     expect(screen.getByTestId('note-body')).toHaveValue('Half a thought');
     expect(fetchImplementation).toHaveBeenCalled();
     expect(screen.queryByTestId('clinical-note')).toBeNull();
+  });
+
+  it('lists the files on the visit, in the clinic’s clock, only once the section is open', async () => {
+    const { fetchImplementation } = renderWorkspace({
+      visitAttachments: [
+        {
+          id: 'attachment-1',
+          visitId: VISIT_ID,
+          fileName: 'periapical-26.png',
+          contentType: 'image/png',
+          sizeBytes: 512400,
+          createdAt: '2026-10-05T14:00:00.000Z',
+        },
+      ],
+    });
+
+    // The summary is what the workspace opens on, and the files were not asked for.
+    await screen.findByTestId('visit-workspace');
+    expect(
+      fetchImplementation.mock.calls.filter(([url]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}/attachments`),
+      ),
+    ).toHaveLength(0);
+
+    await user.click(screen.getByTestId('visit-section-attachments'));
+
+    expect(await screen.findByTestId('attachment')).toHaveTextContent('periapical-26.png');
+    expect(screen.getByTestId('attachment')).toHaveTextContent('image/png');
+    expect(screen.getByTestId('attachment')).toHaveTextContent('512400 bytes');
+    // 14:00Z is 09:00 in Lima — the clinic's hour again, on a file this time.
+    expect(screen.getByTestId('attachment')).toHaveTextContent('09:00');
+    expect(screen.getByTestId('attachment')).not.toHaveTextContent('14:00');
+    expect(screen.queryByText('No files attached yet.')).toBeNull();
+  });
+
+  it('says there are no files rather than showing an empty list as an error', async () => {
+    renderWorkspace({ visitAttachments: [] });
+
+    await user.click(await screen.findByTestId('visit-section-attachments'));
+
+    expect(await screen.findByText('No files attached yet.')).toBeTruthy();
+    expect(screen.queryByTestId('attachment')).toBeNull();
+  });
+
+  it('attaches a file and shows it only once the server has answered', async () => {
+    let release: () => void = () => {};
+    const attachmentGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { fetchImplementation } = renderWorkspace({ visitAttachments: [], attachmentGate });
+
+    await user.click(await screen.findByTestId('visit-section-attachments'));
+    await screen.findByText('No files attached yet.');
+
+    await user.type(screen.getByTestId('attachment-name'), '  Periapical-26.png  ');
+    await user.type(screen.getByTestId('attachment-content-type'), 'Image/PNG');
+    await user.type(screen.getByTestId('attachment-size'), '512400');
+    await user.click(screen.getByTestId('attach-file'));
+
+    // The POST is on the wire and the file is not on screen: nothing is written
+    // optimistically, because a file the API has not accepted is not a clinical
+    // record.
+    expect(screen.queryByTestId('attachment')).toBeNull();
+    const post = fetchImplementation.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}/attachments`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'POST',
+    );
+    expect(post).toBeTruthy();
+    // Trimmed on the way out, so the server is not asked to store what the box's
+    // edges happen to hold.
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      fileName: 'Periapical-26.png',
+      contentType: 'Image/PNG',
+      sizeBytes: 512400,
+    });
+
+    release();
+
+    // The invalidation refetched the list, and the server's row is what is on screen.
+    expect(await screen.findByTestId('attachment')).toHaveTextContent('Periapical-26.png');
+    // The draft is cleared on success, and only there.
+    expect(screen.getByTestId('attachment-name')).toHaveValue('');
+    expect(screen.getByTestId('attachment-content-type')).toHaveValue('');
+    // A number box's empty value is null, not an empty string.
+    expect(screen.getByTestId('attachment-size')).toHaveValue(null);
+
+    // Attaching a file changes nothing about the visit itself, so neither the visit
+    // nor the patient's profile was refetched — invalidating `['visits']` wholesale
+    // would have done both for pixels that cannot differ.
+    const visitReads = fetchImplementation.mock.calls.filter(
+      ([url, init]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'GET',
+    );
+    expect(visitReads).toHaveLength(1);
+  });
+
+  it('keeps what the front desk typed and says why when the file is refused', async () => {
+    const { fetchImplementation } = renderWorkspace({
+      attachmentRefusal: {
+        status: 422,
+        body: {
+          error: { code: 'VALIDATION_ERROR', message: 'A file needs a name', requestId: 'test' },
+        },
+      },
+    });
+
+    await user.click(await screen.findByTestId('visit-section-attachments'));
+    await user.type(screen.getByTestId('attachment-name'), 'Half a name');
+    await user.click(screen.getByTestId('attach-file'));
+
+    // The refusal reaches the screen in the API's own words, and the text is still
+    // there: a network error that took the front desk's draft with it would be the
+    // most destructive thing this panel does.
+    expect(await screen.findByRole('alert')).toHaveTextContent('A file needs a name');
+    expect(screen.getByTestId('attachment-name')).toHaveValue('Half a name');
+    expect(fetchImplementation).toHaveBeenCalled();
+    expect(screen.queryByTestId('attachment')).toBeNull();
   });
 
   it('lists the treatments recorded on the visit, in the clinic’s clock, only once the section is open', async () => {

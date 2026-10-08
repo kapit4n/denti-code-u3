@@ -4,6 +4,7 @@ import {
   createClinicalNoteSchema,
   createPaymentSchema,
   createPrescriptionSchema,
+  createVisitAttachmentSchema,
   medicationRouteSchema,
   paymentMethodSchema,
   recordVisitTreatmentSchema,
@@ -247,6 +248,59 @@ describe('createClinicalNoteSchema', () => {
     // in this product rather than one per table that holds one.
     expect(createClinicalNoteSchema.safeParse({ body: 'x'.repeat(2_000) }).success).toBe(true);
     expect(createClinicalNoteSchema.safeParse({ body: 'x'.repeat(2_001) }).success).toBe(false);
+  });
+});
+
+describe('createVisitAttachmentSchema', () => {
+  it('accepts a name alone, and strips extras the server owns', () => {
+    const result = createVisitAttachmentSchema.safeParse({
+      fileName: 'periapical-26.png',
+      // The visit is the path, the time is the clock's, and who attached the file
+      // waits on a user model — a body that offered them would be a body a client
+      // could answer itself.
+      visitId: '11111111-1111-4111-8111-111111111111',
+      createdAt: '2020-01-01T00:00:00.000Z',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ fileName: 'periapical-26.png' });
+  });
+
+  it('accepts the optional type and size and trims them', () => {
+    const result = createVisitAttachmentSchema.safeParse({
+      fileName: '  referral.pdf  ',
+      contentType: '  Application/PDF  ',
+      sizeBytes: 81_240,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({
+      fileName: 'referral.pdf',
+      contentType: 'Application/PDF',
+      sizeBytes: 81_240,
+    });
+  });
+
+  it('refuses a blank file name, including one that only looks empty', () => {
+    for (const fileName of ['', '   ', '\n\t ']) {
+      expect(createVisitAttachmentSchema.safeParse({ fileName }).success).toBe(false);
+    }
+  });
+
+  it('refuses a file name longer than a filename needs to be', () => {
+    expect(createVisitAttachmentSchema.safeParse({ fileName: 'x'.repeat(255) }).success).toBe(true);
+    expect(createVisitAttachmentSchema.safeParse({ fileName: 'x'.repeat(256) }).success).toBe(
+      false,
+    );
+  });
+
+  it('refuses a negative size', () => {
+    expect(
+      createVisitAttachmentSchema.safeParse({ fileName: 'a.png', sizeBytes: -1 }).success,
+    ).toBe(false);
+    expect(createVisitAttachmentSchema.safeParse({ fileName: 'a.png', sizeBytes: 0 }).success).toBe(
+      true,
+    );
   });
 });
 

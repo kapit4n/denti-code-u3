@@ -157,7 +157,7 @@ Visit → TreatmentRecord[]      (what was actually done)
 Visit → Prescription[]
 Visit → Charge[]
 Visit → PaymentAllocation[]    (payments linked through the invoice)
-Visit → ClinicalAttachment[]   (files: radiographs, photos)
+Visit → VisitAttachment[]      (files: radiographs, photos; reference — name, type, size, clock)
 ```
 
 Rules:

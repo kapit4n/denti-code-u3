@@ -42,6 +42,7 @@ import { registerVisitsRoutes } from '../src/http/routes/visits.js';
 import { DrizzleVisitRepository } from '../src/infrastructure/persistence/repositories/visit-repository.js';
 import { DrizzleChargeRepository } from '../src/infrastructure/persistence/repositories/charge-repository.js';
 import { DrizzleClinicalNoteRepository } from '../src/infrastructure/persistence/repositories/clinical-note-repository.js';
+import { DrizzleVisitAttachmentRepository } from '../src/infrastructure/persistence/repositories/visit-attachment-repository.js';
 import { DrizzleClinicRepository } from '../src/infrastructure/persistence/repositories/clinic-repository.js';
 import { DrizzleChairRepository } from '../src/infrastructure/persistence/repositories/chair-repository.js';
 import { DrizzleDentistRepository } from '../src/infrastructure/persistence/repositories/dentist-repository.js';
@@ -239,6 +240,21 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       payload: payload as object,
     });
 
+  const getAttachments = (visitId: string, clinic = clinicId) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${visitId}/attachments`,
+      headers: { 'x-clinic-id': clinic },
+    });
+
+  const attachFile = (visitId: string, payload: unknown, clinic = clinicId) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/attachments`,
+      headers: { 'x-clinic-id': clinic },
+      payload: payload as object,
+    });
+
   const getTreatments = (visitId: string, clinic = clinicId) =>
     app.inject({
       method: 'GET',
@@ -375,6 +391,10 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       // the use case has already resolved the visit in this clinic by the time it
       // runs (`clinical_notes` has no clinic column of its own).
       clinicalNotes: new DrizzleClinicalNoteRepository(db),
+      // The files attached to a visit, exercised by the attachment tests below. A
+      // plain repository for the same read-then-write reason as the notes' (ADR
+      // 0014): `visit_attachments` has no clinic column of its own.
+      attachments: new DrizzleVisitAttachmentRepository(db),
       // What was done on a visit, and the catalogue it names. The record endpoint is
       // exercised by the treatment tests below; each write is a read-then-write pair
       // the way the notes' is (ADR 0014).
@@ -1151,6 +1171,136 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
 
         // Before the guard existed this was a `22P02` reported as a 500 — which is how
         // the write side's helper came to default its clinic to an empty string.
+        expect(response.statusCode).toBe(422);
+        expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+      }
+    });
+  });
+
+  describe('GET and POST /api/v1/visits/:visitId/attachments', () => {
+    it('attaches a file reference and lists it back, with the clock’s time and normalized fields', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const attached = await attachFile(visitId, {
+        fileName: '  Periapical-26.PNG  ',
+        contentType: 'Image/PNG',
+        sizeBytes: 512_400,
+      });
+
+      expect(attached.statusCode).toBe(201);
+      const file = attached.json() as {
+        id: string;
+        visitId: string;
+        fileName: string;
+        contentType: string | null;
+        sizeBytes: number | null;
+        createdAt: string;
+      };
+      expect(file.visitId).toBe(visitId);
+      // Trimmed and normalized at the boundary, so the row is not the box's edges.
+      expect(file.fileName).toBe('Periapical-26.PNG');
+      expect(file.contentType).toBe('image/png');
+      expect(file.sizeBytes).toBe(512_400);
+      expect(new Date(file.createdAt).toISOString()).toBe(NOW);
+
+      const listed = await getAttachments(visitId);
+      expect(listed.statusCode).toBe(200);
+      expect((listed.json() as { attachments: unknown[] }).attachments).toEqual([file]);
+
+      // The row itself: a route that answered 201 without writing would pass every
+      // assertion above and lose the file.
+      const [row] = await sql`
+        select visit_id, file_name, content_type, size_bytes from visit_attachments where id = ${file.id}
+      `;
+      expect(row).toMatchObject({
+        visit_id: visitId,
+        file_name: 'Periapical-26.PNG',
+        content_type: 'image/png',
+        size_bytes: 512_400,
+      });
+    });
+
+    it('lists the files oldest first, whatever order they were attached in', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      // Written straight into the table because this suite's clock is fixed: two files
+      // attached through the API would carry the same `created_at`, and the list would
+      // then be the id tiebreak's — stable, but not what "oldest first" claims to be.
+      await sql`
+        insert into visit_attachments (id, visit_id, file_name, created_at)
+        values ('11111111-9999-4888-8999-000000000051', ${visitId}, 'Earlier.png', '2026-04-16T09:00:00.000Z')
+      `;
+      const attached = await attachFile(visitId, { fileName: 'Later.pdf' });
+      expect(attached.statusCode).toBe(201);
+
+      const listed = await getAttachments(visitId);
+
+      expect(listed.statusCode).toBe(200);
+      const names = (listed.json() as { attachments: { fileName: string }[] }).attachments.map(
+        (file) => file.fileName,
+      );
+      expect(names).toEqual(['Earlier.png', 'Later.pdf']);
+    });
+
+    it('answers 404 for a visit another clinic holds, rather than an empty list', async () => {
+      const foreign = await seedVisit({
+        startedAt: `${day}T09:00:00.000Z`,
+        clinic: otherClinicId,
+      });
+      const ours = await seedVisit({ startedAt: `${day}T10:00:00.000Z` });
+
+      const readForeign = await getAttachments(foreign);
+
+      // `visit_attachments` has no clinic column, so a scoped query alone would answer
+      // `[]` here — an empty list reading as "no files were attached". The visit is
+      // the subject, and the subject is not in this clinic (ADR 0014).
+      expect(readForeign.statusCode).toBe(404);
+      expect(readForeign.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+      expect((await attachFile(foreign, { fileName: 'Anything.png' })).statusCode).toBe(404);
+
+      // And the same visit asked about under the other clinic's header is a different
+      // request: our visit is theirs to read, ours is not theirs to write.
+      expect((await getAttachments(ours, otherClinicId)).statusCode).toBe(404);
+
+      // Nothing was written by either refusal.
+      const [count] = await sql`select count(*)::int as total from visit_attachments`;
+      expect((count as { total: number }).total).toBe(0);
+    });
+
+    it('answers 404 for a visit id that is nowhere, in the same shape', async () => {
+      const response = await getAttachments(missingId);
+
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+    });
+
+    it('refuses a blank file name or a negative size, and writes nothing', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const refusedName = await attachFile(visitId, { fileName: '   ' });
+      expect(refusedName.statusCode).toBe(422);
+      expect(refusedName.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+
+      const refusedSize = await attachFile(visitId, { fileName: 'x.png', sizeBytes: -1 });
+      expect(refusedSize.statusCode).toBe(422);
+      expect(refusedSize.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+
+      const [count] = await sql`select count(*)::int as total from visit_attachments`;
+      expect((count as { total: number }).total).toBe(0);
+      // The read side still answers honestly: a refused file leaves no trace on the
+      // list, which is `[]` because the visit is real and has no files.
+      expect((await getAttachments(visitId)).statusCode).toBe(200);
+    });
+
+    it('answers 422 for a path id that is not a uuid, on both verbs', async () => {
+      for (const method of ['GET', 'POST'] as const) {
+        const response = await app.inject({
+          method,
+          url: '/api/v1/visits/not-a-uuid/attachments',
+          headers: { 'x-clinic-id': clinicId },
+          ...(method === 'POST' ? { payload: { fileName: 'x.png' } } : {}),
+        });
+
         expect(response.statusCode).toBe(422);
         expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
       }

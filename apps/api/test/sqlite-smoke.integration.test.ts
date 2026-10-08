@@ -402,6 +402,79 @@ describe('API on SQLite', () => {
     expect(refusedBlank.json().error.code).toBe('VALIDATION_ERROR');
   });
 
+  it('attaches files to the visit, scoping both verbs through it', async () => {
+    const attached = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/attachments`,
+      payload: {
+        fileName: '  Periapical-26.PNG  ',
+        contentType: 'Image/PNG',
+        sizeBytes: 512_400,
+      },
+    });
+
+    expect(attached.statusCode).toBe(201);
+    // Trimmed at the boundary, the content type normalized and the size stored whole —
+    // the same envelope PostgreSQL answers with, on the engine that must not disagree
+    // (ADR 0025). The visit is the path, never the body.
+    expect(attached.json()).toMatchObject({
+      visitId,
+      fileName: 'Periapical-26.PNG',
+      contentType: 'image/png',
+      sizeBytes: 512_400,
+    });
+
+    const ours = await app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${visitId}/attachments`,
+    });
+    expect(ours.statusCode).toBe(200);
+    expect(ours.json().attachments).toHaveLength(1);
+
+    // `visit_attachments` has no clinic column, so the read scopes by joining the
+    // visit — the same story the notes tell, and the same 404 for another clinic's
+    // visit (ADR 0014).
+    const foreignRead = await app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${foreignVisitId}/attachments`,
+    });
+    expect(foreignRead.statusCode).toBe(404);
+    expect(foreignRead.json().error.code).toBe('NOT_FOUND');
+
+    // Refused before anything is written: the use case reads the visit first.
+    const refusedForeignWrite = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${foreignVisitId}/attachments`,
+      payload: { fileName: 'periapical-26.png' },
+    });
+    expect(refusedForeignWrite.statusCode).toBe(404);
+    expect(refusedForeignWrite.json().error.code).toBe('NOT_FOUND');
+
+    // A file the record could not find a file by is refused by the boundary schema
+    // before the writing of any row.
+    const refusedBlank = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/attachments`,
+      payload: { fileName: '   ' },
+    });
+    expect(refusedBlank.statusCode).toBe(422);
+    expect(refusedBlank.json().error.code).toBe('VALIDATION_ERROR');
+
+    // The optional half of the reference is stored honestly as null.
+    const minimal = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/attachments`,
+      payload: { fileName: 'referral.pdf' },
+    });
+    expect(minimal.statusCode).toBe(201);
+    expect(minimal.json()).toMatchObject({ fileName: 'referral.pdf', contentType: null });
+    const reread = await app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${visitId}/attachments`,
+    });
+    expect(reread.json().attachments).toHaveLength(2);
+  });
+
   it('raises a charge on the visit, priced in the clinic’s own record', async () => {
     const raised = await app.inject({
       method: 'POST',
