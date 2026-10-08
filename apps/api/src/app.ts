@@ -157,6 +157,9 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     // this clinic before it writes — a read-then-write pair of statements has no
     // atomicity to protect (ADR 0014).
     clinicalNotes,
+    // The files attached to a visit — the same read-then-write shape as the
+    // notes, and a plain repository for the same reason (ADR 0014).
+    attachments: connection.repositories.attachments,
     // What was done, and the catalogue that names it — the same read-then-write
     // shape as the notes, and a plain repository for the same reason (ADR 0014).
     treatmentRecords,

@@ -177,3 +177,28 @@ export const clinicalNotes = sqliteTable(
   },
   (table) => [index('clinical_notes_visit_idx').on(table.visitId)],
 );
+
+/**
+ * Files attached to a visit — radiographs, referrals, documents.
+ *
+ * The bytes are not stored here (see `docs/open-questions.md` Q10); this table
+ * holds the reference a clinic needs to find the file and know what it holds.
+ * Tenancy comes through `visits` exactly as it does for a clinical note.
+ */
+export const visitAttachments = sqliteTable(
+  'visit_attachments',
+  {
+    id: text('id').primaryKey().default(uuidDefault),
+    visitId: text('visit_id')
+      .notNull()
+      .references(() => visits.id, { onDelete: 'cascade' }),
+    fileName: text('file_name').notNull(),
+    contentType: text('content_type'),
+    sizeBytes: integer('size_bytes'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowDefault),
+  },
+  (table) => [
+    index('visit_attachments_visit_idx').on(table.visitId),
+    check('visit_attachments_size_nonnegative', sql`${table.sizeBytes} >= 0`),
+  ],
+);

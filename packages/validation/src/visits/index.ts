@@ -78,6 +78,28 @@ export const createClinicalNoteSchema = z.object({
 export type CreateClinicalNoteInput = z.infer<typeof createClinicalNoteSchema>;
 
 /**
+ * Attach a file to a visit.
+ *
+ * The body is only the *reference* to a file — its name, its type, its size —
+ * because the bytes are not part of this product yet (Q10). `visitId` is the
+ * path, not the body, and `createdAt` belongs to the server's clock: the same
+ * division every write body here keeps.
+ *
+ * `fileName` is trimmed and required to be non-empty — a file this record cannot
+ * name is a file it cannot find. `contentType` is trimmed and stored normalised
+ * (lower-cased) by the domain. `sizeBytes` is an optional count of bytes and
+ * never negative, the one restraint a boundary can make about a number before
+ * the domain's own refusal.
+ */
+export const createVisitAttachmentSchema = z.object({
+  fileName: z.string().trim().min(1, 'A file needs a name').max(255, 'The file name is too long'),
+  contentType: z.string().trim().max(100, 'The content type is too long').optional().nullable(),
+  sizeBytes: z.int().min(0, 'A file size cannot be negative').optional().nullable(),
+});
+
+export type CreateVisitAttachmentInput = z.infer<typeof createVisitAttachmentSchema>;
+
+/**
  * Record a treatment performed in a visit.
  *
  * `treatmentId` is required — a treatment record with no treatment is a record of

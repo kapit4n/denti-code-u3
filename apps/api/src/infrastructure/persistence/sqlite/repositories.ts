@@ -24,6 +24,7 @@ import { SQLitePaymentRepository } from './repositories/payment-repository.js';
 import { SQLitePrescriptionRepository } from './repositories/prescription-repository.js';
 import { SQLiteTreatmentRecordRepository } from './repositories/treatment-record-repository.js';
 import { SQLiteTreatmentRepository } from './repositories/treatment-repository.js';
+import { SQLiteVisitAttachmentRepository } from './repositories/visit-attachment-repository.js';
 import { SQLiteVisitRepository } from './repositories/visit-repository.js';
 
 export function sqliteRepositoriesFor(db: SqliteDatabase): Repositories {
@@ -42,5 +43,6 @@ export function sqliteRepositoriesFor(db: SqliteDatabase): Repositories {
     invoices: new SQLiteInvoiceRepository(db),
     payments: new SQLitePaymentRepository(db),
     paymentAllocations: new SQLitePaymentAllocationRepository(db),
+    attachments: new SQLiteVisitAttachmentRepository(db),
   };
 }

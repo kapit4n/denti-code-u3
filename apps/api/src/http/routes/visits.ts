@@ -51,15 +51,18 @@ import type {
   TreatmentRecordRepository,
   TreatmentRepository,
   UnitOfWork,
+  VisitAttachmentRepository,
 } from '@denti-code-u3/domain';
 import {
   addClinicalNote,
+  addVisitAttachment,
   addVisitCharge,
   addVisitPrescription,
   completeVisitRecord,
   getVisit,
   listClinicalNotes,
   listTreatmentRecords,
+  listVisitAttachments,
   listVisitCharges,
   listVisitPayments,
   listVisitPrescriptions,
@@ -76,6 +79,7 @@ import {
   createClinicalNoteSchema,
   createPaymentSchema,
   createPrescriptionSchema,
+  createVisitAttachmentSchema,
   recordVisitTreatmentSchema,
   startVisitSchema,
   startWalkInVisitSchema,
@@ -92,6 +96,7 @@ import {
   asPaymentId,
   asPrescriptionId,
   asTreatmentId,
+  asVisitAttachmentId,
   asVisitId,
   asVisitTreatmentExecutionId,
   type ClinicId,
@@ -135,6 +140,16 @@ export interface VisitsDependencies {
    * has no clinic column of its own to check against (ADR 0014).
    */
   readonly clinicalNotes: ClinicalNoteRepository;
+
+  /**
+   * The files attached to a visit.
+   *
+   * A plain repository rather than the transaction, for the same reason the notes
+   * are: attaching a file writes one row, the use case reads the visit in this
+   * clinic before the insert, and `visit_attachments` has no clinic column of its
+   * own to check against (ADR 0014).
+   */
+  readonly attachments: VisitAttachmentRepository;
 
   /**
    * The treatment records written on a visit, and the catalogue they name.
@@ -217,6 +232,7 @@ export async function registerVisitsRoutes(
     unitOfWork,
     visits,
     clinicalNotes,
+    attachments,
     treatmentRecords,
     treatments,
     prescriptions,
@@ -477,6 +493,83 @@ export async function registerVisitsRoutes(
       });
 
       return reply.status(201).send(note);
+    } catch (error) {
+      return sendProblem(reply, request, error);
+    }
+  });
+
+  /**
+   * `GET /api/v1/visits/:visitId/attachments` — the files attached to this visit.
+   *
+   * 200 with `{ attachments: [...] }`, oldest first, and `[]` for a visit with none.
+   *
+   * **404 for a visit this clinic does not hold, for the same reason the notes list
+   * 404s.** `visit_attachments` has no clinic column, so a scoped query alone would
+   * answer `[]` for another clinic's visit — an empty list that reads as "no files
+   * were attached" (ADR 0014).
+   */
+  app.get('/api/v1/visits/:visitId/attachments', async (request, reply) => {
+    const path = readVisitId(request.params, request.clinicId as ClinicId);
+
+    if (!path.valid) {
+      return sendInvalidVisitId(reply, request);
+    }
+
+    try {
+      const files = await listVisitAttachments(path.clinicId, path.visitId, {
+        visits,
+        attachments,
+      });
+
+      return reply.status(200).send({ attachments: files });
+    } catch (error) {
+      return sendProblem(reply, request, error);
+    }
+  });
+
+  /**
+   * `POST /api/v1/visits/:visitId/attachments` — attach a file to a visit.
+   *
+   * 201 with the *reference*, not the bytes: the body carries the file's name,
+   * type and size, the visit is the path, the clinic is the request scope and the
+   * time is the clock's. Storage itself is the open question (Q10) — this endpoint
+   * files the row the workspace renders, and a storage implementation becomes a
+   * second write rather than a redesign.
+   *
+   * 422 for a blank file name or a negative size, refused here rather than stored.
+   * 404 for a visit this clinic does not hold — and for the race where the visit is
+   * deleted between the use case's read and the insert, which the repository
+   * translates from the foreign key so that the same refusal arrives the same way.
+   */
+  app.post('/api/v1/visits/:visitId/attachments', async (request, reply) => {
+    const path = readVisitId(request.params, request.clinicId as ClinicId);
+
+    if (!path.valid) {
+      return sendInvalidVisitId(reply, request);
+    }
+
+    const parsed = createVisitAttachmentSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return sendInvalidBody(reply, request, 'The file could not be attached', parsed.error);
+    }
+
+    try {
+      const attachment = await addVisitAttachment(
+        path.clinicId,
+        path.visitId,
+        parsed.data.fileName,
+        parsed.data.contentType ?? null,
+        parsed.data.sizeBytes ?? null,
+        {
+          visits,
+          attachments,
+          clock,
+          newId: () => asVisitAttachmentId(ids.nextId()),
+        },
+      );
+
+      return reply.status(201).send(attachment);
     } catch (error) {
       return sendProblem(reply, request, error);
     }

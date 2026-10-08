@@ -31,9 +31,10 @@
  * The section nav is data-driven and holds the sections an endpoint stands behind:
  * `summary` reads the visit, `notes` reads and writes the notes on it, `treatments`
  * reads and writes what was performed, `prescriptions` reads and writes what the
- * patient was sent home with. A row is added when — and only
- * when — an endpoint stands behind it, so the nav grows with the milestone
- * (odontogram, files, payments) instead of promising panels that render an empty
+ * patient was sent home with, `files` reads and writes what was attached to it. A
+ * row is added when — and only when — an endpoint stands
+ * behind it, so the nav grows with the milestone
+ * (odontogram) instead of promising panels that render an empty
  * state. Section choice is component state, not a search param, for
  * the same reason list state on the patients route is: file-route search params are
  * typed `any` today (technical question T2), and a state the URL could not describe
@@ -75,6 +76,7 @@ import { usePatient } from '../../patients/hooks/use-patients.js';
 import { useChairs, useDentists } from '../../agenda/queries/bookable-resources-query.js';
 import { chargeLineTotal, chargesTotal, parseMajorUnitsToMinor } from '../charge-presentation.js';
 import { describeChargeFailure } from '../describe-charge-failure.js';
+import { describeAttachmentFailure } from '../describe-attachment-failure.js';
 import { describeNoteFailure } from '../describe-note-failure.js';
 import { describePaymentFailure } from '../describe-payment-failure.js';
 import { describePrescriptionFailure } from '../describe-prescription-failure.js';
@@ -84,6 +86,7 @@ import { useCreateCharge } from '../mutations/use-create-charge.js';
 import { useCreateClinicalNote } from '../mutations/use-create-clinical-note.js';
 import { useCreatePayment } from '../mutations/use-create-payment.js';
 import { useCreatePrescription } from '../mutations/use-create-prescription.js';
+import { useCreateVisitAttachment } from '../mutations/use-create-visit-attachment.js';
 import { useRecordVisitTreatment } from '../mutations/use-record-visit-treatment.js';
 import { useVisitClosure } from '../mutations/use-visit-closure.js';
 import { MEDICATION_ROUTE_OPTIONS, medicationRouteLabel } from '../prescription-presentation.js';
@@ -94,6 +97,7 @@ import {
   stillToPayMinor,
 } from '../payment-presentation.js';
 import { useVisitCharges } from '../queries/charges-query.js';
+import { useVisitAttachments } from '../queries/visit-attachments-query.js';
 import { useVisitPayments } from '../queries/payments-query.js';
 import { useVisitPrescriptions } from '../queries/prescriptions-query.js';
 import { useTreatments, useVisitTreatments } from '../queries/treatments-query.js';
@@ -113,13 +117,13 @@ export interface VisitWorkspaceProps {
 /**
  * The sections this workspace can draw.
  *
- * Six rows today, each with an endpoint behind it. `odontogram` and `files` from
- * the brief each arrive with their own endpoint and their own row — payments
- * earned its row when the settlement endpoint landed — and a nav entry with
- * nothing behind it is the "control that looks live and is not" this project
- * refuses to ship.
+ * Seven rows today, each with an endpoint behind it. `odontogram` from the brief
+ * arrives with its own endpoint and its own row — payments earned its row when
+ * the settlement endpoint landed — and a nav entry with nothing behind it is the
+ * "control that looks live and is not" this project refuses to ship.
  */
-type VisitSectionId = 'summary' | 'notes' | 'treatments' | 'prescriptions' | 'charges' | 'payments';
+type VisitSectionId =
+  'summary' | 'notes' | 'treatments' | 'prescriptions' | 'charges' | 'payments' | 'attachments';
 
 const VISIT_SECTIONS: readonly { readonly id: VisitSectionId; readonly label: string }[] = [
   { id: 'summary', label: 'Summary' },
@@ -128,6 +132,7 @@ const VISIT_SECTIONS: readonly { readonly id: VisitSectionId; readonly label: st
   { id: 'prescriptions', label: 'Prescriptions' },
   { id: 'charges', label: 'Charges' },
   { id: 'payments', label: 'Payments' },
+  { id: 'attachments', label: 'Files' },
 ];
 
 export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
@@ -314,6 +319,9 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
           {section === 'payments' ? (
             <VisitPaymentsSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
           ) : null}
+          {section === 'attachments' ? (
+            <VisitAttachmentsSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
+          ) : null}
         </div>
       </div>
     </div>
@@ -497,6 +505,196 @@ function VisitNotesSection({ visitId, clinicTimeZone }: VisitNotesSectionProps) 
               Add note
             </Button>
             {createNote.isPending ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
+                Saving…
+              </p>
+            ) : null}
+          </div>
+        </form>
+
+        {failure ? (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
+            <span>{failure}</span>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * The files attached to this visit, and the door to attach more.
+ *
+ * Mounted only while the section is open, which is what keeps the attachments
+ * request an answer to something on screen (see `visit-attachments-query.ts`). It
+ * owns its own hooks rather than taking them as props for the same reason the
+ * notes section does: this is a feature with a draft, a mutation and a list of
+ * its own.
+ *
+ * **Nothing is written optimistically, and the form stays filled until the server
+ * answers.** A file appears in the list because the invalidation refetched it — a
+ * file shown before the API accepted it is a clinical record the record does not
+ * contain. The form clears on success, and only there: a refused attachment is
+ * still the front desk's draft, and taking it back after a network error would be
+ * the one destructive thing this panel does.
+ *
+ * **What is attached is a reference, not a file.** The boxes take the name, type
+ * and size the record needs to find the file — the bytes themselves are the open
+ * storage question (Q10), and rendering their reference is the half the workspace
+ * can already draw. When storage lands, this panel gains a picker, and the
+ * reference rows it draws are the same shape then as now.
+ */
+interface VisitAttachmentsSectionProps {
+  readonly visitId: string;
+  /** Absent while the clinic is still being fetched; the times then wait for it. */
+  readonly clinicTimeZone: string | undefined;
+}
+
+function VisitAttachmentsSection({ visitId, clinicTimeZone }: VisitAttachmentsSectionProps) {
+  const attachmentsQuery = useVisitAttachments(visitId);
+  const createAttachment = useCreateVisitAttachment();
+  const [fileName, setFileName] = useState('');
+  const [contentType, setContentType] = useState('');
+  const [size, setSize] = useState('');
+
+  const failure = describeAttachmentFailure(
+    createAttachment.error,
+    'The file could not be attached.',
+  );
+  const ready = fileName.trim().length > 0;
+  const parsedSize = size.trim() === '' ? undefined : Number(size);
+  const sizeValid = size.trim() === '' || (Number.isInteger(parsedSize) && (parsedSize ?? 0) >= 0);
+
+  const attachments = attachmentsQuery.data?.attachments ?? [];
+
+  return (
+    <Card data-testid="visit-attachments">
+      <CardHeader>
+        <CardTitle>Files</CardTitle>
+        <CardDescription>What has been attached to this visit</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {attachmentsQuery.isPending ? (
+          <p className="text-sm text-muted-foreground">Loading the files…</p>
+        ) : attachmentsQuery.error ? (
+          <p className="text-sm text-destructive" role="alert">
+            The files could not be loaded.
+          </p>
+        ) : attachments.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No files attached yet.</p>
+        ) : (
+          <ul className="space-y-3">
+            {attachments.map((attachment) => (
+              <li
+                key={attachment.id}
+                className="rounded-md border p-3 text-sm"
+                data-testid="attachment"
+              >
+                <p className="mb-1 text-xs text-muted-foreground">
+                  {clinicTimeZone ? (
+                    formatClinicDayTime(attachment.createdAt, clinicTimeZone)
+                  ) : (
+                    <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+                  )}
+                </p>
+                <p className="font-medium">{attachment.fileName}</p>
+                {attachment.contentType || attachment.sizeBytes !== null ? (
+                  <p className="text-muted-foreground">
+                    {attachment.contentType ? attachment.contentType : ''}
+                    {attachment.contentType && attachment.sizeBytes !== null ? ' · ' : ''}
+                    {attachment.sizeBytes !== null ? `${attachment.sizeBytes} bytes` : ''}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form
+          className="space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!ready || !sizeValid) {
+              return;
+            }
+            createAttachment.mutate(
+              {
+                visitId,
+                fileName: fileName.trim(),
+                ...(contentType.trim() ? { contentType: contentType.trim() } : {}),
+                ...(parsedSize !== undefined ? { sizeBytes: parsedSize } : {}),
+              },
+              {
+                onSuccess: () => {
+                  setFileName('');
+                  setContentType('');
+                  setSize('');
+                },
+              },
+            );
+          }}
+        >
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="space-y-1 sm:col-span-1">
+              <Label htmlFor="attachment-name">File name</Label>
+              <input
+                id="attachment-name"
+                data-testid="attachment-name"
+                value={fileName}
+                onChange={(event) => setFileName(event.target.value)}
+                disabled={createAttachment.isPending}
+                className="w-full rounded-md border bg-background p-2 text-sm"
+                placeholder="e.g. periapical-26.png"
+                maxLength={255}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="attachment-content-type">Type (optional)</Label>
+              <input
+                id="attachment-content-type"
+                data-testid="attachment-content-type"
+                value={contentType}
+                onChange={(event) => setContentType(event.target.value)}
+                disabled={createAttachment.isPending}
+                className="w-full rounded-md border bg-background p-2 text-sm"
+                placeholder="e.g. image/png"
+                maxLength={100}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="attachment-size">Size in bytes (optional)</Label>
+              <input
+                id="attachment-size"
+                data-testid="attachment-size"
+                value={size}
+                onChange={(event) => setSize(event.target.value)}
+                type="number"
+                min={0}
+                step={1}
+                inputMode="numeric"
+                disabled={createAttachment.isPending}
+                className="w-full rounded-md border bg-background p-2 text-sm"
+                placeholder="e.g. 512400"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="submit"
+              data-testid="attach-file"
+              disabled={createAttachment.isPending || !ready || !sizeValid}
+            >
+              Attach file
+            </Button>
+            {createAttachment.isPending ? (
               <p className="text-sm text-muted-foreground" role="status">
                 <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
                 Saving…

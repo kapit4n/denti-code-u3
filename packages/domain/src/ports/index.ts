@@ -28,7 +28,7 @@ import type {
   AppointmentStatus,
   AppointmentWindow,
 } from '../appointment/index.js';
-import type { Visit, VisitStatus, ClinicalNote } from '../visit/index.js';
+import type { Visit, VisitStatus, ClinicalNote, VisitAttachment } from '../visit/index.js';
 import type { TreatmentRecord } from '../treatment/index.js';
 import type {
   EditablePatientDetails,
@@ -89,7 +89,7 @@ export interface UnitOfWork {
  * the settlement use case writes them *together* — a unit of work that could not
  * build them would be a unit of work that could not do its one job (ADR 0021). All
  * three implementations exist in both engines before their names enter this set, and
- * the set is fourteen now, every one of its fourteen constructible in both engines.
+ * the set is fifteen now, every one of its fifteen constructible in both engines.
  */
 export interface Repositories {
   readonly patients: PatientRepository;
@@ -106,6 +106,7 @@ export interface Repositories {
   readonly invoices: InvoiceRepository;
   readonly payments: PaymentRepository;
   readonly paymentAllocations: PaymentAllocationRepository;
+  readonly attachments: VisitAttachmentRepository;
 }
 
 export interface Page<TItem> {
@@ -421,6 +422,18 @@ export interface VisitRepository {
 export interface ClinicalNoteRepository {
   findForVisit(clinicId: ClinicId, visitId: VisitId): Promise<readonly ClinicalNote[]>;
   save(note: ClinicalNote): Promise<void>;
+}
+
+/**
+ * The files attached to a visit — the repository half of `visit-attachments.ts`.
+ *
+ * Exactly the notes contract: reads scope through the visit's clinic (never
+ * trust the caller for a read), writes are one row, and oldest first is the
+ * order a clinical record is read in.
+ */
+export interface VisitAttachmentRepository {
+  findForVisit(clinicId: ClinicId, visitId: VisitId): Promise<readonly VisitAttachment[]>;
+  save(attachment: VisitAttachment): Promise<void>;
 }
 
 /**

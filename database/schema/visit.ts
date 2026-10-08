@@ -179,6 +179,32 @@ export const clinicalNotes = pgTable(
   (table) => [index('clinical_notes_visit_idx').on(table.visitId)],
 );
 
+/**
+ * Files attached to a visit — radiographs, referrals, documents.
+ *
+ * The bytes are not stored here: `docs/open-questions.md` (Q10) leaves storage
+ * to a later milestone, and this table holds the reference a clinic needs to
+ * find the file and know what it holds. Tenancy comes through `visits` exactly
+ * as it does for a clinical note — no `clinic_id`, the visit *is* the tenant key.
+ */
+export const visitAttachments = pgTable(
+  'visit_attachments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    visitId: uuid('visit_id')
+      .notNull()
+      .references(() => visits.id, { onDelete: 'cascade' }),
+    fileName: text('file_name').notNull(),
+    contentType: text('content_type'),
+    sizeBytes: integer('size_bytes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('visit_attachments_visit_idx').on(table.visitId),
+    check('visit_attachments_size_nonnegative', sql`${table.sizeBytes} >= 0`),
+  ],
+);
+
 export const visitRelations = relations(visits, ({ one, many }) => ({
   clinic: one(clinics, { fields: [visits.clinicId], references: [clinics.id] }),
   patient: one(patients, { fields: [visits.patientId], references: [patients.id] }),
@@ -195,4 +221,8 @@ export const visitRelations = relations(visits, ({ one, many }) => ({
 export const odontogramEntryRelations = relations(odontogramEntries, ({ one }) => ({
   patient: one(patients, { fields: [odontogramEntries.patientId], references: [patients.id] }),
   visit: one(visits, { fields: [odontogramEntries.visitId], references: [visits.id] }),
+}));
+
+export const visitAttachmentRelations = relations(visitAttachments, ({ one }) => ({
+  visit: one(visits, { fields: [visitAttachments.visitId], references: [visits.id] }),
 }));

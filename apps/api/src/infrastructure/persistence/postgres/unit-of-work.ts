@@ -17,7 +17,7 @@
  * **The set is built fresh rather than passed in,** because the alternative is a
  * `Repositories` object assembled once from the outer connection and then handed to
  * every callback, and that object would hold the wrong handles. The cost is that each
- * transaction constructs fourteen wrappers, which is nothing next to the round trip it
+ * transaction constructs fifteen wrappers, which is nothing next to the round trip it
  * is about to make.
  */
 import type { Repositories, UnitOfWork } from '@denti-code-u3/domain';
@@ -36,13 +36,14 @@ import { DrizzlePaymentRepository } from '../repositories/payment-repository.js'
 import { DrizzlePrescriptionRepository } from '../repositories/prescription-repository.js';
 import { DrizzleTreatmentRecordRepository } from '../repositories/treatment-record-repository.js';
 import { DrizzleTreatmentRepository } from '../repositories/treatment-repository.js';
+import { DrizzleVisitAttachmentRepository } from '../repositories/visit-attachment-repository.js';
 import { DrizzleVisitRepository } from '../repositories/visit-repository.js';
 
 /**
  * One repository per port, all on the same handle.
  *
  * Exported because the API wires routes with repositories built on the outer
- * connection, and a caller that needed both would otherwise construct fourteen
+ * connection, and a caller that needed both would otherwise construct fifteen
  * twice.
  */
 export function repositoriesFor(db: DentiDatabase): Repositories {
@@ -61,6 +62,7 @@ export function repositoriesFor(db: DentiDatabase): Repositories {
     invoices: new DrizzleInvoiceRepository(db),
     payments: new DrizzlePaymentRepository(db),
     paymentAllocations: new DrizzlePaymentAllocationRepository(db),
+    attachments: new DrizzleVisitAttachmentRepository(db),
   };
 }
 

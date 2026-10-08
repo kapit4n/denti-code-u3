@@ -52,7 +52,7 @@ const currencyCode = 'USD';
 const now = new Date();
 
 function seedSummary(): string {
-  return `clinic ${DEVELOPMENT_CLINIC_ID}, 3 patients, 2 dentists, 2 rooms, 4 chairs, 4 appointments, 2 visits (1 completed, 1 open), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 3 charges, 2 payments`;
+  return `clinic ${DEVELOPMENT_CLINIC_ID}, 3 patients, 2 dentists, 2 rooms, 4 chairs, 4 appointments, 2 visits (1 completed, 1 open), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 attachments, 3 charges, 2 payments`;
 }
 
 /**
@@ -632,6 +632,26 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
       instructions: 'Take after meals. Do not exceed three doses a day.',
     })
     .onConflictDoNothing();
+
+  await db
+    .insert(pgSchema.visitAttachments)
+    .values([
+      {
+        id: '11111111-cccc-4ddd-8eee-000000000005',
+        visitId: '11111111-7777-4888-8999-000000000002',
+        fileName: 'periapical-26-left.png',
+        contentType: 'image/png',
+        sizeBytes: 512_400,
+      },
+      {
+        id: '11111111-cccc-4ddd-8eee-000000000006',
+        visitId: '11111111-7777-4888-8999-000000000002',
+        fileName: 'referral-orthodontics.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 81_240,
+      },
+    ])
+    .onConflictDoNothing();
 }
 
 async function insertVisitsAndPlansSqlite(
@@ -754,6 +774,26 @@ async function insertVisitsAndPlansSqlite(
       durationDays: 5,
       instructions: 'Take after meals. Do not exceed three doses a day.',
     })
+    .onConflictDoNothing();
+
+  await db
+    .insert(sqliteSchema.visitAttachments)
+    .values([
+      {
+        id: '11111111-cccc-4ddd-8eee-000000000005',
+        visitId: '11111111-7777-4888-8999-000000000002',
+        fileName: 'periapical-26-left.png',
+        contentType: 'image/png',
+        sizeBytes: 512_400,
+      },
+      {
+        id: '11111111-cccc-4ddd-8eee-000000000006',
+        visitId: '11111111-7777-4888-8999-000000000002',
+        fileName: 'referral-orthodontics.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 81_240,
+      },
+    ])
     .onConflictDoNothing();
 }
 
