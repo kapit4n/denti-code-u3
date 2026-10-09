@@ -29,6 +29,7 @@ import * as schema from '@denti-code-u3/database/schema';
 import { registerPatientsRoutes } from '../src/http/routes/patients.js';
 import { DrizzlePatientRepository } from '../src/infrastructure/persistence/repositories/patient-repository.js';
 import { DrizzleOdontogramEntryRepository } from '../src/infrastructure/persistence/repositories/odontogram-entry-repository.js';
+import { DrizzleTreatmentPlanRepository } from '../src/infrastructure/persistence/repositories/treatment-plan-repository.js';
 import { systemClock } from '../src/infrastructure/clock/system-clock.js';
 import { uuidGenerator } from '../src/infrastructure/id/uuid-generator.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
@@ -82,6 +83,7 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
     await registerPatientsRoutes(app, {
       patients: new DrizzlePatientRepository(db),
       odontogramEntries: new DrizzleOdontogramEntryRepository(db),
+      treatmentPlans: new DrizzleTreatmentPlanRepository(db),
       ids: uuidGenerator,
       clock: systemClock,
     });
@@ -256,5 +258,45 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().entries).toEqual([]);
+  });
+
+  it('lists one patient’s treatment plans with their items and progress', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${patientWithHistory}/treatment-plans`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const { items } = response.json();
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      id: planId,
+      status: 'ACCEPTED',
+      title: 'Plan of patient one',
+      dentistId: null,
+      items: [{ id: itemId, treatmentId: null, tooth: '26', quantity: 1 }],
+    });
+    // The one item is open, so the projection says 0/1 — never a stored counter.
+    expect(items[0].progress).toMatchObject({ total: 1, completed: 0, percentComplete: 0 });
+  });
+
+  it('answers an empty list for a patient with no plans, not a 404', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${patientWithoutHistory}/treatment-plans`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().items).toEqual([]);
+  });
+
+  it('refuses to read another clinic’s patient’s plans as a 404', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${otherClinicPatient}/treatment-plans`,
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe('NOT_FOUND');
   });
 });

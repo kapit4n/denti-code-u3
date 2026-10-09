@@ -324,6 +324,125 @@ describe('API on SQLite', () => {
     expect(refused.json().error.code).toBe('VALIDATION_ERROR');
   });
 
+  it('adds a treatment to the catalogue, refusing a duplicate code', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/treatments',
+      payload: {
+        code: 'CROWN-PM',
+        name: 'Porcelain crown — premolar',
+        description: 'Full-coverage all-ceramic crown.',
+        defaultDurationMinutes: 90,
+        defaultPriceMinor: 45_000,
+      },
+    });
+
+    expect(created.statusCode).toBe(201);
+    expect(created.json().item).toMatchObject({
+      code: 'CROWN-PM',
+      name: 'Porcelain crown — premolar',
+      defaultPriceMinor: 45_000,
+      isActive: true,
+    });
+
+    // The row is really there: the same catalogue read the picker draws shows it.
+    const catalogue = await app.inject({ method: 'GET', url: '/api/v1/treatments' });
+    expect(catalogue.json().items.map((item: { code: string }) => item.code)).toContain('CROWN-PM');
+
+    // The same code again is the (clinic_id, code) unique index answering in a
+    // language the caller can act on, on this engine too (ADR 0025).
+    const duplicate = await app.inject({
+      method: 'POST',
+      url: '/api/v1/treatments',
+      payload: { code: 'CROWN-PM', name: 'Duplicate code' },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json().error.code).toBe('DOMAIN_RULE_VIOLATION');
+
+    // A body that cannot name the treatment is refused before the domain is asked.
+    const unnamed = await app.inject({
+      method: 'POST',
+      url: '/api/v1/treatments',
+      payload: { name: '   ' },
+    });
+    expect(unnamed.statusCode).toBe(422);
+    expect(unnamed.json().error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('lists one patient’s treatment plans, newest first, with progress', async () => {
+    // The smoke suite's patient is registered through the API during this block, so
+    // the plan is filed under them through a fresh connection to the same file.
+    const { db, client } = createSqliteConnection(`sqlite:${path.join(dir, 'denti.db')}`);
+    await db
+      .insert(sqliteSchema.treatmentPlans)
+      .values({
+        id: 'a0a0a0a0-0000-4000-8000-000000000020',
+        clinicId,
+        patientId: apiPatientId,
+        status: 'ACCEPTED',
+        title: 'Crown on 36',
+      })
+      .run();
+    await db
+      .insert(sqliteSchema.treatmentPlanItems)
+      .values([
+        {
+          id: 'a0a0a0a0-0000-4000-8000-000000000021',
+          treatmentPlanId: 'a0a0a0a0-0000-4000-8000-000000000020',
+          treatmentId,
+          tooth: '36',
+          surfaces: ['OCCLUSAL'],
+          quantity: 1,
+          estimatedPriceMinor: 45_000,
+          isCompleted: false,
+        },
+        {
+          id: 'a0a0a0a0-0000-4000-8000-000000000022',
+          treatmentPlanId: 'a0a0a0a0-0000-4000-8000-000000000020',
+          treatmentId,
+          tooth: '16',
+          surfaces: [],
+          quantity: 1,
+          estimatedPriceMinor: 15_000,
+          isCompleted: true,
+        },
+      ])
+      .run();
+    client.close();
+
+    const read = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans`,
+    });
+
+    expect(read.statusCode).toBe(200);
+    const { items } = read.json();
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      title: 'Crown on 36',
+      status: 'ACCEPTED',
+      dentistId: null,
+      progress: { total: 2, completed: 1, percentComplete: 50 },
+      items: [
+        {
+          tooth: '36',
+          treatmentName: 'Composite restoration',
+          treatmentCode: 'COMPO',
+          isCompleted: false,
+        },
+        { tooth: '16', treatmentName: 'Composite restoration', isCompleted: true },
+      ],
+    });
+
+    // The same "this clinic cannot see you" 404 the profile gives, on SQLite too.
+    const foreignRead = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${foreignPatientId}/treatment-plans`,
+    });
+    expect(foreignRead.statusCode).toBe(404);
+    expect(foreignRead.json().error.code).toBe('NOT_FOUND');
+  });
+
   it('prescribes a medication on the visit, inheriting whom it is about from the visit', async () => {
     const filed = await app.inject({
       method: 'POST',

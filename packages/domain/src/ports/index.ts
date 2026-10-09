@@ -19,6 +19,7 @@ import type {
   IsoDateTime,
   PatientId,
   TreatmentId,
+  TreatmentPlanId,
   VisitId,
 } from '@denti-code-u3/types';
 import type {
@@ -29,7 +30,7 @@ import type {
   AppointmentWindow,
 } from '../appointment/index.js';
 import type { Visit, VisitStatus, ClinicalNote, VisitAttachment } from '../visit/index.js';
-import type { TreatmentRecord } from '../treatment/index.js';
+import type { TreatmentRecord, TreatmentPlanProgress } from '../treatment/index.js';
 import type { OdontogramEntryRecord } from '../odontogram/index.js';
 import type {
   EditablePatientDetails,
@@ -96,6 +97,11 @@ export interface UnitOfWork {
  * tooth upserts under the `(patient_id, tooth)` unique index, and both engines
  * implement the one `save`. The set is sixteen now, every one of its sixteen
  * constructible in both engines.
+ *
+ * Session 35 adds `treatmentPlans` for the patient's plan read: the plans table
+ * carries its own `clinic_id`, so tenancy is scoped in the statement rather than
+ * through a join, and both engines implement the one `listForPatient`. The set is
+ * seventeen now, every one of its seventeen constructible in both engines.
  */
 export interface Repositories {
   readonly patients: PatientRepository;
@@ -106,6 +112,7 @@ export interface Repositories {
   readonly charges: ChargeRepository;
   readonly treatments: TreatmentRepository;
   readonly treatmentRecords: TreatmentRecordRepository;
+  readonly treatmentPlans: TreatmentPlanRepository;
   readonly clinics: ClinicRepository;
   readonly dentists: DentistRepository;
   readonly chairs: ChairRepository;
@@ -612,6 +619,82 @@ export interface TreatmentRepository {
     clinicId: ClinicId,
     treatmentId: TreatmentId,
   ): Promise<TreatmentCatalogueItem | undefined>;
+
+  /**
+   * Add one treatment to the catalogue, or refuse it.
+   *
+   * The one refusal is the `(clinic_id, code)` unique index — the only place two
+   * concurrent writers are both visible — translated to `DUPLICATED_RECORD`
+   * rather than a `23505` (or its SQLite twin) reaching the API as a 500. The
+   * clinic is part of the write, not a precondition the caller checked, so a
+   * treatment cannot be filed under a clinic the request never saw (ADR 0014).
+   */
+  add(clinicId: ClinicId, item: TreatmentCatalogueItem): Promise<void>;
+}
+
+/**
+ * One line of a treatment plan, as the read joins it.
+ *
+ * The treatment's code and name are folded in so a reader never has to join the
+ * catalogue itself — the plan screen draws the row a plan item names, and joining
+ * per item in the UI is how a section ends up N+1 requests deep. `treatmentId` is
+ * nullable because the column is (`on delete set null`); so are the joined name
+ * and code. `surfaces` is never a string that looks like one.
+ */
+export interface TreatmentPlanItemSummary {
+  readonly id: string;
+  readonly treatmentId: TreatmentId | null;
+  readonly treatmentCode: string | null;
+  readonly treatmentName: string | null;
+  /** FDI tooth, when the item is tooth-specific. */
+  readonly tooth: string | null;
+  readonly surfaces: readonly string[];
+  readonly quantity: number;
+  /** The estimated price, in minor units of the clinic currency. Never a float. */
+  readonly estimatedPriceMinor: number;
+  readonly isCompleted: boolean;
+  readonly completedAt: IsoDateTime | null;
+  readonly notes: string | null;
+}
+
+/**
+ * One treatment plan of a patient, as the read returns it.
+ *
+ * Realigned to what the `treatment_plans` table holds (the session 30 habit):
+ * `title`, `notes`, `dentistId`, `presentedAt` and `acceptedAt` are all nullable
+ * because the columns are, and `status` is the enum's string for the same reason
+ * other read models carry it. Items are ordered by id — `treatment_plan_items`
+ * has no sequence column, so the read's order is the deterministic one the seeds
+ * laid the plan out in.
+ */
+export interface TreatmentPlanSummary {
+  readonly id: TreatmentPlanId;
+  readonly dentistId: DentistId | null;
+  readonly status: string;
+  readonly title: string | null;
+  readonly notes: string | null;
+  readonly presentedAt: IsoDateTime | null;
+  readonly acceptedAt: IsoDateTime | null;
+  readonly updatedAt: IsoDateTime;
+  readonly items: readonly TreatmentPlanItemSummary[];
+  readonly progress: TreatmentPlanProgress;
+}
+
+/**
+ * Reading one patient's treatment plans.
+ *
+ * Unlike the clinical books above, `treatment_plans` has a `clinic_id` of its own,
+ * so tenancy is scoped in the statement on that column — the charge pattern, not
+ * the notes' join. The patient is still resolved first: `undefined` means "this
+ * clinic holds no such patient" (the same 404 the profile and the odontogram give),
+ * and only a real patient can answer with `[]` — the difference between "not here"
+ * and "nothing planned", on purpose (ADR 0014).
+ */
+export interface TreatmentPlanRepository {
+  listForPatient(
+    clinicId: ClinicId,
+    patientId: PatientId,
+  ): Promise<readonly TreatmentPlanSummary[] | undefined>;
 }
 
 /**

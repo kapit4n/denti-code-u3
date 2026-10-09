@@ -62,6 +62,30 @@ export function calculateTreatmentPlanProgress(plan: TreatmentPlan): TreatmentPl
   return { total, completed, inProgress, pending, percentComplete };
 }
 
+/**
+ * Progress of a treatment plan as the stored table tells it.
+ *
+ * This is the read side's projection, deliberately over the shape the row holds
+ * (`isCompleted`) rather than the rich `TreatmentPlanItem` above. The table has no
+ * per-item status column — a line of a plan is done or it is not — and a projection
+ * that invented `PENDING`/`IN_PROGRESS` states would be the domain firming up a
+ * column that does not exist, the same realignment `TreatmentCatalogueItem` went
+ * through in session 30. `inProgress` is therefore always `0`, and `pending` means
+ * "not completed", which is all the row can say. The repositories call it, so a
+ * plan drawn on PostgreSQL and one drawn on SQLite cannot disagree.
+ */
+export function describeTreatmentPlanProgress(
+  items: readonly { readonly isCompleted: boolean }[],
+): TreatmentPlanProgress {
+  const total = items.length;
+  const completed = items.filter((item) => item.isCompleted).length;
+  const inProgress = 0;
+  const pending = total - completed;
+  const percentComplete = total === 0 ? 0 : Math.round((completed / total) * 100);
+
+  return { total, completed, inProgress, pending, percentComplete };
+}
+
 /** Estimate the total price of a treatment plan from its items. */
 export function calculateTreatmentPlanEstimate(
   plan: TreatmentPlan,

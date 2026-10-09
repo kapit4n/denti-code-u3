@@ -26,6 +26,7 @@ import type {
   IdGenerator,
   OdontogramEntryRepository,
   PatientRepository,
+  TreatmentPlanRepository,
 } from '@denti-code-u3/domain';
 import { recordOdontogramEntry, registerPatient, updatePatient } from '@denti-code-u3/domain';
 import {
@@ -56,6 +57,12 @@ export interface PatientsDependencies {
    * first, so the chart is never handed a clinic of its own.
    */
   readonly odontogramEntries: OdontogramEntryRepository;
+  /**
+   * The patient's treatment plans, read with the patient resolved first so a
+   * foreign patient answers 404 rather than an empty list (ADR 0014). The plans
+   * table has its own `clinic_id`, so the read scopes in the statement.
+   */
+  readonly treatmentPlans: TreatmentPlanRepository;
   readonly ids: IdGenerator;
   readonly clock: Clock;
 }
@@ -79,7 +86,7 @@ function resolvePage(raw: unknown): number {
 
 export async function registerPatientsRoutes(
   app: FastifyInstance,
-  { patients, odontogramEntries, ids, clock }: PatientsDependencies,
+  { patients, odontogramEntries, treatmentPlans, ids, clock }: PatientsDependencies,
 ): Promise<void> {
   /**
    * Register a patient.
@@ -305,6 +312,37 @@ export async function registerPatientsRoutes(
       return odontogram;
     } catch (error) {
       return sendProblem(reply, request, error, 'Failed to read the odontogram');
+    }
+  });
+
+  /**
+   * One patient's treatment plans, newest first, with their items.
+   *
+   * `undefined` from the repository means the clinic holds no such patient — the
+   * same 404 the profile and the odontogram give; `{ items: [] }` is a real patient
+   * with nothing planned yet. The plans are drawn with the same components the
+   * profile's outstanding-treatments card folds into one line each, now whole.
+   */
+  app.get('/api/v1/patients/:patientId/treatment-plans', async (request, reply) => {
+    const clinicId = request.clinicId as ClinicId;
+    const { patientId } = request.params as { patientId: string };
+
+    try {
+      const plans = await treatmentPlans.listForPatient(clinicId, asPatientId(patientId));
+
+      if (!plans) {
+        return reply.status(404).send({
+          error: {
+            code: 'NOT_FOUND',
+            message: 'No patient with that id exists in this clinic',
+            requestId: request.id,
+          },
+        });
+      }
+
+      return { items: plans };
+    } catch (error) {
+      return sendProblem(reply, request, error, 'Failed to read the treatment plans');
     }
   });
 

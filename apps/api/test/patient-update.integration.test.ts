@@ -31,6 +31,7 @@ import * as schema from '@denti-code-u3/database/schema';
 import { registerPatientsRoutes } from '../src/http/routes/patients.js';
 import { DrizzlePatientRepository } from '../src/infrastructure/persistence/repositories/patient-repository.js';
 import { DrizzleOdontogramEntryRepository } from '../src/infrastructure/persistence/repositories/odontogram-entry-repository.js';
+import { DrizzleTreatmentPlanRepository } from '../src/infrastructure/persistence/repositories/treatment-plan-repository.js';
 import { systemClock } from '../src/infrastructure/clock/system-clock.js';
 import { uuidGenerator } from '../src/infrastructure/id/uuid-generator.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
@@ -122,6 +123,7 @@ describeIntegration('patients: editing (PostgreSQL)', () => {
     await registerPatientsRoutes(app, {
       patients: new DrizzlePatientRepository(db),
       odontogramEntries: new DrizzleOdontogramEntryRepository(db),
+      treatmentPlans: new DrizzleTreatmentPlanRepository(db),
       ids: uuidGenerator,
       clock: systemClock,
     });

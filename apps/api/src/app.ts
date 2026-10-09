@@ -118,6 +118,7 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   await registerPatientsRoutes(app, {
     patients: connection.repositories.patients,
     odontogramEntries: connection.repositories.odontogramEntries,
+    treatmentPlans: connection.repositories.treatmentPlans,
     ids: uuidGenerator,
     clock: systemClock,
   });
@@ -142,10 +143,14 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   await registerDentistsRoutes(app, { dentists });
   await registerChairsRoutes(app, { chairs });
 
-  // The catalogue a visit record names. Its own route because it has its own address —
-  // a procedure is not a visit's property, and neither `GET /visits/:id/treatments`
-  // (the visit's *records*) nor a nested `GET /visits/:id/...` would say so.
-  await registerTreatmentsRoutes(app, { treatments });
+  // The catalogue a visit record names, and the door it grows through. Its own route
+  // because it has its own address — a procedure is not a visit's property, and
+  // neither `GET /visits/:id/treatments` (the visit's *records*) nor a nested
+  // `GET /visits/:id/...` would say so.
+  await registerTreatmentsRoutes(app, {
+    treatments,
+    ids: uuidGenerator,
+  });
 
   // The bridge from scheduling to clinical, and the walk-in that has no bridge. It is
   // given a transaction rather than the two repositories, because starting a visit from

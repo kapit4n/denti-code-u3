@@ -17,8 +17,8 @@
  * **The set is built fresh rather than passed in,** because the alternative is a
  * `Repositories` object assembled once from the outer connection and then handed to
  * every callback, and that object would hold the wrong handles. The cost is that each
- * transaction constructs sixteen wrappers, which is nothing next to the round trip it
- * is about to make.
+ * transaction constructs seventeen wrappers, which is nothing next to the round trip
+ * it is about to make.
  */
 import type { Repositories, UnitOfWork } from '@denti-code-u3/domain';
 
@@ -35,6 +35,7 @@ import { DrizzlePatientRepository } from '../repositories/patient-repository.js'
 import { DrizzlePaymentAllocationRepository } from '../repositories/payment-allocation-repository.js';
 import { DrizzlePaymentRepository } from '../repositories/payment-repository.js';
 import { DrizzlePrescriptionRepository } from '../repositories/prescription-repository.js';
+import { DrizzleTreatmentPlanRepository } from '../repositories/treatment-plan-repository.js';
 import { DrizzleTreatmentRecordRepository } from '../repositories/treatment-record-repository.js';
 import { DrizzleTreatmentRepository } from '../repositories/treatment-repository.js';
 import { DrizzleVisitAttachmentRepository } from '../repositories/visit-attachment-repository.js';
@@ -44,7 +45,7 @@ import { DrizzleVisitRepository } from '../repositories/visit-repository.js';
  * One repository per port, all on the same handle.
  *
  * Exported because the API wires routes with repositories built on the outer
- * connection, and a caller that needed both would otherwise construct fifteen
+ * connection, and a caller that needed both would otherwise construct seventeen
  * twice.
  */
 export function repositoriesFor(db: DentiDatabase): Repositories {
@@ -57,6 +58,7 @@ export function repositoriesFor(db: DentiDatabase): Repositories {
     charges: new DrizzleChargeRepository(db),
     treatments: new DrizzleTreatmentRepository(db),
     treatmentRecords: new DrizzleTreatmentRecordRepository(db),
+    treatmentPlans: new DrizzleTreatmentPlanRepository(db),
     clinics: new DrizzleClinicRepository(db),
     dentists: new DrizzleDentistRepository(db),
     chairs: new DrizzleChairRepository(db),

@@ -7,13 +7,18 @@
  * `findById`. The differences are the engine's — the schema entry point and the
  * synchronous reads this driver needs.
  */
-import { type TreatmentCatalogueItem, type TreatmentRepository } from '@denti-code-u3/domain';
+import {
+  DomainError,
+  type TreatmentCatalogueItem,
+  type TreatmentRepository,
+} from '@denti-code-u3/domain';
 import { asTreatmentId, type ClinicId, type TreatmentId } from '@denti-code-u3/types';
 import { and, asc, eq } from 'drizzle-orm';
 
 import { treatments } from '@denti-code-u3/database/schema/sqlite';
 
 import type { SqliteDatabase } from '../connection.js';
+import { isUniqueViolation } from '../sqlite-error.js';
 
 const CATALOGUE_COLUMNS = {
   id: treatments.id,
@@ -49,6 +54,34 @@ export class SQLiteTreatmentRepository implements TreatmentRepository {
       .get();
 
     return row ? toItem(row) : undefined;
+  }
+
+  async add(clinicId: ClinicId, item: TreatmentCatalogueItem): Promise<void> {
+    try {
+      this.db
+        .insert(treatments)
+        .values({
+          id: item.id,
+          clinicId,
+          code: item.code,
+          name: item.name,
+          description: item.description,
+          defaultDurationMinutes: item.defaultDurationMinutes,
+          defaultPriceMinor: item.defaultPriceMinor,
+          isActive: item.isActive,
+        })
+        .run();
+    } catch (error) {
+      // The same translation as the PostgreSQL twin: the (clinic_id, code) unique
+      // index refuses the duplicate, and it answers one `DUPLICATED_RECORD` on
+      // both engines (ADR 0025).
+      if (isUniqueViolation(error)) {
+        throw new DomainError('DUPLICATED_RECORD', 'That code is already in the catalogue', {
+          field: 'code',
+        });
+      }
+      throw error;
+    }
   }
 }
 

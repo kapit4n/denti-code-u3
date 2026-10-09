@@ -23,6 +23,7 @@ import { SQLitePatientRepository } from './repositories/patient-repository.js';
 import { SQLitePaymentAllocationRepository } from './repositories/payment-allocation-repository.js';
 import { SQLitePaymentRepository } from './repositories/payment-repository.js';
 import { SQLitePrescriptionRepository } from './repositories/prescription-repository.js';
+import { SQLiteTreatmentPlanRepository } from './repositories/treatment-plan-repository.js';
 import { SQLiteTreatmentRecordRepository } from './repositories/treatment-record-repository.js';
 import { SQLiteTreatmentRepository } from './repositories/treatment-repository.js';
 import { SQLiteVisitAttachmentRepository } from './repositories/visit-attachment-repository.js';
@@ -38,6 +39,7 @@ export function sqliteRepositoriesFor(db: SqliteDatabase): Repositories {
     charges: new SQLiteChargeRepository(db),
     treatments: new SQLiteTreatmentRepository(db),
     treatmentRecords: new SQLiteTreatmentRecordRepository(db),
+    treatmentPlans: new SQLiteTreatmentPlanRepository(db),
     clinics: new SQLiteClinicRepository(db),
     dentists: new SQLiteDentistRepository(db),
     chairs: new SQLiteChairRepository(db),

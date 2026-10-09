@@ -129,6 +129,7 @@ function harness(
       recorded.catalogueReads.push({ clinicId, treatmentId });
       return catalogue.find((item) => item.id === treatmentId);
     },
+    add: async () => {},
   };
 
   const treatmentRecords: TreatmentRecordRepository = {

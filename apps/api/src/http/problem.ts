@@ -16,6 +16,7 @@ export type ApiErrorCode =
   | 'NOT_FOUND'
   | 'DOMAIN_RULE_VIOLATION'
   | 'SCHEDULING_CONFLICT'
+  | 'DUPLICATED_RECORD'
   | 'INTERNAL_ERROR';
 
 export interface ApiProblem {
@@ -80,6 +81,9 @@ export function toApiErrorCode(domainCode: DomainErrorCode): ApiErrorCode {
   }
   if (domainCode === 'FORBIDDEN') {
     return 'FORBIDDEN';
+  }
+  if (domainCode === 'DUPLICATED_RECORD') {
+    return 'DOMAIN_RULE_VIOLATION';
   }
   if (domainCode === 'INVALID_INPUT' || domainCode === 'OUTSIDE_OPERATING_HOURS') {
     return 'VALIDATION_ERROR';

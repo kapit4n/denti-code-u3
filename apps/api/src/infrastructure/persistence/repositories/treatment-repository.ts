@@ -9,13 +9,18 @@
  * — two rows may share a name (a clinic and its branch, or a grandfathered spelling),
  * and an arbitrary-but-fixed order is better than one that shuffles between reads.
  */
-import { type TreatmentCatalogueItem, type TreatmentRepository } from '@denti-code-u3/domain';
+import {
+  DomainError,
+  type TreatmentCatalogueItem,
+  type TreatmentRepository,
+} from '@denti-code-u3/domain';
 import { asTreatmentId, type ClinicId, type TreatmentId } from '@denti-code-u3/types';
 import { and, asc, eq } from 'drizzle-orm';
 
 import { treatments } from '@denti-code-u3/database/schema';
 
 import type { DentiDatabase } from '../postgres/connection.js';
+import { isUniqueViolation } from '../postgres-error.js';
 
 const CATALOGUE_COLUMNS = {
   id: treatments.id,
@@ -51,6 +56,33 @@ export class DrizzleTreatmentRepository implements TreatmentRepository {
       .limit(1);
 
     return row ? toItem(row) : undefined;
+  }
+
+  async add(clinicId: ClinicId, item: TreatmentCatalogueItem): Promise<void> {
+    try {
+      await this.db.insert(treatments).values({
+        id: item.id,
+        clinicId,
+        code: item.code,
+        name: item.name,
+        description: item.description,
+        defaultDurationMinutes: item.defaultDurationMinutes,
+        defaultPriceMinor: item.defaultPriceMinor,
+        isActive: item.isActive,
+      });
+    } catch (error) {
+      // The unique index on (clinic_id, code) is where the "already in the
+      // catalogue" rule lives — the only place two concurrent writers are both
+      // visible. Translating it keeps the catalogue's most common mistake a 409
+      // the caller is told about, in both engines. `created_at` and `updated_at`
+      // are the row's own bookkeeping, defaulted by the database.
+      if (isUniqueViolation(error)) {
+        throw new DomainError('DUPLICATED_RECORD', 'That code is already in the catalogue', {
+          field: 'code',
+        });
+      }
+      throw error;
+    }
   }
 }
 

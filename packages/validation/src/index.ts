@@ -5,3 +5,4 @@ export * from './env/index.js';
 export * from './patients/index.js';
 export * from './visits/index.js';
 export * from './odontogram/index.js';
+export * from './treatments/index.js';
