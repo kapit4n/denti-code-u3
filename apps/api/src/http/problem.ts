@@ -16,7 +16,6 @@ export type ApiErrorCode =
   | 'NOT_FOUND'
   | 'DOMAIN_RULE_VIOLATION'
   | 'SCHEDULING_CONFLICT'
-  | 'DUPLICATED_RECORD'
   | 'INTERNAL_ERROR';
 
 export interface ApiProblem {
