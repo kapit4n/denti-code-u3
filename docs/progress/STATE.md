@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 34 (odontogram — the patient's chart, Task 2)
+> Last updated: session 35 (treatments catalogue write + plan read, Task 3, and the booking hour that was locked)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -35,6 +35,35 @@ name a surface, a surface must apply to the tooth), and both `id` and `recordedA
 are the server's (ADR 0014) — the same line the e2e asserts. The network read model
 spells `condition`/`dentition` as strings the database enum guard keeps truthful.
 The seed carries 2 charted teeth on Luis (both engines).
+
+Session 35 delivered the **catalogue write and the patient's treatment-plan read** —
+Task 3 of the session's plan, the moment Milestone 8 stopped being only a footnote in
+other people's write paths. `addTreatment` sits over a `TreatmentRepository` that
+gained the missing verb, `listPatientTreatmentPlans` over a new
+`treatmentPlanRepository` (taking `Repositories` from sixteen to seventeen), every
+member written twice, once per engine. `POST /api/v1/treatments` takes the catalogue
+entry itself — `{ code, name, description?, duration?, priceMinor? }` — and nothing
+that names the clinic or the clock: tenancy comes from the header and the columns
+default their own timestamps, the same bargain `registerPatient` makes. A second
+`add` of a code this clinic already offers is a 409 translated from the
+`(clinic_id, code)` unique index to the domain's `DUPLICATED_RECORD`, which the wire
+still folds into `DOMAIN_RULE_VIOLATION` — a variant nothing can produce would be a
+variant that lies. `GET /api/v1/patients/:patientId/treatment-plans` answers
+`{ items }`, scoped through the patient the way the odontogram is (a patient another
+clinic holds is a 404, never an empty list), plans newest-first, items in `id` order,
+each carrying its own `progress` projected by the pure
+`describeTreatmentPlanProgress` — nothing stores the arithmetic, so two engines
+cannot disagree about it.
+
+The session's second half fixed the defect the user reported from the agenda: **the
+booking dialog would not let the hour be chosen.** The clicked slot used to render the
+field `readOnly`, and that was wrong twice over — the month view can only ever name a
+day (FullCalendar hands over 00:00), and a mistyped lane meant closing the dialog and
+hunting for another empty one. The slot now _seeds_ the field rather than locking it,
+there is still no `readOnly` flag on the prop, and the clinic's zone stays named under
+the box exactly because that is the moment the hour is the person's to change. Both
+the replacement unit test and a new browser spec fail when the lock is put back —
+reintroduced as a defect and checked, per the house rule.
 
 Session 33 delivered **files** — the seventh workspace section and the seventh "per
 visit" book (Task 1 of the session's plan), the moment Milestone 6's "Files/attachments
@@ -199,29 +228,40 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 34 — Task 2, odontogram)
+## Verification log (last run, session 35 — Task 3, and the booking hour that was locked)
 
 | Command                     | Result                                                                              |
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                                                    |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)                    |
 | `pnpm run format:check`     | clean                                                                               |
-| `pnpm run test`             | 12/12 tasks pass — domain 267, validation 122, app 292, API 77 passed / 249 skipped |
+| `pnpm run test`             | 12/12 tasks pass — domain 280, validation 131, app 292, API 79 passed / 252 skipped |
 | `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                              |
 | `pnpm run build`            | 5/5 tasks pass (web rebuilt before e2e)                                             |
 | `pnpm run guard:boundaries` | OK                                                                                  |
-| `pnpm run test:e2e`         | 108/108 pass — 3 new odontogram specs                                               |
+| `pnpm run test:e2e`         | 109/109 pass — 1 new booking spec                                                   |
 
 **The PostgreSQL integration suite could not be executed this session: Docker and every
 PostgreSQL client are absent from this environment** (no `docker`, no `podman`, no
-`psql`, no `/var/run/docker.sock`). The new attachments block in
-`visits-route.integration.test.ts` (an attach-and-list-back with the clock's `createdAt`
-and the DB row asserted, an oldest-first ordering test, foreign and missing visits
-answering 404 to both verbs with nothing written, the blank-name/negative-size 422s,
-and a not-a-uuid pair) is written, typechecks and will run wherever `TEST_DATABASE_URL`
-exists; here it reports as part of the skipped suite. What covers the same path without
-a database is the always-on SQLite smoke suite, which gained an attach-through-the-endpoint
-test — normalized POST, both verbs scoped through the visit — and did run.
+`psql`, no `/var/run/docker.sock`). The three treatment-plan tests added to
+`patient-profile-scope.integration.test.ts` (the seeded plan with its item and a 0/1
+progress, an empty list for a patient with no plans, a foreign patient's 404) are
+written, typecheck and will run wherever `TEST_DATABASE_URL` exists; here they report
+as part of the skipped suite. What covers the same paths without a database is the
+always-on SQLite smoke suite, which gained the catalogue-write block (created row
+visible in the same catalogue read; duplicate `(clinic_id, code)` → 409; blank name → 422) and the plans-read block (two items, one completed, `percentComplete` 50, item
+labels joined through the treatment, foreign patient 404), and did run.
+
+**What session 35's work is verified by.** 9 `addTreatment` tests (the name is the one
+non-negotiable and is trimmed; a blank code or description is stored `null`, a missing
+price `0`, a missing `isActive` true; the price cannot be negative, the duration cannot
+be zero or fractional; the returned row is the stored row, id included; the id comes
+from the generator and nothing consults a clock) and 4 progress tests (empty items are
+0/0/0; one open item is 0% and a completed one is 100%; `percentComplete` is the
+rounded share and never a stored counter), 10 `createTreatmentSchema` tests (the caps,
+the integer price, the blank-name refusal), the three `patient-profile-scope` tests
+above, two SQLite-smoke blocks, and — for the booking-dialog change — one unit test
+and one e2e spec, each verified by reintroducing `readOnly`.
 
 **What session 34 Task 2's work is verified by.** 8 domain use-case tests (permanent/
 primary dentition derived from the tooth number; a tooth outside the dentition, a
@@ -385,6 +425,40 @@ router — a `<Link>` with no router context renders nothing — and the mock is
 the new suite failed for a reason that had nothing to do with the workspace.
 
 ## Decisions made this session (not yet in ADRs)
+
+### Decisions from session 35 (Task 3, and the booking hour that was locked)
+
+- **The clicked slot seeds the booking field; it no longer locks it.**
+  `AppointmentBookingDialog` used to render `readOnly` when the agenda opened it, on
+  the argument that the click had already answered "when". Two cases made that wrong:
+  the **month view** can only ever name a _day_ (FullCalendar hands over 00:00), and a
+  mistyped lane is corrected in place rather than by closing the dialog and hunting for
+  another empty one. The field is now always editable, the zone under it is always
+  stated (it matters most exactly when the hour is the person's to change), and there
+  is still no `readOnly` _flag_ on the prop — `startsAt` seeds, its absence leaves the
+  field empty, and a caller cannot pass one that contradicts the other.
+- **The catalogue write spends no clock.** `addTreatment` takes `{ treatments, newId }`
+  and nothing else: the id is the server's and `created_at`/`updated_at` are the
+  table's defaults, the same bargain `registerPatient` makes. A catalogue row is not a
+  clinical fact, so a domain clock would buy nothing.
+- **The plan read model is what the table says, not what the entity type hoped.**
+  `treatment_plans` has nullable `dentist_id`/`title`/`notes`/`presented_at`/
+  `accepted_at` and no sequence column on its items, so `TreatmentPlanSummary` carries
+  those as nullable, `status` travels as a string, plans order by `created_at desc, id
+desc` and items by `id asc` — session 30's rule, applied again: a read model is
+  realigned to the table rather than the table stretched to the aspiration.
+- **Progress is projected, never stored.** `describeTreatmentPlanProgress` is a pure
+  domain function over `{ isCompleted }[]` (in-progress is always 0 today, because
+  nothing marks an item in progress), so both engines return the same numbers without
+  a second implementation of the arithmetic.
+- **A duplicate catalogue code is a 409 whose wire code is still
+  `DOMAIN_RULE_VIOLATION`.** The `(clinic_id, code)` unique index is translated to the
+  domain's `DUPLICATED_RECORD` in both repositories (so the server log and every other
+  consumer of the domain see the precise reason), and the wire keeps folding it into
+  `DOMAIN_RULE_VIOLATION` as it already did for a second visit start — the status is
+  what a client acts on, and changing the code would break callers that branch on it
+  today. The first draft added a `DUPLICATED_RECORD` wire code and reverted it: an
+  `ApiErrorCode` nothing can produce is a variant that lies about the contract.
 
 ### Decisions from session 34 (odontogram)
 
@@ -1248,6 +1322,15 @@ editing. Both sides now go through `PatientRepository`. Remaining:
      were `toLocaleString()` calls, which answer with the **visitor's** zone and so
      were right only on a receptionist's machine.
 
+   - **The hour is the desk's again (session 35).** The agenda's own door used to
+     render the time field `readOnly`, on the argument that the click had already
+     answered "when" — which the month view disproves (FullCalendar can only hand
+     over 00:00) and which a mistyped lane made expensive. `startsAt` now **seeds**
+     the wall-clock box and leaves it editable, there is no `readOnly` prop at all,
+     and the zone under the box is named in both cases. See the session-35
+     decisions for the reasoning and for the two tests that fail when the lock is
+     reintroduced.
+
    **Still to do:** nothing in the booking path. The next milestone's work is visits.
 
 7. [~] **Visits — the clinical timeline, treatments, payments, inventory, reports.**
@@ -1281,14 +1364,29 @@ editing. Both sides now go through `PatientRepository`. Remaining:
      restate them wrongly, and the clinical record would then be evidence of something
      that did not happen.
 
-   **Still to do, in order:** the six per-visit books (notes, treatments,
-   prescriptions, charges, payments, walk-in) and the read side, closing,
-   reopening and the workspace UI are done — all of session 29–32, 23–26, 24, 25
-   and 28 are in. Remaining in this milestone's spread: files/attachments
-   (platform capability), and then Milestone 7 (odontogram).
+   **Still to do, in order:** all seven per-visit books are in (notes, treatments,
+   prescriptions, charges, payments, files — sessions 29–33 — plus the walk-in of
+   session 26), along with the read side, closing, reopening and the workspace UI.
+   Milestone 7's odontogram landed in session 34. What remains of this spread is
+   inventory and reports.
 
-**Milestone 6 onward** — the rest of visits, odontogram, treatments, payments,
-inventory, reports, auth: not started.
+**Milestone 8 — TREATMENTS, CATALOGUE AND PLANS.** Backend and wire done in
+session 35; **the App UI is the open half.**
+
+1. [x] **Catalogue write.** `addTreatment` over `TreatmentRepository.add`, both
+       engines, `POST /api/v1/treatments`, `createTreatmentSchema`. No clinic id and
+       no timestamps in the body; a duplicate `(clinic_id, code)` is a 409 whose
+       wire code is `DOMAIN_RULE_VIOLATION`.
+2. [x] **Patient treatment-plan read.** `listPatientTreatmentPlans` over a new
+       `treatmentPlanRepository` (both engines), `GET
+ /api/v1/patients/:patientId/treatment-plans`, scoped through the patient
+       (a foreign patient is a 404), with `progress` projected client-side by the
+       pure `describeTreatmentPlanProgress` rather than stored.
+3. [ ] **App UI.** A `/treatments` catalogue page (the sidebar's dangling link)
+       with the add form, and a read-only treatment-plans section on the patient
+       profile beside the odontogram — plus the browser specs for both.
+4. [ ] Item states, plan acceptance/rejection, invoicing: Milestone 9's
+       commissioning, not this one.
 
 ## Last session log
 

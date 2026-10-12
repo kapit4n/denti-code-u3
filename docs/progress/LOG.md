@@ -2411,3 +2411,101 @@ pnpm run test:e2e         108/108 passed (3 new odontogram specs)
 Exporting/reprinting the chart, a mixed-dentition selector, and editing a charted
 finding's history are product-shaped, not this milestone's proof. The PostgreSQL
 odontogram suite skips in this environment exactly as every integration suite does.
+
+## Session 35 — Task 3 (treatments write + treatment-plan read), and the booking hour that was locked
+
+**Started from:** Task 2's docs commit `2222031` clean; everything below is this
+session. Two pieces of work, in this order: Task 3 of the commissioned sequence
+(commit `4fc0b89`), then a defect the user reported in the booking dialog.
+
+### Part 1 — Task 3: the catalogue's write side and the plan read side
+
+**Work performed**
+
+- **Domain.** `addTreatment` in `domain/treatment/add-treatment.ts` (no clock: the
+  id is the server's and `created_at`/`updated_at` are the table's, the same bargain
+  registration makes). A blank code or description is dropped to `null`, a missing
+  price is zero, a missing `isActive` is true. `describeTreatmentPlanProgress(items)`
+  in `treatment-plan.ts` computes `{ total, completed, inProgress, percentComplete }`
+  from the rows — never a stored counter.
+- **Ports.** `TreatmentRepository.add`, `TreatmentPlanSummary` / `TreatmentPlanItemSummary`
+  and `TreatmentPlanRepository.listForPatient`; `Repositories` sixteen → **seventeen**.
+  The summary type was realigned to what `treatment_plans` actually holds (session
+  30's precedent): nullable `dentistId`/`title`/`notes`/`presentedAt`/`acceptedAt`,
+  `status` as a plain string, and — because the items table has no sequence column —
+  items ordered by `id asc`, plans by `created_at desc, id desc`.
+- **Validation.** `createTreatmentSchema`: code ≤ 50, name 1–200, description ≤ 2000,
+  duration 1–1440, price an integer in `[0, 2_147_483_647]` (the PostgreSQL `int`
+  range, so the boundary cannot send a number the column cannot hold).
+- **API.** `add` on both engine twins, each translating the `(clinic_id, code)` unique
+  index to the domain's `DUPLICATED_RECORD` (409 — and the wire still folds that to
+  `DOMAIN_RULE_VIOLATION`, exactly as a second visit start already did; a first draft
+  gave it its own wire code and reverted, because an `ApiErrorCode` nothing can produce
+  lies about the contract). `DrizzleTreatmentPlanRepository` on both engines:
+  the patient is resolved first and answers `undefined` for a foreign or missing one
+  (→ 404), a real patient with no plans answers `[]` (not a 404), and the items are
+  joined for the treatment's code and name with the plan's clinic filter repeated in
+  the join as defence in depth. Routes `POST /api/v1/treatments` and
+  `GET /api/v1/patients/:patientId/treatment-plans`, wired in `app.ts`.
+- **Tests.** 9 + 4 domain, 10 validation, `patient-profile-scope.integration.test.ts`
+  gained three plan-read tests (the seeded plan with its item and a 0/1 progress, the
+  empty list, the foreign-patient 404), and `sqlite-smoke.integration.test.ts` gained
+  the catalogue-write block (created → visible in the same catalogue read; duplicate
+  code → 409; blank name → 422) and the plans-read block (two items, one completed,
+  `percentComplete` 50, item labels joined through the treatment, foreign patient 404).
+
+### Part 2 — the booking dialog's hour was locked
+
+**The report.** "Creating a visit does not allow to choose the hour in the date picker
+and it requires date and hour." Clarified with the user: it is the **agenda** door
+into `AppointmentBookingDialog`, where the clicked slot pre-filled the field **read
+only** (`readOnly={timeIsFixed}`), and what they wanted is for the field to stay
+editable. There is no separate "create visit" form in the app — a visit starts from an
+appointment — so "creating a visit" here is booking one.
+
+**The change.** The slot still seeds the field; it no longer locks it. The click is a
+starting point rather than a verdict, and two concrete cases made the lock wrong: the
+**month view** can only ever name a _day_ (FullCalendar hands over that day at 00:00),
+and a mistyped lane is corrected in place rather than by closing the dialog and
+hunting for another empty one. The hint under the field now always names the clinic's
+zone — it matters most exactly when the hour is the person's to change.
+
+- `packages/app/…/appointment-booking-dialog.tsx` — `readOnly` and `timeIsFixed` gone;
+  header, prop and hint copy rewritten.
+- `packages/validation/src/appointments/index.ts` — the `localStartsAt` doc said
+  "read-only"; it now says seeded.
+- `docs/roadmap.md` — the M5 paragraph described the read-only field as current
+  behaviour.
+- Tests: the unit test that asserted `readonly` became **"starts from the clicked
+  slot, and still lets the hour be changed"** (the body carries 10:30 in Lima =
+  `15:30Z`, not the slot's `14:00Z`), and `e2e/web/booking.spec.ts` gained **"lets the
+  hour be changed from the slot the click seeded"**.
+
+**Both new tests were verified by reintroducing the defect** — restoring
+`readOnly={slotWallClock !== undefined}` fails the unit test and makes Playwright's
+`fill()` refuse the input in the e2e test; removing it again makes both pass. The
+historical entries in `STATE.md` ("Decisions from session 20", the session-20 bullet
+in the feature inventory) were left as they stand — they are records of what was
+decided then — and this session's decision is recorded below the session 34 ones.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run guard:boundaries OK (one pre-existing warning)
+pnpm run build            5/5 successful (web rebuilt before e2e)
+pnpm run test             12/12 tasks — domain 280, validation 131, app 292,
+                          api-client 15, database 6, desktop 3,
+                          API 79 passed / 252 skipped (PG suite needs a database)
+pnpm run test:e2e         109/109 passed (1 new booking spec)
+```
+
+**NOT done and deliberately.** No UI yet for adding a treatment or reading a patient's
+plans — Task 3's milestone is the API surface, and the app-side work (the
+`/treatments` catalogue page behind the sidebar's dangling link, and the profile's
+plans card) is next. `treatmentPlanItemId` on charges, and the odontogram-finding →
+plan-item recommendation, both stay deferred to the milestone that owns them. The
+PostgreSQL suites for the new endpoints skip here, exactly as every integration suite
+does on a machine with no database.
