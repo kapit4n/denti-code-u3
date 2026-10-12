@@ -127,6 +127,39 @@ test.describe('Booking an appointment', () => {
     });
   });
 
+  test('lets the hour be changed from the slot the click seeded', async ({ page }) => {
+    const api = await installApi(page, {
+      ...bookingFixtures(),
+      [CREATE_PATH]: { status: 201, body: bookedAppointment() },
+    });
+
+    await page.goto('/agenda');
+    await openBookingDialogAtTen(page);
+
+    // The click decides where the typing starts, not where it stops — and this browser
+    // runs on America/New_York while the clinic is in America/Lima, so the seeded
+    // value is the clinic's 10:00 (15:00Z), not a New York one.
+    const startsAtField = dialog(page).getByLabel('Date and time');
+    await expect(startsAtField).toHaveValue('2026-10-05T10:00');
+    await expect(startsAtField).not.toHaveAttribute('readonly');
+
+    // 14:45 in Lima — an hour the grid never offered, reached from inside the dialog.
+    await startsAtField.fill('2026-10-05T14:45');
+    await choosePatient(page);
+    await choose(page, 'booking-dentist', /Dra\. Rivera/);
+    await dialog(page).getByTestId('booking-submit').click();
+    await expect(page.getByTestId('appointment-booking-dialog')).toBeHidden();
+
+    // The chosen hour, converted with the clinic's zone: 14:45 in Lima is 19:45Z.
+    const write = api.recorded.find((request) => request.url.endsWith('/api/v1/appointments'));
+    expect(write?.body).toEqual({
+      patientId: ANA_ID,
+      dentistId: DENTIST_ID,
+      startsAt: '2026-10-05T19:45:00.000Z',
+      durationMinutes: 30,
+    });
+  });
+
   test('includes the chair and the notes when they are given', async ({ page }) => {
     const api = await installApi(page, {
       ...bookingFixtures(),

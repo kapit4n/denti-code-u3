@@ -130,8 +130,9 @@ export const zonedWallClockSchema = z.string().superRefine((value, ctx) => {
  *    clinic's zone. The instant is therefore *not a field at all*: there is nothing
  *    hidden from the user for this schema to validate on their behalf, and no way for
  *    a default and a typed value to disagree about what was asked for. The agenda
- *    opens this same dialog with the clicked slot already in the field, read-only, so
- *    the grid is still where the time is chosen.
+ *    opens this same dialog with the clicked slot already in the field — seeded, not
+ *    locked, so the grid is where the hour starts and the field is where it is
+ *    corrected.
  *  - **Blanks mean absent.** A dialog submits `''` for a chair nobody chose and a
  *    notes field nobody typed, and the API rejects `''` for the same `min`-style
  *    reason it rejects an empty name. Without this, booking without a chair would

@@ -2,12 +2,14 @@
  * The booking dialog: a slot, and who is coming to it.
  *
  * Two doors, one dialog. Opened from the **grid**, it arrives with a slot: the click
- * was the choice of when, and the field below shows it read-only, because a second
- * control for a decision the grid already made by direct manipulation is a second
- * opinion about it. To move an appointment later, drag it; to book a different hour,
- * close this and click that one. Opened from a **patient's profile** or the
- * **dashboard** there is no slot behind it and nothing else on the screen can answer
- * "when", so the same field is editable and the person types the time.
+ * was the choice of when, and the field below starts there so nobody retypes what the
+ * grid already answered. It starts there rather than stopping there — the field stays
+ * editable, because a receptionist who meant 10:30 and clicked 10:00 should fix it in
+ * place instead of closing the dialog and hunting for another empty lane, and in the
+ * month view a click can only ever name a *day*, leaving the hour to be stated here.
+ * Opened from a **patient's profile** or the **dashboard** there is no slot behind it
+ * and nothing else on the screen can answer "when", so the same field starts empty and
+ * the person types the time. Either way the value is a clinic wall clock.
  *
  * **The time is always the clinic's clock, whatever the machine says.** The field holds
  * a wall clock (`2026-10-06T09:00`) and the dialog turns it into the instant the API
@@ -118,11 +120,9 @@ export interface AppointmentBookingDialogProps {
   /**
    * The clicked slot, as an ISO instant, when the grid opened this dialog.
    *
-   * Optional, and its absence is what makes the time editable. Passing an instant is
-   * the only way to fix the hour; there is no `readOnly` flag, because a caller that
-   * wants the grid's answer and a caller that wants to type it are the same question
-   * with two answers, and a flag invites the caller to pass one that contradicts the
-   * other.
+   * Optional, and its absence is what leaves the field empty rather than pre-filled —
+   * the whole of what the prop decides. It seeds the field and does not lock it, so
+   * there is no `readOnly` flag and no caller can pass one that contradicts the other.
    */
   readonly startsAt?: string;
   readonly clinic: Clinic;
@@ -154,16 +154,15 @@ export function AppointmentBookingDialog({
   const chairs = useChairs({ onlyActive: true });
 
   /**
-   * The clicked slot as the field's value, and whether that value can be changed.
+   * The clicked slot as the field's starting value.
    *
-   * `undefined` means the grid did not open this dialog, so the person types the time.
-   * The conversion can also come back empty if the instant was not an instant, and that
-   * falls into the same branch: an editable field with an empty value is a form
-   * somebody can finish, where a locked field holding `Invalid DateTime` is not.
+   * `undefined` means the grid did not open this dialog — or the instant was not an
+   * instant, which lands in the same place: a field that starts empty is a form
+   * somebody can finish, where one holding `Invalid DateTime` is not. Either way the
+   * field is the person's; the slot is where the typing starts, not where it stops.
    */
   const slotWallClock =
     startsAt === undefined ? undefined : instantToZonedWallClock(startsAt, clinic.timeZone);
-  const timeIsFixed = slotWallClock !== undefined;
 
   /**
    * The chosen patient's name, held beside the id in the form.
@@ -296,11 +295,11 @@ export function AppointmentBookingDialog({
             <input
               id="booking-starts-at"
               type="datetime-local"
-              // Locked when the grid opened this dialog: the click was the answer, and
-              // an editable copy of it invites the question "does changing this move
-              // the appointment?" — it does not, and a field that lies about its own
-              // effect is worse than no field.
-              readOnly={timeIsFixed}
+              // Editable whether or not a slot seeded it. The click is a starting
+              // point, not a verdict: the month view names only a day, a mistyped lane
+              // is corrected here rather than by starting over, and a field that
+              // refuses the very hour it is asking for is a form that cannot be
+              // finished on its own terms.
               disabled={create.isPending}
               aria-describedby="booking-starts-at-hint"
               className="w-full rounded-md border bg-background p-2 text-sm"
@@ -308,10 +307,11 @@ export function AppointmentBookingDialog({
               {...form.register('localStartsAt')}
             />
             {/* Says whose clock, because a wall clock with no zone is ambiguous and
-                the person filling this in may be a thousand miles from the clinic. */}
+                the person filling this in may be a thousand miles from the clinic —
+                and the zone matters most when the hour is theirs to change. */}
             <p id="booking-starts-at-hint" className="text-xs text-muted-foreground">
-              {timeIsFixed
-                ? 'From the slot you clicked on the agenda.'
+              {slotWallClock !== undefined
+                ? `From the slot you clicked on the agenda, in the clinic's own time, ${clinic.timeZone}.`
                 : `The clinic's own time, ${clinic.timeZone}.`}
             </p>
             <FieldError error={form.formState.errors.localStartsAt} />

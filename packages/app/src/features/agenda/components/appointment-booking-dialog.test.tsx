@@ -103,10 +103,10 @@ function renderDialog({
       }),
     ),
   patients = [PATIENT],
-  // `undefined` is the agenda's case — a slot was clicked and the time is fixed. Pass
-  // `null` for the profile's and the dashboard's case, where nobody has chosen a time
-  // and the field is theirs to fill. The distinction is the whole difference between
-  // the two doors, so it is a parameter rather than a boolean.
+  // `STARTS_AT` is the agenda's case — a slot was clicked, so the field starts there
+  // and stays editable. Pass `null` for the profile's and the dashboard's case, where
+  // nobody has chosen a time and the field starts empty. The distinction is the whole
+  // difference between the two doors, so it is a parameter rather than a boolean.
   startsAt = STARTS_AT,
   patient,
   clinic = CLINIC,
@@ -328,15 +328,30 @@ describe('AppointmentBookingDialog', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('locks the time to the clicked slot, because the grid already answered it', () => {
-    renderDialog();
+  it('starts from the clicked slot, and still lets the hour be changed', async () => {
+    const { fetchImplementation } = renderDialog();
 
-    // Read-only rather than absent: the field is also where a daylight-saving refusal
-    // would appear, and where the person confirms what they are booking. Editable here
-    // would suggest that typing another hour moves the appointment, which it does not.
-    expect(screen.getByTestId('booking-starts-at')).toHaveValue('2026-10-05T09:00');
-    expect(screen.getByTestId('booking-starts-at')).toHaveAttribute('readonly');
+    // Pre-filled rather than locked: the click decides where the typing starts, not
+    // where it stops. The month view names only a day, and a mistyped lane is
+    // corrected here rather than by closing the dialog and starting over.
+    const field = screen.getByTestId('booking-starts-at');
+    expect(field).toHaveValue('2026-10-05T09:00');
+    expect(field).not.toHaveAttribute('readonly');
     expect(screen.getByText(/from the slot you clicked/i)).toBeInTheDocument();
+
+    await choosePatient(user);
+    await chooseFrom(user, 'booking-dentist', /Dra\. Rivera/);
+    // `fireEvent` rather than `user.type`: a `datetime-local` input is edited through
+    // the browser's own segment editor, which jsdom does not implement.
+    fireEvent.change(field, { target: { value: '2026-10-05T10:30' } });
+    await user.click(screen.getByTestId('booking-submit'));
+
+    // The hour the person chose, not the one the slot happened to hold.
+    await waitFor(() => expect(postedBodies(fetchImplementation)).toHaveLength(1));
+    expect(postedBodies(fetchImplementation)[0]).toMatchObject({
+      // 10:30 in Lima is 15:30Z — the slot said 14:00Z and was overridden.
+      startsAt: '2026-10-05T15:30:00.000Z',
+    });
   });
 
   it('opens with an empty, editable time when no slot was clicked', () => {

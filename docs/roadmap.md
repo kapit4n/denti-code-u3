@@ -142,11 +142,13 @@ is reverted. Conflicts are reported as the hour that is taken, in the clinic's t
 rather than the visitor's.
 
 Creating an appointment starts on the grid. **The grid is the time picker**: the click
-on an empty slot is the decision of when, and the dialog shows that time read-only
-rather than offering a second control for a decision already made. The other two doors
+on an empty slot is the decision of when, and the dialog opens with that time already
+in the field — seeded by the click and still the person's to change, because a month
+view can only ever name a day and a mistyped lane is corrected in place rather than by
+closing the dialog. The other two doors
 into the same dialog — the profile's "Book appointment" and the dashboard's "New
-Visit" — have no grid behind them, so there the field is the person's to fill, and
-what they fill is the **clinic's** wall clock converted with the zone on the clinic
+Visit" — have no grid behind them, so there the field starts empty and what they fill
+is the **clinic's** wall clock converted with the zone on the clinic
 record. Who, for how long and in which chair is asked in all three: patient by search
 (or already known, from the profile), clinician and chair from
 `GET /api/v1/dentists?onlyActive=true` and `GET /api/v1/chairs?onlyActive=true`, with
