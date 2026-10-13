@@ -61,3 +61,47 @@ export const createTreatmentSchema = z.object({
 });
 
 export type CreateTreatmentInput = z.infer<typeof createTreatmentSchema>;
+
+
+
+const toothNumberSchema = z.string().trim().regex(/^([1-4][1-8]|[5-8][1-5])$/, 'A tooth is an FDI number, like "36" or "75"');
+const toothSurfaceSchema = z.enum(['O','M','D','B','L','V']);
+const treatmentPlanStatusSchema = z.enum(['DRAFT','PRESENTED','ACCEPTED','IN_PROGRESS','COMPLETED','CANCELLED']);
+
+/** Schema for creating a treatment plan. */
+export const createTreatmentPlanSchema = z.object({
+  patientId: z.string().uuid('A patient id is required'),
+  dentistId: z.string().uuid('A dentist id is required').optional().nullable(),
+  title: z.string().trim().max(200, 'The title is too long').optional().nullable(),
+  notes: z.string().trim().max(2000, 'The notes are too long').optional().nullable(),
+  items: z
+    .array(
+      z.object({
+        treatmentId: z.string().uuid('A treatment id is required').optional().nullable(),
+        tooth: toothNumberSchema.optional().nullable(),
+        surfaces: z.array(toothSurfaceSchema).max(5).default([]),
+        quantity: z.number().int().min(1, 'Quantity must be at least 1').max(100, 'Quantity is too high').default(1),
+        estimatedPriceMinor: z
+          .number()
+          .int()
+          .nonnegative('Price cannot be negative')
+          .max(2_147_483_647, 'Price is too large')
+          .optional(),
+        notes: z.string().trim().max(500, 'Item notes are too long').optional().nullable(),
+      }),
+    )
+    .min(1, 'A treatment plan needs at least one item')
+    .max(50, 'A treatment plan is too long to save'),
+});
+
+export const updateTreatmentPlanSchema = createTreatmentPlanSchema.partial().extend({
+  status: treatmentPlanStatusSchema.optional(),
+});
+
+export const completeTreatmentPlanItemSchema = z.object({
+  isCompleted: z.boolean(),
+});
+
+export type CreateTreatmentPlanInput = z.infer<typeof createTreatmentPlanSchema>;
+export type UpdateTreatmentPlanInput = z.infer<typeof updateTreatmentPlanSchema>;
+export type CompleteTreatmentPlanItemInput = z.infer<typeof completeTreatmentPlanItemSchema>;
