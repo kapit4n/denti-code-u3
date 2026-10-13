@@ -105,3 +105,28 @@ export const completeTreatmentPlanItemSchema = z.object({
 export type CreateTreatmentPlanInput = z.infer<typeof createTreatmentPlanSchema>;
 export type UpdateTreatmentPlanInput = z.infer<typeof updateTreatmentPlanSchema>;
 export type CompleteTreatmentPlanItemInput = z.infer<typeof completeTreatmentPlanItemSchema>;
+
+export const treatmentPlanCreateSchema = z.object({
+  patientId: z.string().min(1),
+  dentistId: z.string().min(1).nullable().optional(),
+  title: z.string().min(1).nullable().optional(),
+  notes: z.string().min(1).nullable().optional(),
+  items: z
+    .array(
+      z.object({
+        treatmentId: z.string().min(1).nullable().optional(),
+        tooth: z.string().nullable().optional(),
+        surfaces: z.array(z.string()).optional(),
+        quantity: z.number().int().positive().optional(),
+        estimatedPriceMinor: z.number().int().nonnegative().optional(),
+        notes: z.string().nullable().optional(),
+      }),
+    )
+    .default([]),
+});
+
+export const treatmentPlanUpdateSchema = z.object({
+  status: treatmentPlanStatusSchema.nullable().optional(),
+  title: z.string().min(1).nullable().optional(),
+  notes: z.string().min(1).nullable().optional(),
+});
