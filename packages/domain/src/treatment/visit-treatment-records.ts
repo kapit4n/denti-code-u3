@@ -70,6 +70,7 @@ export interface TreatmentRecord {
   readonly tooth: string | null;
   readonly notes: string | null;
   readonly performedAt: IsoDateTime;
+  readonly treatmentPlanItemId: string | null;
 }
 
 /** What a read needs: the visit to scope through, and the records themselves. */
