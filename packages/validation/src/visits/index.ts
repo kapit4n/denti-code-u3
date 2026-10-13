@@ -121,6 +121,7 @@ export const recordVisitTreatmentSchema = z.object({
     .optional()
     .nullable(),
   notes: z.string().trim().max(2_000, 'Treatment notes are too long').optional().nullable(),
+  treatmentPlanItemId: uuidSchema.optional().nullable(),
 });
 
 export type RecordVisitTreatmentInput = z.infer<typeof recordVisitTreatmentSchema>;
