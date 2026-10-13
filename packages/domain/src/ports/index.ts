@@ -695,6 +695,8 @@ export interface TreatmentPlanRepository {
     clinicId: ClinicId,
     patientId: PatientId,
   ): Promise<readonly TreatmentPlanSummary[] | undefined>;
+  save?(treatmentPlan: TreatmentPlanSummary): Promise<void>;
+  add?(treatmentPlan: Omit<TreatmentPlanSummary, 'id'> & { id: TreatmentPlanId }): Promise<void>;
 }
 
 /**
