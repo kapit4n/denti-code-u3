@@ -37,6 +37,7 @@ export class SQLiteInvoiceRepository implements InvoiceRepository {
           status: invoice.status,
           currency: invoice.currency,
           discountMinor: invoice.discountMinor,
+          number: invoice.id.substring(0, 8).toUpperCase(),
           taxRatePercent: String(invoice.taxRatePercent),
           subtotalMinor: subtotal.amountMinor,
           totalMinor: total.amountMinor,

@@ -41,6 +41,7 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
     try {
       await this.db.insert(invoices).values({
         id: invoice.id,
+        number: invoice.id.substring(0, 8).toUpperCase(),
         clinicId: invoice.clinicId,
         patientId: invoice.patientId,
         status: invoice.status,
