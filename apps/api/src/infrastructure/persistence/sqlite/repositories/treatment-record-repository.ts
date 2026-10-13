@@ -35,6 +35,7 @@ const RECORD_COLUMNS = {
   tooth: visitTreatmentExecutions.tooth,
   notes: visitTreatmentExecutions.notes,
   performedAt: visitTreatmentExecutions.performedAt,
+  treatmentPlanItemId: visitTreatmentExecutions.treatmentPlanItemId,
 } as const;
 
 export class SQLiteTreatmentRecordRepository implements TreatmentRecordRepository {
@@ -83,6 +84,7 @@ function toEntity(row: {
   treatmentId: string;
   tooth: string | null;
   notes: string | null;
+  treatmentPlanItemId: string | null;
   performedAt: Date;
 }): TreatmentRecord {
   return {
@@ -91,6 +93,7 @@ function toEntity(row: {
     treatmentId: asTreatmentId(row.treatmentId),
     tooth: row.tooth,
     notes: row.notes,
+    treatmentPlanItemId: row.treatmentPlanItemId ?? null,
     performedAt: row.performedAt.toISOString() as IsoDateTime,
   };
 }

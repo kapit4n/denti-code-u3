@@ -94,6 +94,7 @@ export interface NewTreatmentRecord {
   readonly treatmentId: TreatmentId;
   readonly tooth?: string | null;
   readonly notes?: string | null;
+  readonly treatmentPlanItemId?: string | null;
 }
 
 /**
@@ -168,6 +169,7 @@ export async function recordVisitTreatment(
     tooth,
     notes,
     performedAt: dependencies.clock.now(),
+    treatmentPlanItemId: input.treatmentPlanItemId ?? null,
   };
 
   await dependencies.treatmentRecords.save(record);

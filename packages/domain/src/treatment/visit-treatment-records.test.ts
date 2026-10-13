@@ -85,6 +85,7 @@ function aRecord(overrides: Partial<TreatmentRecord> = {}): TreatmentRecord {
     tooth: '36',
     notes: null,
     performedAt: NOW,
+    treatmentPlanItemId: null,
     ...overrides,
   };
 }
@@ -171,6 +172,7 @@ describe('recordVisitTreatment', () => {
       treatmentId: TREATMENT,
       tooth: '36',
       notes: 'No complications.',
+      treatmentPlanItemId: null,
       performedAt: NOW,
     });
     expect(recorded.saved).toEqual([record]);
