@@ -334,8 +334,20 @@ validity rules, not a drawing hack.
     unmodelled — the `treatments` table has no category column, and
     `TreatmentCatalogueItem` reflects that honestly (nullable `code`,
     `description`, `duration`). Prices and the write side land with this milestone.
+  - **Write side + catalogue page (session 36):** `POST /api/v1/treatments`,
+    validated at the boundary by `createTreatmentSchema`, and the sidebar's
+    dangling Treatments link now draws a page: an add form whose price is the one
+    place a human types money (parsed to integer cents before the request is
+    made), and the catalogue drawn with prices as the clinic's money. Nothing is
+    listed from the form's own values — the new row is the refetch's to produce.
 - Treatment plans with ordered items
-- Progress tracking (pending treatments)
+  - **Read side (session 36):** `GET /api/v1/treatment-plans?patientId=` and
+    `GET /api/v1/treatment-plans/:id` on both engines, the progress computed by
+    `describeTreatmentPlanProgress` (over the stored table's `isCompleted`, which
+    is all a row can say) and drawn read-only on the patient's profile as its own
+    section. The write side and ordered items remain.
+- Progress tracking (pending treatments) — progress is drawn; a plan's own
+  write, and marking an item done, remain.
 - Link plan items → visits → charges
 
 ---

@@ -771,6 +771,88 @@ export const treatmentsCatalogue = {
 } as const;
 
 /**
+ * What `GET /api/v1/patients/:id/treatment-plans` answers with for Ana: one
+ * accepted plan, two items, one of them done.
+ *
+ * The shape is `TreatmentPlanSummary` as the read returns it — the progress
+ * block is the *server's* projection, so a spec asserting "50%" is asserting
+ * what the API computed rather than what this fixture typed. The two items
+ * differ on purpose: one carries a tooth and a joined name, the other's treatment
+ * has no code, so a card that fell back to the code when the name was null would
+ * have nothing to fall back to here.
+ *
+ * `progress` is deliberately *not* derived in this file: a fixture that computed
+ * it would agree with a client that computed it too, and the pair could be wrong
+ * together.
+ */
+export const anaTreatmentPlans = {
+  items: [
+    {
+      id: '11111111-bbbb-4a11-9ccc-000000000001',
+      dentistId: null,
+      status: 'ACCEPTED',
+      title: 'Restorative plan',
+      notes: null,
+      presentedAt: '2026-10-05T13:00:00.000Z',
+      acceptedAt: '2026-10-05T13:05:00.000Z',
+      updatedAt: '2026-10-05T13:05:00.000Z',
+      items: [
+        {
+          id: '11111111-bbbb-4a11-9ccc-000000000011',
+          treatmentId: TREATMENT_CATALOGUE_ID,
+          treatmentCode: 'COMPO-ANT',
+          treatmentName: 'Composite restoration — anterior',
+          tooth: '26',
+          surfaces: [],
+          quantity: 1,
+          estimatedPriceMinor: 30000,
+          isCompleted: true,
+          completedAt: '2026-10-05T13:30:00.000Z',
+          notes: null,
+        },
+        {
+          id: '11111111-bbbb-4a11-9ccc-000000000012',
+          treatmentId: PROPHYLAXIS_TREATMENT_ID,
+          treatmentCode: null,
+          treatmentName: 'Scaling and prophylaxis',
+          tooth: '36',
+          surfaces: [],
+          quantity: 1,
+          estimatedPriceMinor: 0,
+          isCompleted: false,
+          completedAt: null,
+          notes: null,
+        },
+      ],
+      progress: { total: 2, completed: 1, inProgress: 0, pending: 1, percentComplete: 50 },
+    },
+  ],
+} as const;
+
+/** A patient nothing has been offered yet — the section's empty sentence. */
+export const noTreatmentPlans = { items: [] } as const;
+
+/**
+ * The row a spec files in the catalogue, and the row the API answers the POST
+ * with.
+ *
+ * The `id` is the server's, which is what makes it useful: a spec asserting the
+ * listing shows *this* row is asserting that the refetch produced it, because
+ * nothing in the browser could have invented that uuid. The fields mirror what
+ * was typed, less the presentation — a price arrives as the integer of cents it
+ * was parsed to, never as the "450.00" that was typed into the box.
+ */
+export const createdTreatment = {
+  id: '11111111-aaaa-4999-8ccc-000000000003',
+  code: 'ENDO-APICO',
+  name: 'Apicoectomy',
+  description: 'Surgical removal of a tooth root tip.',
+  defaultDurationMinutes: 90,
+  defaultPriceMinor: 75000,
+  isActive: true,
+} as const;
+
+/**
  * What was already done on the open visit, as
  * `GET /api/v1/visits/:visitId/treatments` answers for it.
  *
@@ -1002,8 +1084,10 @@ export function visitAttachments(attachments: readonly Record<string, unknown>[]
 /**
  * The read that fires the moment a patient's profile opens is `GET
  * /api/v1/patients/:id/odontogram`, so it is part of the shared profile wiring
- * here like the profile itself is. The *section* reads below are not, for the
- * reason stated under them.
+ * here like the profile itself is — and the treatment plans card mounts with
+ * them, so `…/treatment-plans` rides along for the same reason. A profile that
+ * opened with a red "could not be loaded" beside the chart would be a fixture
+ * that had forgotten half the screen.
  *
  * The section reads — `/notes`, `/treatments`, `/prescriptions`, `/charges`,
  * `/payments`, `/attachments` — are *not* here, for the stronger reason that they
@@ -1020,6 +1104,7 @@ export function visitWorkspaceFixtures(overrides: MockedResponses = {}): MockedR
     [`/api/v1/visits/${COMPLETED_VISIT_ID}`]: { body: completedVisit },
     [`/api/v1/patients/${ANA_ID}`]: { body: anaProfile },
     [`/api/v1/patients/${ANA_ID}/odontogram`]: { body: anaOdontogram },
+    [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
     '/api/v1/clinic': { body: clinicSettings },
     '/api/v1/dentists': { body: everyDentistList },
     '/api/v1/chairs': { body: everyChairList },

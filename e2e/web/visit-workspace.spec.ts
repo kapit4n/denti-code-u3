@@ -223,13 +223,14 @@ test.describe('Visit workspace', () => {
     await expect(page.getByTestId('complete-visit')).toBeVisible();
     expect(visitReads(api.requests)).toBe(1);
 
-    await page.getByTestId('complete-visit').click();
-
-    // The server's row is installed the moment the POST is on the wire and before it
-    // can resolve: the refetch the closure triggers is a round trip away, and this is
-    // the answer it has to come back with. Anything earlier would rewrite a read the
-    // page has already made.
+    // The answer the refetch has to come back with, installed *before* the write
+    // is made. The visit has already been read and asserted above, so nothing on
+    // screen changes here — but installing after the click leaves the spec racing
+    // the POST's response, and a slow swap means the refetch reads the answer the
+    // page has already drawn.
     await installApi(page, { [`/api/v1/visits/${VISIT_ID}`]: { body: CLOSED_VISIT } });
+
+    await page.getByTestId('complete-visit').click();
 
     await expect(page.getByTestId('visit-status')).toHaveText('Completed');
     await expect(page.getByTestId('reopen-visit')).toBeVisible();
@@ -346,16 +347,17 @@ test.describe('Visit workspace', () => {
     await expect(page.getByTestId('clinical-note').first()).not.toContainText('13:00');
 
     await page.getByTestId('note-body').fill(filedNote.body);
-    await page.getByTestId('add-note').click();
 
-    // The server's answer to the POST is installed before the POST can resolve, so
-    // the refetch the mutation triggers reads the note list as it now stands. The
-    // row that appears carries the server's own `id` — which is the point: nothing
-    // in the browser could have produced it, so nothing but the refetch could have
-    // put it on screen.
+    // Installed before the write: the section's own read has already happened and
+    // been asserted, so nothing on screen changes — and the refetch the mutation
+    // triggers is guaranteed to meet this answer instead of racing a swap that
+    // might land after it. The row that appears carries the server's own `id`,
+    // which nothing in the browser could have produced.
     await installApi(page, {
       [`/api/v1/visits/${VISIT_ID}/notes`]: { body: { notes: [visitNote, filedNote] } },
     });
+
+    await page.getByTestId('add-note').click();
 
     const filed = page
       .getByTestId('clinical-note')
@@ -448,18 +450,17 @@ test.describe('Visit workspace', () => {
     await page.getByRole('option', { name: /Scaling and prophylaxis/ }).click();
     await page.getByTestId('treatment-tooth').fill('26');
     await page.getByTestId('treatment-notes').fill('Full-mouth cleaning.');
-    await page.getByTestId('record-treatment').click();
 
-    // The server's answer to the POST is installed before the POST can resolve, so
-    // the refetch the mutation triggers reads the records as they now stand. The row
-    // that appears carries the server's own `id` — which is the point: nothing in the
-    // browser could have produced it, so nothing but the refetch could have put it on
-    // screen.
+    // Installed before the write, for the reason the notes section gives: the
+    // section's own read is done and asserted, and a swap made after the click
+    // races the POST's response.
     await installApi(page, {
       [`/api/v1/visits/${VISIT_ID}/treatments`]: {
         body: visitTreatments([existingVisitTreatment, recordedTreatment]),
       },
     });
+
+    await page.getByTestId('record-treatment').click();
 
     const filed = page.getByTestId('treatment-record').filter({ hasText: 'Full-mouth cleaning.' });
     await expect(filed).toContainText('Scaling and prophylaxis');
@@ -565,18 +566,17 @@ test.describe('Visit workspace', () => {
     await page.getByTestId('prescription-frequency').fill('Every 12 hours');
     await page.getByTestId('prescription-duration').fill('7');
     await page.getByTestId('prescription-instructions').fill('Complete the whole course.');
-    await page.getByTestId('write-prescription').click();
 
-    // The server's answer to the POST is installed before the POST can resolve, so
-    // the refetch the mutation triggers reads the prescriptions as they now stand. The
-    // row that appears carries the server's own `id` and `issuedAt` — which is the
-    // point: nothing in the browser could have produced them, so nothing but the
-    // refetch could have put it on screen.
+    // Installed before the write, for the reason the notes section gives: the
+    // section's own read is done and asserted, and a swap made after the click
+    // races the POST's response.
     await installApi(page, {
       [`/api/v1/visits/${VISIT_ID}/prescriptions`]: {
         body: visitPrescriptions([visitPrescription, filedPrescription]),
       },
     });
+
+    await page.getByTestId('write-prescription').click();
 
     const filed = page.getByTestId('prescription').filter({ hasText: 'Amoxicillin' });
     await expect(filed).toContainText('Amoxicillin · 500 mg');
@@ -992,18 +992,17 @@ test.describe('Visit workspace', () => {
     await page.getByTestId('attachment-name').fill(`  ${attachedFile.fileName}  `);
     await page.getByTestId('attachment-content-type').fill(attachedFile.contentType ?? '');
     await page.getByTestId('attachment-size').fill(String(attachedFile.sizeBytes ?? ''));
-    await page.getByTestId('attach-file').click();
 
-    // The server's answer to the POST is installed before the POST can resolve, so
-    // the refetch the mutation triggers reads the file list as it now stands. The
-    // row that appears carries the server's own `id` — which is the point: nothing
-    // in the browser could have produced it, so nothing but the refetch could have
-    // put it on screen.
+    // Installed before the write, for the reason the notes section gives: the
+    // section's own read is done and asserted, and a swap made after the click
+    // races the POST's response.
     await installApi(page, {
       [`/api/v1/visits/${VISIT_ID}/attachments`]: {
         body: visitAttachments([visitAttachment, attachedFile]),
       },
     });
+
+    await page.getByTestId('attach-file').click();
 
     const filed = page.getByTestId('attachment').filter({ hasText: 'referral-orthodontics.pdf' });
     await expect(filed).toBeVisible();

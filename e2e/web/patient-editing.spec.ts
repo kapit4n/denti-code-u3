@@ -21,7 +21,13 @@ import { expect, test } from './fixtures/frozen-clock.js';
 
 import type { Page } from '@playwright/test';
 
-import { ANA_ID, anaOdontogram, anaProfile, clinicFixture } from './fixtures/api-responses.js';
+import {
+  ANA_ID,
+  anaOdontogram,
+  anaProfile,
+  anaTreatmentPlans,
+  clinicFixture,
+} from './fixtures/api-responses.js';
 import { watchForConsoleErrors } from './fixtures/console-errors.js';
 import { installApi } from './fixtures/mock-api.js';
 
@@ -40,6 +46,7 @@ async function installPatientApi(page: Page) {
     // The profile's chart is one of its own reads: it fires when the profile
     // opens, so a spec that mocked only the profile would leave it a 501.
     [`${PROFILE_PATH}/odontogram`]: { body: anaOdontogram },
+    [`${PROFILE_PATH}/treatment-plans`]: { body: anaTreatmentPlans },
     [LIST_PATH]: { body: { data: [], meta: { page: 1, pageSize: 25, total: 0 } } },
     // The edit endpoint answers 204 with nothing in it.
     [EDIT_PATH]: { status: 204, body: null },

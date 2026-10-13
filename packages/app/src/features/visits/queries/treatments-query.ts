@@ -1,14 +1,11 @@
 /**
- * The two reads the treatments section draws: what this clinic offers, and what
- * was recorded on one visit.
+ * What was actually done in one visit.
  *
- * They are separate hooks with separate keys because they are separate questions
- * with separate lives: the catalogue changes when the clinic edits its offer (a
- * rare, admin event worth a minute of staleness, the same tolerance the bookable
- * lists have), and one visit's records change every time this screen writes one.
- * A record joins its treatment by id against the catalogue in the section, not in
- * the query — the names are presentation, and the two read hooks stay about their
- * own collections.
+ * The catalogue this section's picker draws from no longer lives here: it moved
+ * to `features/treatments/queries/catalogue-query.ts` when `/treatments` arrived,
+ * because a page that administers a collection should own it and the visit is
+ * only one reader of it. Both draw the same `['treatments']` key, so the picker
+ * and the catalogue page still show one clinic one offer.
  *
  * **The records hook is only ever called from the treatments section, which is
  * mounted only while that section is open** — the same "fetch what you draw"
@@ -20,36 +17,12 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import type { TreatmentCatalogueItem, TreatmentRecord } from '@denti-code-u3/domain';
+import type { TreatmentRecord } from '@denti-code-u3/domain';
 
 import { useApiClient } from '../../../query/api-client-provider.js';
 
-interface CollectResponse<T> {
-  readonly items: readonly T[];
-}
-
 export interface VisitTreatmentsResponse {
   readonly treatments: readonly TreatmentRecord[];
-}
-
-/**
- * The catalogue of procedures this clinic offers, for the picker in the form.
- *
- * Scoped to the clinic by the API header, so the key needs no clinic id: two
- * clinics cannot be on screen at once, and the provider's base URL already
- * answers for the one that is.
- */
-export function useTreatments() {
-  const client = useApiClient();
-
-  return useQuery({
-    queryKey: ['treatments'],
-    queryFn: () => client.get<CollectResponse<TreatmentCatalogueItem>>('/treatments'),
-    // The catalogue does not change while the user works, and a picker that
-    // refetches on every open would flicker for no reason. The API still has the
-    // final word at write time.
-    staleTime: 60_000,
-  });
 }
 
 /**

@@ -14,7 +14,12 @@
 
 import { useQuery } from '@tanstack/react-query';
 
-import type { PatientListEntry, PatientOdontogram, PatientProfile } from '@denti-code-u3/domain';
+import type {
+  PatientListEntry,
+  PatientOdontogram,
+  PatientProfile,
+  TreatmentPlanSummary,
+} from '@denti-code-u3/domain';
 
 import { useApiClient } from '../../../query/api-client-provider.js';
 
@@ -69,6 +74,29 @@ export function usePatientOdontogram(patientId: string) {
   return useQuery({
     queryKey: ['patients', 'odontogram', patientId],
     queryFn: () => client.get<PatientOdontogram>(`/patients/${patientId}/odontogram`),
+    enabled: patientId.length > 0,
+  });
+}
+
+export interface PatientTreatmentPlansResponse {
+  readonly items: readonly TreatmentPlanSummary[];
+}
+
+/**
+ * Everything this patient has been offered, newest first.
+ *
+ * Scoped through the patient, so a patient this clinic does not hold answers 404
+ * rather than `[]` — "not here" and "nothing planned" are different sentences and
+ * the section would say the wrong one. The `progress` on each plan is the
+ * server's projection of the rows, not a count this screen does for itself.
+ */
+export function usePatientTreatmentPlans(patientId: string) {
+  const client = useApiClient();
+
+  return useQuery({
+    queryKey: ['patients', 'treatment-plans', patientId],
+    queryFn: () =>
+      client.get<PatientTreatmentPlansResponse>(`/patients/${patientId}/treatment-plans`),
     enabled: patientId.length > 0,
   });
 }

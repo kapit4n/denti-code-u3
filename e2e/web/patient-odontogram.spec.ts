@@ -20,6 +20,7 @@ import {
   ANA_ID,
   anaOdontogram,
   anaProfile,
+  anaTreatmentPlans,
   clinicFixture,
   patientOdontogram,
   recordedOdontogramEntry,
@@ -63,6 +64,7 @@ test.describe('Odontogram chart', () => {
       ...clinicFixture(),
       [PROFILE_PATH]: { body: anaProfile },
       [CHART_PATH]: { body: anaOdontogram },
+      [`${PROFILE_PATH}/treatment-plans`]: { body: anaTreatmentPlans },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -102,6 +104,7 @@ test.describe('Odontogram chart', () => {
       ...clinicFixture(),
       [PROFILE_PATH]: { body: anaProfile },
       [CHART_PATH]: { body: anaOdontogram },
+      [`${PROFILE_PATH}/treatment-plans`]: { body: anaTreatmentPlans },
       [`POST ${CHART_PATH}/entries`]: { status: 201, body: recordedOdontogramEntry },
     });
 
@@ -113,18 +116,19 @@ test.describe('Odontogram chart', () => {
     await expect(page.getByTestId('record-odontogram-entry')).toHaveText('Chart tooth 36');
 
     await page.getByTestId('odontogram-condition').selectOption('CROWN');
-    await page.getByTestId('record-odontogram-entry').click();
 
-    // The server's answer to the POST is installed before the POST can resolve, so
-    // the refetch the mutation triggers reads the chart as it now stands. The row
-    // that appears carries the server's own `id` and hour — which is the point:
-    // nothing in the browser could have produced them, so nothing but the refetch
-    // could have put them on screen.
+    // Installed before the write: the chart has already been read and asserted, so
+    // nothing on screen changes — and the refetch the mutation triggers is
+    // guaranteed to meet this answer instead of racing a swap that might land
+    // after it. The row that appears carries the server's own `id` and hour, which
+    // nothing in the browser could have produced.
     await installApi(page, {
       [CHART_PATH]: {
         body: patientOdontogram([{ ...anaOdontogram.entries[0] }, recordedOdontogramEntry]),
       },
     });
+
+    await page.getByTestId('record-odontogram-entry').click();
 
     await expect(page.getByTestId('odontogram-tooth-36')).toHaveAttribute(
       'data-condition',
@@ -159,6 +163,7 @@ test.describe('Odontogram chart', () => {
       ...clinicFixture(),
       [PROFILE_PATH]: { body: anaProfile },
       [CHART_PATH]: { body: anaOdontogram },
+      [`${PROFILE_PATH}/treatment-plans`]: { body: anaTreatmentPlans },
       [`POST ${CHART_PATH}/entries`]: {
         status: 422,
         body: {

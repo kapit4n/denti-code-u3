@@ -74,6 +74,8 @@ import { formatClinicDayTime, READING_THE_CLINIC_CLOCK } from '../../clinic/form
 import { useClinicSettings } from '../../clinic/queries/clinic-settings-query.js';
 import { usePatient } from '../../patients/hooks/use-patients.js';
 import { useChairs, useDentists } from '../../agenda/queries/bookable-resources-query.js';
+// The catalogue the picker draws from lives with the feature that administers it.
+import { useTreatments } from '../../treatments/queries/catalogue-query.js';
 import { chargeLineTotal, chargesTotal, parseMajorUnitsToMinor } from '../charge-presentation.js';
 import { describeChargeFailure } from '../describe-charge-failure.js';
 import { describeAttachmentFailure } from '../describe-attachment-failure.js';
@@ -100,7 +102,7 @@ import { useVisitCharges } from '../queries/charges-query.js';
 import { useVisitAttachments } from '../queries/visit-attachments-query.js';
 import { useVisitPayments } from '../queries/payments-query.js';
 import { useVisitPrescriptions } from '../queries/prescriptions-query.js';
-import { useTreatments, useVisitTreatments } from '../queries/treatments-query.js';
+import { useVisitTreatments } from '../queries/treatments-query.js';
 import { useVisitNotes } from '../queries/visit-notes-query.js';
 import { useVisit } from '../queries/visit-query.js';
 import {

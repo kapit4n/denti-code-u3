@@ -20,9 +20,11 @@ import {
   PATIENT_LIST_RESPONSE,
   anaOdontogram,
   anaProfile,
+  anaTreatmentPlans,
   clinicFixture,
   luisOdontogram,
   luisProfile,
+  noTreatmentPlans,
   patientSummaries,
 } from './fixtures/api-responses.js';
 import { watchForConsoleErrors } from './fixtures/console-errors.js';
@@ -112,6 +114,7 @@ test.describe('Patient profile', () => {
       ...clinicFixture(),
       [`${LIST_PATH}/${ANA_ID}`]: { body: anaProfile },
       [`${LIST_PATH}/${ANA_ID}/odontogram`]: { body: anaOdontogram },
+      [`${LIST_PATH}/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
       [LIST_PATH]: { body: PATIENT_LIST_RESPONSE },
     });
 
@@ -125,7 +128,10 @@ test.describe('Patient profile', () => {
     await expect(page.getByText('Penicillin')).toBeVisible();
     await expect(page.getByText('65.00 USD')).toBeVisible();
     await expect(page.getByText('Sensitivity in the upper right quadrant')).toBeVisible();
-    await expect(page.getByText(/Restorative plan/)).toBeVisible();
+    // Scoped to the outstanding-treatment row rather than to any "Restorative
+    // plan" on the page: the plans card now draws the plan's own title too, and
+    // a bare /Restorative plan/ would match both.
+    await expect(page.getByText('Restorative plan · tooth 26')).toBeVisible();
     await expect(page.getByText('ana.garcia@example.test')).toBeVisible();
 
     expect(errors).toEqual([]);
@@ -137,6 +143,7 @@ test.describe('Patient profile', () => {
       ...clinicFixture(),
       [`${LIST_PATH}/${LUIS_ID}`]: { body: luisProfile },
       [`${LIST_PATH}/${LUIS_ID}/odontogram`]: { body: luisOdontogram },
+      [`${LIST_PATH}/${LUIS_ID}/treatment-plans`]: { body: noTreatmentPlans },
     });
 
     await page.goto(`/patients/${LUIS_ID}`);
@@ -155,6 +162,7 @@ test.describe('Patient profile', () => {
       ...clinicFixture(),
       [`${LIST_PATH}/${LUIS_ID}`]: { body: luisProfile },
       [`${LIST_PATH}/${LUIS_ID}/odontogram`]: { body: luisOdontogram },
+      [`${LIST_PATH}/${LUIS_ID}/treatment-plans`]: { body: noTreatmentPlans },
     });
 
     await page.goto(`/patients/${LUIS_ID}`);
@@ -188,6 +196,7 @@ test.describe('Global patient search', () => {
       ...clinicFixture(),
       [`${LIST_PATH}/${ANA_ID}`]: { body: anaProfile },
       [`${LIST_PATH}/${ANA_ID}/odontogram`]: { body: anaOdontogram },
+      [`${LIST_PATH}/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
     });
 
     await page.goto('/');

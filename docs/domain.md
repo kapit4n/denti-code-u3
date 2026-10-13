@@ -346,7 +346,7 @@ Rules:
 | FDI tooth notation + dentition validation           | `domain/odontogram`   | `toothNumberSchema`, tooth catalogs                 |
 | Odontogram condition set                            | `domain/odontogram`   | `ODONTOGRAM_CONDITIONS`                             |
 | Odontogram entry validity (denture, surfaces)       | `domain/odontogram`   | `assertValidOdontogramEntry`                        |
-| Treatment plan progress                             | `domain/treatment`    | `calculateTreatmentPlanProgress`                    |
+| Treatment plan progress                             | `domain/treatment`    | `describeTreatmentPlanProgress`                     |
 | Invoice totals, balances, money as integers         | `domain/billing`      | `calculateInvoiceTotals`, `calculatePatientBalance` |
 | Roles and permissions                               | `domain/organization` | `ROLE_PERMISSIONS`, `hasPermission`                 |
 | Clinic timezone interpretation of a local date/time | `domain/organization` | `clinicDayBounds`                                   |

@@ -2509,3 +2509,37 @@ plans card) is next. `treatmentPlanItemId` on charges, and the odontogram-findin
 plan-item recommendation, both stay deferred to the milestone that owns them. The
 PostgreSQL suites for the new endpoints skip here, exactly as every integration suite
 does on a machine with no database.
+
+## Session 36 — Task 3 App UI (treatments catalogue page + patient treatment-plans read-only section)
+
+**What changed**
+
+- **Treatments feature (new):** `packages/app/src/features/treatments/queries/catalogue-query.ts` — `useTreatments` (moved here from visits; same `['treatments']` key, `staleTime: 60_000`). `mutations/use-add-treatment.ts` — `POST /api/v1/treatments`, non-optimistic, invalidates `['treatments']`, trims and normalises blank code/description to `null`. `describe-catalogue-failure.ts` — maps API errors to user sentences (distinct from visits' failure helper). `components/treatment-catalogue.tsx` — page: header + add form (code/name/description/duration/price) validated by `createTreatmentSchema`; price parsed via `parseMajorUnitsToMinor` (from `features/visits/charge-presentation.ts`), unparseable price yields field error "Enter a price like 450.00". Catalogue lists items with `formatMinorUnits` prices. `components/treatment-catalogue.test.tsx` (5 tests): draws rows with money, empty state, boundary refusal without POST, files only after gated refetch (POST body spelled out as integer cents, description null), refusal keeps draft.
+- **Route:** `packages/app/src/routes/treatments.tsx` — thin `createFileRoute('/treatments')`.
+- **Visits feature (refactor):** `features/visits/queries/treatments-query.ts` — only `useVisitTreatments`. `features/visits/components/visit-workspace.tsx` — import updated to `useTreatments` from `../../treatments/queries/catalogue-query.js`.
+- **Patients feature (plans read):** `features/patients/hooks/use-patients.ts` — `usePatientTreatmentPlans(patientId)` (key `['patients','treatment-plans',patientId]`), types `PatientTreatmentPlansResponse`, `TreatmentPlanSummary`. `features/patients/components/patient-treatment-plans-section.tsx` — read-only card (`data-testid="patient-treatment-plans"`), renders server `progress`, status, `formatClinicDay` for presented/accepted (clinic time), `formatMinorUnits` prices. `patient-treatment-plans-section.test.tsx` (5 tests): plan + progress + items, empty list says so, failed read says so, clinic day via `formatClinicDay`. `packages/app/src/routes/patients_.$patientId.tsx` — mounts the section before the odontogram.
+- **Route tree:** `packages/app/src/routeTree.gen.ts` regenerated (includes `/treatments`).
+- **E2e:** `e2e/web/treatments.spec.ts` (4 tests) — catalogue renders prices as money, files treatment and lists only after refetch, boundary refusal without POST, duplicate code mapped to sentence. `e2e/web/patient-treatment-plans.spec.ts` (3 tests) — draws plan + progress + items, empty says nothing offered, failed read says failed. `e2e/web/fixtures/api-responses.ts` — added `anaTreatmentPlans`, `noTreatmentPlans`, `createdTreatment`; extended `visitWorkspaceFixtures`. Added `treatment-plans` fixture registrations to: `patients.spec.ts`, `patient-odontogram.spec.ts`, `patient-editing.spec.ts`, `booking-without-a-slot.spec.ts` (and Luis gets `noTreatmentPlans`). `patients.spec.ts` assertion scoped to `'Restorative plan · tooth 26'` to avoid ambiguity.
+- **E2e harness fix (pre-existing flake):** `e2e/web/visit-workspace.spec.ts` and `e2e/web/patient-odontogram.spec.ts` — six write-path specs now call `installApi` **before** the click that sends the POST (after the section's own read is awaited), so the swap no longer races the response. Comments updated to explain the timing.
+- **Minor fix:** `e2e/web/treatments.spec.ts` — removed unused `api` variable.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run guard:boundaries OK (one pre-existing warning)
+pnpm run build            5/5 successful
+pnpm run test             12/12 tasks — domain 280, validation 131, app 302, API 79 passed / 252 skipped
+pnpm run test:e2e         116/116 passed — 7 new specs (4 catalogue, 3 plans); run 3× in a row
+```
+
+Defect-injection verified: treating-catalogue tests fail when rendering raw cents, when optimistically listing the row before refetch, or when clearing the draft on refusal; patient-treatment-plans tests fail when the section is removed. The pre-existing flake was reproduced at HEAD before this session's work (stashed + rebuild) and eliminated by the swap-before-click fix.
+
+**Notes**
+
+- `packages/api-client/src/http.ts` remains the single `ApiClient` class (no namespaced sub-APIs). Feature hooks call `client.post/get` directly.
+- `parseMajorUnitsToMinor` lives in `features/visits/charge-presentation.ts` (cross-feature import accepted). `useTreatments` moved to the treatments feature with the same cache key.
+- Money: `formatMinorUnits` produces "300.00"; `parseMajorUnitsToMinor('750.00')` returns 75000; Playwright/RTL expect the string/number form as written in the tests.
+- No PostgreSQL integration tests run here (no Docker/psql). SQLite smoke covers catalogue write + plans read.

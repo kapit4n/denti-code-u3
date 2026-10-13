@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 35 (treatments catalogue write + plan read, Task 3, and the booking hour that was locked)
+> Last updated: session 36 (the App UI for Task 3 — catalogue page, plans section, and the racy e2e swaps)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
@@ -64,6 +64,31 @@ there is still no `readOnly` flag on the prop, and the clinic's zone stays named
 the box exactly because that is the moment the hour is the person's to change. Both
 the replacement unit test and a new browser spec fail when the lock is put back —
 reintroduced as a defect and checked, per the house rule.
+
+Session 36 finished Task 3's **App UI** — the half session 35 left open, and the
+moment Milestone 8's two read-and-write surfaces stopped being API-shaped only.
+`/treatments` now draws the catalogue the sidebar's link had been dangling at: an add
+form whose one hard field is the name, whose price is the one place a human types
+money (`parseMajorUnitsToMinor` turns `450.00` into the integer cents every price in
+this system is stored as, and an unparseable price is refused in the box rather than
+sent), and the catalogue itself with each price as money and not as cents. Nothing is
+listed from the form's own values — the new row is the refetch's to produce, the same
+line every visit workspace section holds. `useTreatments` moved from the visits
+feature to `features/treatments/queries/catalogue-query.ts`, keeping the same
+`['treatments']` key so the workspace's catalogue is still one shared cache entry.
+On the profile, `PatientTreatmentPlansSection` sits between the care cards and the
+odontogram and draws what the clinic has proposed — the plan, the server's own
+`progress`, each item's status, and the presentation and acceptance days in the
+clinic's clock. It is read-only by design; a plan's write is Milestone 8's remaining
+half. Both surfaces carry browser specs, each verified by reintroducing the defect.
+
+The session also found a **pre-existing flake** in the e2e layer, reproduced at HEAD
+before any of this work was in the tree: six specs installed the POST's answer by
+calling `installApi` *after* clicking the button that sends the POST, which races the
+response — a slow swap lets the refetch read the answer the page had already drawn,
+and one test fails. The swap now happens before the write in all six places (the
+section's own read has already been awaited, so nothing on screen changes), and the
+suite ran 116/116 three times in a row.
 
 Session 33 delivered **files** — the seventh workspace section and the seventh "per
 visit" book (Task 1 of the session's plan), the moment Milestone 6's "Files/attachments
@@ -228,29 +253,47 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 35 — Task 3, and the booking hour that was locked)
+## Verification log (last run, session 36 — the App UI for Task 3)
 
 | Command                     | Result                                                                              |
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                                                    |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)                    |
 | `pnpm run format:check`     | clean                                                                               |
-| `pnpm run test`             | 12/12 tasks pass — domain 280, validation 131, app 292, API 79 passed / 252 skipped |
+| `pnpm run test`             | 12/12 tasks pass — domain 280, validation 131, app 302, API 79 passed / 252 skipped |
 | `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                              |
 | `pnpm run build`            | 5/5 tasks pass (web rebuilt before e2e)                                             |
 | `pnpm run guard:boundaries` | OK                                                                                  |
-| `pnpm run test:e2e`         | 109/109 pass — 1 new booking spec                                                   |
+| `pnpm run test:e2e`         | 116/116 pass — 7 new specs (4 catalogue, 3 plans), run three times in a row         |
 
 **The PostgreSQL integration suite could not be executed this session: Docker and every
 PostgreSQL client are absent from this environment** (no `docker`, no `podman`, no
-`psql`, no `/var/run/docker.sock`). The three treatment-plan tests added to
-`patient-profile-scope.integration.test.ts` (the seeded plan with its item and a 0/1
-progress, an empty list for a patient with no plans, a foreign patient's 404) are
-written, typecheck and will run wherever `TEST_DATABASE_URL` exists; here they report
-as part of the skipped suite. What covers the same paths without a database is the
-always-on SQLite smoke suite, which gained the catalogue-write block (created row
-visible in the same catalogue read; duplicate `(clinic_id, code)` → 409; blank name → 422) and the plans-read block (two items, one completed, `percentComplete` 50, item
-labels joined through the treatment, foreign patient 404), and did run.
+`psql`, no `/var/run/docker.sock`). Nothing this session added a new endpoint, so no
+new integration tests were written; session 35's three `patient-profile-scope` tests
+and two SQLite-smoke blocks stand as the API side's cover, and the always-on SQLite
+smoke suite still runs here.
+
+**What session 36's work is verified by.** 5 `treatment-catalogue` component tests
+(the catalogue draws rows with prices as money; an empty catalogue says so; a
+boundary-invalid form posts nothing; a file lists the row only after the gated
+refetch, the POST's whole body spelled out as the integer cents it was parsed to; a
+refusal keeps every box the front desk filled) and 5 `patient-treatment-plans-section`
+tests (the plan, the server's own progress and its items; a patient with no plans
+says so rather than failing quietly; a failed read says so instead of drawing an empty
+list; the presentation and acceptance days are the clinic's clock, told through
+`formatClinicDay` rather than a hard-coded date), plus the 7 browser specs: the
+catalogue drawn with its prices, a treatment filed and listed only after the
+refetch, a nameless treatment refused at the boundary without a request, a refusal
+kept in the API's own words with the whole draft intact, a duplicate code mapped to
+a sentence about its code, and the two plan sections on the profile. Every one of the
+six write-path assertions was checked by reintroducing the defect (raw cents on the
+row, a row listed from the form's own values, the draft cleared on a refusal, the
+section not mounted) and reverting it.
+
+**What the e2e flake fix is verified by.** The suite was run three times in a row at
+116/116 after the swaps moved; the failure it removes was reproduced at HEAD before
+any of this session's work was in the tree (`git stash -u`, rebuild, run), so it is
+not this session's doing.
 
 **What session 35's work is verified by.** 9 `addTreatment` tests (the name is the one
 non-negotiable and is trimmed; a blank code or description is stored `null`, a missing
@@ -425,6 +468,36 @@ router — a `<Link>` with no router context renders nothing — and the mock is
 the new suite failed for a reason that had nothing to do with the workspace.
 
 ## Decisions made this session (not yet in ADRs)
+
+### Decisions from session 36 (the App UI for Task 3)
+
+- **The price is typed once, as money, and crosses the wire as cents.** The add form
+  takes `450.00` — the only place in the system a human types a price — and
+  `parseMajorUnitsToMinor` (the same parser the charge line uses, imported from
+  `features/visits/charge-presentation.ts`) turns it into the integer minor units
+  every stored money value is. An unparseable price is refused in the box with
+  `Enter a price like 450.00` and never sent; the browser spec asserts the POST's
+  whole body, cents included, so a raw `Number(price)` cannot slip through.
+- **The catalogue page is the visits feature's catalogue, not a second one.**
+  `useTreatments` moved from `features/visits/queries/treatments-query.ts` to
+  `features/treatments/queries/catalogue-query.ts`, keeping the identical
+  `['treatments']` key and `staleTime` — the workspace's Treatments section and the
+  new page share one cache entry and one request.
+- **The plans card is read-only and deliberately not a profile card.**
+  `PatientTreatmentPlansSection` sits between the care cards and the odontogram
+  rather than inside one of them: a plan is a series of decisions, not a fact about
+  the person. It draws the server's own `progress` (never recomputed in the browser,
+  so two engines cannot disagree) and the presentation/acceptance days through
+  `formatClinicDay`, so the test never hard-codes a date the machine's locale would
+  spell differently.
+- **The e2e "install the POST's answer" pattern installs it before the click.**
+  Six specs (complete visit, note, treatment, prescription, file, odontogram entry)
+  used to call `installApi` *after* the click that sends the POST — a race, since
+  the refetch can beat a slow swap and read the answer the page had already drawn.
+  Each now swaps before the write, after the section's own read has been awaited, so
+  the property the tests assert (the row is the refetch's to produce, carrying the
+  server's own `id`) is unchanged and no longer timing-dependent. The failure was
+  reproduced at HEAD with this session's work stashed, so it was not ours.
 
 ### Decisions from session 35 (Task 3, and the booking hour that was locked)
 
@@ -1370,8 +1443,8 @@ editing. Both sides now go through `PatientRepository`. Remaining:
    Milestone 7's odontogram landed in session 34. What remains of this spread is
    inventory and reports.
 
-**Milestone 8 — TREATMENTS, CATALOGUE AND PLANS.** Backend and wire done in
-session 35; **the App UI is the open half.**
+**Milestone 8 — TREATMENTS, CATALOGUE AND PLANS.** Session 36 closed the App UI
+half; what remains is the write side of a plan itself.
 
 1. [x] **Catalogue write.** `addTreatment` over `TreatmentRepository.add`, both
        engines, `POST /api/v1/treatments`, `createTreatmentSchema`. No clinic id and
@@ -1382,7 +1455,7 @@ session 35; **the App UI is the open half.**
  /api/v1/patients/:patientId/treatment-plans`, scoped through the patient
        (a foreign patient is a 404), with `progress` projected client-side by the
        pure `describeTreatmentPlanProgress` rather than stored.
-3. [ ] **App UI.** A `/treatments` catalogue page (the sidebar's dangling link)
+3. [x] **App UI.** A `/treatments` catalogue page (the sidebar's dangling link)
        with the add form, and a read-only treatment-plans section on the patient
        profile beside the odontogram — plus the browser specs for both.
 4. [ ] Item states, plan acceptance/rejection, invoicing: Milestone 9's
@@ -2312,3 +2385,21 @@ domain, validation, `features/visits`, and the SQLite path helper) · 207 integr
 skipped — **Docker and every PostgreSQL client are absent from this environment, so the
 six new route tests were written and typechecked but not executed**, with the always-on
 SQLite smoke test covering the same path · e2e: **92/92** — 2 new notes specs.
+
+Session 36: the App UI for Task 3 — the half session 35 left open. `/treatments`
+now draws the catalogue the sidebar's link had been dangling at (add form with the
+price parsed to integer cents, catalogue rows drawn as money, nothing listed from the
+form's own values), and the patient profile gained a read-only plans section between
+the care cards and the odontogram. `useTreatments` moved to
+`features/treatments/queries/catalogue-query.ts`, keeping the `['treatments']` key so
+the workspace and the page share one request. Seven browser specs (four catalogue,
+three plans), each verified by reintroducing the defect. The session also found and
+fixed a **pre-existing e2e flake**: six specs installed the POST's answer *after*
+clicking, which races the response; each swap now happens before the write, and the
+suite ran 116/116 three times in a row. Milestone 8's remaining half is a plan's own
+write and the states of its items.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
+warning) · format · guard:boundaries OK · build 5/5 · 755 unit/component (app 302,
+29 new this session) · 252 PG integration skipped (**no Docker or PostgreSQL client
+in this environment**) · e2e: **116/116** — 7 new specs, run three times in a row.

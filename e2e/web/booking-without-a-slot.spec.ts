@@ -25,6 +25,7 @@ import type { Page } from '@playwright/test';
 import {
   ANA_ID,
   anaOdontogram,
+  anaTreatmentPlans,
   anaProfile,
   allDashboardFixtures,
   bookingFixtures,
@@ -83,6 +84,7 @@ test.describe('Booking from a patient profile', () => {
       [`/api/v1/patients/${ANA_ID}`]: { body: anaProfile },
       // The profile's chart is a read of the very page being booked from.
       [`/api/v1/patients/${ANA_ID}/odontogram`]: { body: anaOdontogram },
+      [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
       [CREATE_PATH]: { status: 201, body: bookedAppointment() },
     });
 
@@ -116,6 +118,7 @@ test.describe('Booking from a patient profile', () => {
       [`/api/v1/patients/${ANA_ID}`]: { body: anaProfile },
       // The profile's chart is a read of the very page being booked from.
       [`/api/v1/patients/${ANA_ID}/odontogram`]: { body: anaOdontogram },
+      [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -132,6 +135,7 @@ test.describe('Booking from a patient profile', () => {
       [`/api/v1/patients/${ANA_ID}`]: { body: anaProfile },
       // The profile's chart is a read of the very page being booked from.
       [`/api/v1/patients/${ANA_ID}/odontogram`]: { body: anaOdontogram },
+      [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -150,6 +154,7 @@ test.describe('Booking from a patient profile', () => {
       [`/api/v1/patients/${ANA_ID}`]: { body: anaProfile },
       // The profile's chart is a read of the very page being booked from.
       [`/api/v1/patients/${ANA_ID}/odontogram`]: { body: anaOdontogram },
+      [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -171,6 +176,7 @@ test.describe('Booking from a patient profile', () => {
       [`/api/v1/patients/${ANA_ID}`]: { body: anaProfile },
       // The profile's chart is a read of the very page being booked from.
       [`/api/v1/patients/${ANA_ID}/odontogram`]: { body: anaOdontogram },
+      [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
     });
 
     await page.goto(`/patients/${ANA_ID}`);

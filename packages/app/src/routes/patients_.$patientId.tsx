@@ -52,6 +52,7 @@ import {
 } from '../features/clinic/format-clinic-time.js';
 import { useClinicSettings } from '../features/clinic/queries/clinic-settings-query.js';
 import { usePatient } from '../features/patients/hooks/use-patients.js';
+import { PatientTreatmentPlansSection } from '../features/patients/components/patient-treatment-plans-section.js';
 import { PatientOdontogramSection } from '../features/patients/components/patient-odontogram-section.js';
 
 export const Route = createFileRoute('/patients_/$patientId')({
@@ -294,6 +295,13 @@ function PatientProfile() {
           </CardContent>
         </Card>
       </div>
+
+      {/*
+        What the clinic has proposed for this patient: read only, and deliberately
+        after the profile cards rather than inside one of them — a plan is a series
+        of decisions, not a fact about the person.
+      */}
+      <PatientTreatmentPlansSection patientId={patient.id} clinicTimeZone={timeZone} />
 
       {/*
         The clinical map: its own request and its own write, mounted as a sibling of
