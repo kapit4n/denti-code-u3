@@ -49,6 +49,8 @@ import type {
   MedicationRoute,
   Payment,
   PaymentMethod,
+  TreatmentPlanItemSummary,
+  TreatmentPlanSummary,
   TreatmentRecord,
   Visit,
 } from '@denti-code-u3/domain';
@@ -72,7 +74,7 @@ import {
 
 import { formatClinicDayTime, READING_THE_CLINIC_CLOCK } from '../../clinic/format-clinic-time.js';
 import { useClinicSettings } from '../../clinic/queries/clinic-settings-query.js';
-import { usePatient } from '../../patients/hooks/use-patients.js';
+import { usePatient, usePatientTreatmentPlans } from '../../patients/hooks/use-patients.js';
 import { useChairs, useDentists } from '../../agenda/queries/bookable-resources-query.js';
 // The catalogue the picker draws from lives with the feature that administers it.
 import { useTreatments } from '../../treatments/queries/catalogue-query.js';
@@ -310,7 +312,11 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
             <VisitNotesSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
           ) : null}
           {section === 'treatments' ? (
-            <VisitTreatmentsSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
+            <VisitTreatmentsSection
+              visitId={visit.id}
+              patientId={visit.patientId}
+              clinicTimeZone={clinic?.timeZone}
+            />
           ) : null}
           {section === 'prescriptions' ? (
             <VisitPrescriptionsSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
@@ -746,23 +752,55 @@ function VisitAttachmentsSection({ visitId, clinicTimeZone }: VisitAttachmentsSe
  * performed — the offer and the fact are different things, and the offer does not
  * get to rewrite what was done.
  */
+/**
+ * Radix's select reserves the empty string for "no selection", so "not linked" gets a
+ * sentinel value rather than `''` — the one choice a select cannot carry as a value.
+ */
+const NOT_LINKED = 'not-linked';
+
+/** A planned line, named by its plan and the tooth it is on, for the picker. */
+function describePlannedItem(plan: TreatmentPlanSummary, item: TreatmentPlanItemSummary): string {
+  const title = plan.title?.trim() || 'Plan';
+  const tooth = item.tooth ? ` — tooth ${item.tooth}` : '';
+
+  return `${title}${tooth}`;
+}
+
 interface VisitTreatmentsSectionProps {
   readonly visitId: string;
+  /** Whose plans the "planned item" picker reads. */
+  readonly patientId: string;
   /** Absent while the clinic is still being fetched; the times then wait for it. */
   readonly clinicTimeZone: string | undefined;
 }
 
-function VisitTreatmentsSection({ visitId, clinicTimeZone }: VisitTreatmentsSectionProps) {
+function VisitTreatmentsSection({
+  visitId,
+  patientId,
+  clinicTimeZone,
+}: VisitTreatmentsSectionProps) {
   const catalogueQuery = useTreatments();
   const recordsQuery = useVisitTreatments(visitId);
+  const plansQuery = usePatientTreatmentPlans(patientId);
   const record = useRecordVisitTreatment();
   const [treatmentId, setTreatmentId] = useState('');
+  const [planItemId, setPlanItemId] = useState('');
   const [tooth, setTooth] = useState('');
   const [draft, setDraft] = useState('');
 
   const failure = describeTreatmentFailure(record.error, 'The treatment could not be recorded.');
   const ready = treatmentId.length > 0;
   const catalogue = catalogueQuery.data?.items ?? [];
+
+  // The planned, still-open lines for the treatment just chosen: linking is only
+  // meaningful against work this patient's plan has not yet had done. A plan whose
+  // item is already complete is not offered again.
+  const plannedItems =
+    plansQuery.data?.items.flatMap((plan) =>
+      plan.items
+        .filter((item) => item.treatmentId === treatmentId && !item.isCompleted)
+        .map((item) => ({ plan, item })),
+    ) ?? [];
 
   return (
     <Card data-testid="visit-treatments">
@@ -816,10 +854,11 @@ function VisitTreatmentsSection({ visitId, clinicTimeZone }: VisitTreatmentsSect
               return;
             }
             record.mutate(
-              { visitId, treatmentId, tooth, notes: draft },
+              { visitId, treatmentId, tooth, notes: draft, treatmentPlanItemId: planItemId },
               {
                 onSuccess: () => {
                   setTreatmentId('');
+                  setPlanItemId('');
                   setTooth('');
                   setDraft('');
                 },
@@ -829,7 +868,17 @@ function VisitTreatmentsSection({ visitId, clinicTimeZone }: VisitTreatmentsSect
         >
           <div className="space-y-1">
             <Label htmlFor="treatment-catalogue">Treatment</Label>
-            <Select value={treatmentId} onValueChange={setTreatmentId} disabled={record.isPending}>
+            <Select
+              value={treatmentId}
+              // Changing the treatment changes which planned items can apply, so a
+              // chosen link is dropped rather than left pointing at another treatment's
+              // line — the server would refuse it, and the form should not offer it.
+              onValueChange={(value) => {
+                setTreatmentId(value);
+                setPlanItemId('');
+              }}
+              disabled={record.isPending}
+            >
               <SelectTrigger id="treatment-catalogue" data-testid="treatment-catalogue">
                 <SelectValue placeholder="Choose a treatment" />
               </SelectTrigger>
@@ -855,6 +904,35 @@ function VisitTreatmentsSection({ visitId, clinicTimeZone }: VisitTreatmentsSect
               </p>
             ) : null}
           </div>
+
+          {/* Offered only when this patient's plan has an open line for the chosen
+              treatment: linking is provenance, so a record with nothing planned for it
+              simply has no item to name. */}
+          {plannedItems.length > 0 ? (
+            <div className="space-y-1">
+              <Label htmlFor="treatment-plan-item">Planned item (optional)</Label>
+              <Select
+                value={planItemId || NOT_LINKED}
+                onValueChange={(value) => setPlanItemId(value === NOT_LINKED ? '' : value)}
+                disabled={record.isPending}
+              >
+                <SelectTrigger id="treatment-plan-item" data-testid="treatment-plan-item">
+                  <SelectValue placeholder="Not linked to a plan item" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NOT_LINKED}>Not linked to a plan item</SelectItem>
+                  {plannedItems.map(({ plan, item }) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {describePlannedItem(plan, item)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Records which planned line this fulfils; it does not mark the line done.
+              </p>
+            </div>
+          ) : null}
 
           <div className="space-y-1">
             <Label htmlFor="treatment-tooth">Tooth (optional)</Label>

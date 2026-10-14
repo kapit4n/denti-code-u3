@@ -62,6 +62,7 @@ export class SQLiteTreatmentRecordRepository implements TreatmentRecordRepositor
           treatmentId: record.treatmentId,
           tooth: record.tooth,
           notes: record.notes,
+          treatmentPlanItemId: record.treatmentPlanItemId,
           performedAt: new Date(record.performedAt),
         })
         .run();

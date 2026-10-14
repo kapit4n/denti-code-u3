@@ -145,6 +145,8 @@ interface HarnessOptions {
   readonly catalogue?: Record<string, unknown>[];
   /** The treatments the API answers with when the treatments section is opened. */
   readonly visitTreatments?: Record<string, unknown>[];
+  /** The patient's plans, read by the "planned item" picker in the treatments form. */
+  readonly patientPlans?: Record<string, unknown>[];
   /** When set, recording a treatment is refused with this envelope. */
   readonly treatmentRefusal?: { readonly status: number; readonly body: unknown };
   /**
@@ -195,6 +197,7 @@ function renderWorkspace({
   attachmentGate,
   catalogue = TREATMENTS_ITEMS,
   visitTreatments = [],
+  patientPlans = [],
   treatmentRefusal,
   treatmentGate,
   visitPrescriptions = [],
@@ -212,6 +215,7 @@ function renderWorkspace({
     notes: [...notes],
     visitAttachments: [...visitAttachments],
     visitTreatments: [...visitTreatments],
+    patientPlans: [...patientPlans],
     visitPrescriptions: [...visitPrescriptions],
     visitCharges: [...visitCharges],
     visitPayments: [...visitPayments],
@@ -291,6 +295,7 @@ function renderWorkspace({
         treatmentId: string;
         tooth?: string;
         notes?: string;
+        treatmentPlanItemId?: string;
       };
       const performed = {
         id: `treatment-${state.visitTreatments.length + 1}`,
@@ -298,6 +303,7 @@ function renderWorkspace({
         treatmentId: written.treatmentId,
         tooth: written.tooth ?? null,
         notes: written.notes ?? null,
+        treatmentPlanItemId: written.treatmentPlanItemId ?? null,
         performedAt: '2026-10-05T14:35:00.000Z',
       };
       state.visitTreatments = [...state.visitTreatments, performed];
@@ -415,6 +421,11 @@ function renderWorkspace({
       return profile === null
         ? jsonResponse({ error: { code: 'NOT_FOUND', message: 'gone', requestId: 'test' } }, 404)
         : jsonResponse(profile);
+    }
+    // The plans the treatments form's "planned item" picker reads. Empty by default:
+    // most tests are not about linking, and an empty list is the honest answer.
+    if (method === 'GET' && path === `/api/v1/patients/${PATIENT_ID}/treatment-plans`) {
+      return jsonResponse({ items: state.patientPlans });
     }
     if (method === 'GET' && path === '/api/v1/clinic') {
       return jsonResponse(CLINIC);
@@ -994,6 +1005,62 @@ describe('VisitWorkspace', () => {
         (init?.method ?? 'GET').toUpperCase() === 'GET',
     );
     expect(visitReads).toHaveLength(1);
+  });
+
+  it('lets a recorded treatment name the open planned item it fulfils, and only that', async () => {
+    const { fetchImplementation } = renderWorkspace({
+      patientPlans: [
+        {
+          id: 'plan-1',
+          title: 'Full mouth rehab',
+          status: 'ACCEPTED',
+          items: [
+            { id: 'item-open', treatmentId: 'treatment-1', tooth: '16', isCompleted: false },
+            // Already done: not offered again, because linking records provenance for
+            // work that is still planned.
+            { id: 'item-done', treatmentId: 'treatment-1', tooth: '26', isCompleted: true },
+            // A different treatment's line: not this record's to claim.
+            { id: 'item-other', treatmentId: 'treatment-2', tooth: '36', isCompleted: false },
+          ],
+        },
+      ],
+    });
+
+    await user.click(await screen.findByTestId('visit-section-treatments'));
+    // The picker is not shown before a treatment is chosen: there is nothing yet to
+    // say which plan line this would fulfil.
+    expect(screen.queryByTestId('treatment-plan-item')).toBeNull();
+
+    await chooseFrom('treatment-catalogue', /Composite filling/);
+
+    const picker = await screen.findByTestId('treatment-plan-item');
+    await user.click(picker);
+    // Only the open line for the chosen treatment is offered — named by its plan.
+    expect(screen.getByRole('option', { name: /Full mouth rehab — tooth 16/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /tooth 26/ })).toBeNull();
+    expect(screen.queryByRole('option', { name: /tooth 36/ })).toBeNull();
+    await user.click(screen.getByRole('option', { name: /Full mouth rehab — tooth 16/ }));
+
+    await user.click(screen.getByTestId('record-treatment'));
+
+    const post = fetchImplementation.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}/treatments`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'POST',
+    );
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      treatmentId: 'treatment-1',
+      treatmentPlanItemId: 'item-open',
+    });
+    expect(await screen.findByTestId('treatment-record')).toBeTruthy();
+    // The plan's own read is not refetched: linking is provenance, so nothing about
+    // the plan could have changed.
+    const planReads = fetchImplementation.mock.calls.filter(
+      ([url, init]) =>
+        String(url).endsWith(`/patients/${PATIENT_ID}/treatment-plans`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'GET',
+    );
+    expect(planReads).toHaveLength(1);
   });
 
   it('keeps the form the clinician filled and says why when the treatment is refused', async () => {

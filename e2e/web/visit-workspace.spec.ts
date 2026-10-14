@@ -57,6 +57,7 @@ import {
   anaProfile,
   existingVisitTreatment,
   filedNote,
+  linkedTreatment,
   filedPrescription,
   invoicedCharge,
   openVisit,
@@ -523,6 +524,56 @@ test.describe('Visit workspace', () => {
     await expect(page.getByTestId('treatment-record')).toHaveCount(0);
 
     expect(expectedResourceFailures(errors)).toEqual([]);
+  });
+
+  test('records a treatment against the open planned item it fulfils', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...visitWorkspaceFixtures({
+        '/api/v1/treatments': { body: treatmentsCatalogue },
+        [`/api/v1/visits/${VISIT_ID}/treatments`]: { body: visitTreatments([]) },
+        [`POST /api/v1/visits/${VISIT_ID}/treatments`]: { body: linkedTreatment, status: 201 },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+    await page.getByTestId('visit-section-treatments').click();
+    await expect(page.getByText('No treatments recorded yet.')).toBeVisible();
+
+    // No treatment chosen yet, so there is no plan line this record could name.
+    await expect(page.getByTestId('treatment-plan-item')).toHaveCount(0);
+
+    await page.getByTestId('treatment-catalogue').click();
+    await page.getByRole('option', { name: /Scaling and prophylaxis/ }).click();
+
+    // The picker offers the *open* line for this treatment (tooth 36), named by its
+    // plan, and not the one already completed (tooth 26) — linking records provenance
+    // for work still planned.
+    await page.getByTestId('treatment-plan-item').click();
+    await expect(page.getByRole('option', { name: /Restorative plan — tooth 36/ })).toBeVisible();
+    await expect(page.getByRole('option', { name: /tooth 26/ })).toHaveCount(0);
+    await page.getByRole('option', { name: /Restorative plan — tooth 36/ }).click();
+
+    await page.getByTestId('record-treatment').click();
+
+    const post = api.recorded.find(
+      (entry) => entry.method === 'POST' && entry.url.includes(`/visits/${VISIT_ID}/treatments`),
+    );
+    expect(post?.body).toEqual({
+      treatmentId: PROPHYLAXIS_TREATMENT_ID,
+      treatmentPlanItemId: '11111111-bbbb-4a11-9ccc-000000000012',
+    });
+
+    // Linking is provenance, so the plan's own read is asked for once — when the
+    // section opened — and never again: nothing about the plan could have changed.
+    const planReads = api.recorded.filter(
+      (entry) =>
+        entry.method === 'GET' &&
+        new URL(entry.url).pathname === `/api/v1/patients/${ANA_ID}/treatment-plans`,
+    );
+    expect(planReads).toHaveLength(1);
+
+    expect(errors).toEqual([]);
   });
 
   test('files a prescription and shows it only once the server has stored it', async ({ page }) => {

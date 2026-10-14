@@ -25,6 +25,9 @@
  *    is a `clinic_id` the row carries; a record is a `visit_id` it does not, so the
  *    record's read scopes through the visit and its write through the treatment — the
  *    second implementation of each, on the engine that must not disagree.
+ *  - **A treatment record can name the planned item it fulfils.** The link is resolved
+ *    on the patient's own plan before the insert and written on the execution side; the
+ *    record never completes the line, which stays `completeTreatmentPlanItem`'s job.
  *  - **A prescription scopes through its visit, and names who it is about by
  *    inheritance.** `prescriptions` has no clinic column and no patient or dentist
  *    column of its own from the request — the write resolves the visit in this clinic
@@ -551,6 +554,58 @@ describe('API on SQLite', () => {
     });
     expect(empty.statusCode).toBe(422);
     expect(empty.json().error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('links a recorded treatment to the planned item it fulfils, without completing it', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans`,
+      payload: { items: [{ treatmentId, tooth: '46', estimatedPriceMinor: 20_000 }] },
+    });
+    expect(created.statusCode).toBe(201);
+    const plan = created.json().plan;
+    const itemId = plan.items[0].id;
+
+    const recorded = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/treatments`,
+      payload: { treatmentId, treatmentPlanItemId: itemId },
+    });
+
+    expect(recorded.statusCode).toBe(201);
+    expect(recorded.json()).toMatchObject({ visitId, treatmentId, treatmentPlanItemId: itemId });
+
+    // The link is stored on the execution side and read back through the visit — the
+    // SQLite twin writes the column the PostgreSQL one does (ADR 0025).
+    const listed = await app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${visitId}/treatments`,
+    });
+    const stored = listed
+      .json()
+      .treatments.find(
+        (entry: { treatmentPlanItemId: string | null }) => entry.treatmentPlanItemId === itemId,
+      );
+    expect(stored).toBeTruthy();
+
+    // Provenance only: recording a linked treatment does not complete the line.
+    const plans = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans`,
+    });
+    const after = plans.json().items.find((entry: { id: string }) => entry.id === plan.id);
+    expect(after.progress).toMatchObject({ total: 1, completed: 0 });
+    expect(after.items[0].isCompleted).toBe(false);
+
+    // An item that is not on the patient's plan is refused, folded to 422 by the wire,
+    // and nothing is written against the visit.
+    const refused = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/treatments`,
+      payload: { treatmentId, treatmentPlanItemId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().error.code).toBe('VALIDATION_ERROR');
   });
 
   it('prescribes a medication on the visit, inheriting whom it is about from the visit', async () => {

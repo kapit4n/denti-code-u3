@@ -48,6 +48,7 @@ import { DrizzleChairRepository } from '../src/infrastructure/persistence/reposi
 import { DrizzleDentistRepository } from '../src/infrastructure/persistence/repositories/dentist-repository.js';
 import { DrizzlePrescriptionRepository } from '../src/infrastructure/persistence/repositories/prescription-repository.js';
 import { DrizzlePaymentRepository } from '../src/infrastructure/persistence/repositories/payment-repository.js';
+import { DrizzleTreatmentPlanRepository } from '../src/infrastructure/persistence/repositories/treatment-plan-repository.js';
 import { DrizzleTreatmentRecordRepository } from '../src/infrastructure/persistence/repositories/treatment-record-repository.js';
 import { DrizzleTreatmentRepository } from '../src/infrastructure/persistence/repositories/treatment-repository.js';
 import { DrizzleUnitOfWork } from '../src/infrastructure/persistence/postgres/unit-of-work.js';
@@ -270,6 +271,26 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       payload: payload as object,
     });
 
+  /**
+   * A plan with one line for the named treatment, seeded straight into the tables.
+   *
+   * The record write only needs the item to exist on the patient's plan; the plan's own
+   * write side is exercised where it lives. Returns the item id a record can link to.
+   */
+  const seedPlanItem = async (treatmentId: string, clinic = clinicId, patientId = patient) => {
+    const [plan] = await sql`
+      insert into treatment_plans (clinic_id, patient_id, status)
+      values (${clinic}, ${patientId}, 'ACCEPTED')
+      returning id
+    `;
+    const [item] = await sql`
+      insert into treatment_plan_items (treatment_plan_id, treatment_id, tooth)
+      values (${(plan as { id: string }).id}, ${treatmentId}, '36')
+      returning id
+    `;
+    return (item as { id: string }).id;
+  };
+
   const getPrescriptions = (visitId: string, clinic = clinicId) =>
     app.inject({
       method: 'GET',
@@ -360,6 +381,9 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
     await sql`delete from payments where clinic_id in (${clinicId}, ${otherClinicId})`;
     await sql`delete from invoices where clinic_id in (${clinicId}, ${otherClinicId})`;
     await sql`delete from charges where clinic_id in (${clinicId}, ${otherClinicId})`;
+    // Plans hold a restrict link to the patient (and their items cascade from them),
+    // so the plan-link test's fixtures are cleared before the visits and patients.
+    await sql`delete from treatment_plans where clinic_id in (${clinicId}, ${otherClinicId})`;
     await sql`update appointments set visit_id = null where clinic_id in (${clinicId}, ${otherClinicId})`;
     await sql`update visits set appointment_id = null where clinic_id in (${clinicId}, ${otherClinicId})`;
     await sql`delete from visits where clinic_id in (${clinicId}, ${otherClinicId})`;
@@ -400,6 +424,10 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       // the way the notes' is (ADR 0014).
       treatmentRecords: new DrizzleTreatmentRecordRepository(db),
       treatments: new DrizzleTreatmentRepository(db),
+      // The patient's plans, read-only here: a record may name the plan item it
+      // fulfils, and the use case resolves it on the patient's own plan before the
+      // insert. Linking is provenance — the record never writes the plan.
+      treatmentPlans: new DrizzleTreatmentPlanRepository(db),
       // The prescriptions written on a visit, exercised by the prescription tests
       // below; a plain repository for the same read-then-write reason (ADR 0014).
       prescriptions: new DrizzlePrescriptionRepository(db),
@@ -1457,6 +1485,57 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
 
       expect(response.statusCode).toBe(404);
       expect(response.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+    });
+
+    it('links a record to the planned item it fulfils, and keeps the link on the row', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+      const planItemId = await seedPlanItem(treatment);
+
+      const recorded = await recordTreatment(visitId, {
+        treatmentId: treatment,
+        treatmentPlanItemId: planItemId,
+      });
+
+      expect(recorded.statusCode).toBe(201);
+      expect(recorded.json()).toMatchObject({
+        visitId,
+        treatmentId: treatment,
+        treatmentPlanItemId: planItemId,
+      });
+
+      // The row itself carries the link: a route that echoed the body without writing
+      // the column would pass the assertion above and lose the provenance.
+      const [row] = await sql`
+        select treatment_plan_item_id from visit_treatment_executions where visit_id = ${visitId}
+      `;
+      expect(row).toMatchObject({ treatment_plan_item_id: planItemId });
+
+      // Provenance only: recording the linked treatment does not complete the line —
+      // that stays `completeTreatmentPlanItem`'s job.
+      const [item] = await sql`
+        select is_completed, completed_at from treatment_plan_items where id = ${planItemId}
+      `;
+      expect(item).toMatchObject({ is_completed: false, completed_at: null });
+    });
+
+    it('refuses a plan item that is not on the patient’s plan, and writes nothing', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const refused = await recordTreatment(visitId, {
+        treatmentId: treatment,
+        treatmentPlanItemId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      });
+
+      expect(refused.statusCode).toBe(422);
+      expect(refused.json()).toMatchObject({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'That treatment plan item is not on this patient’s plan',
+        },
+      });
+
+      const [count] = await sql`select count(*)::int as total from visit_treatment_executions`;
+      expect((count as { total: number }).total).toBe(0);
     });
 
     it('answers 422 for a path id that is not a uuid, on both verbs', async () => {

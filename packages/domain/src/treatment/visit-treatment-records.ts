@@ -31,10 +31,14 @@
  * be ceremony, and the repository's foreign-key translation is the belt for the race
  * where a treatment is deleted between the read and the insert.
  *
- * **Deliberately not here: the plan link.** The table has a `treatment_plan_item_id`
- * column, and Milestone 8's "Link plan items → visits → charges" will use it. Linking
- * a record to a plan item is a rule about the *plan* — that completing an item happens
- * on this visit — and the plan's lifecycle belongs to M8, not to the record.
+ * **The plan link, when the caller supplies one, is provenance only.** A record may
+ * name the treatment-plan item it fulfils (`treatment_plan_item_id`), and the write
+ * resolves that item on the patient's own plan before it inserts — a link to an item
+ * on another patient's plan, or to an item for a different treatment, is the same
+ * `INVALID_INPUT` a foreign treatment gets. Linking does **not** complete the item:
+ * completing a line is its own use case (`completeTreatmentPlanItem`), and a record
+ * that silently moved the plan's state would be a second, hidden way to do what that
+ * door does on purpose. The link answers "which planned work was this", nothing more.
  * **Also not here: a status gate.** A record can be written on any visit this clinic
  * holds, open or closed, the way a note can — an append-only clinical record must be
  * able to document what happened, even when it is written after the visit was closed.
@@ -51,6 +55,7 @@ import { DomainError, notFound } from '../shared/errors.js';
 import { isValidPermanentTooth, isValidPrimaryTooth } from '../odontogram/odontogram.js';
 import { getVisit } from '../visit/visit-read.js';
 import type {
+  TreatmentPlanRepository,
   TreatmentRecordRepository,
   TreatmentRepository,
   VisitRepository,
@@ -85,6 +90,15 @@ export interface TreatmentRecordReadDependencies {
  */
 export interface TreatmentRecordWriteDependencies extends TreatmentRecordReadDependencies {
   readonly treatments: TreatmentRepository;
+  /**
+   * The patient's plans, to resolve the item a record optionally links to.
+   *
+   * `listForPatient` is enough: an item is found by walking the patient's own plans,
+   * which is both the scoping (the item must be on *this* patient's plan) and the
+   * lookup in one read. A dedicated "find item by id" would still have to prove the
+   * item's plan belongs to the patient, so it would save nothing but a clause.
+   */
+  readonly treatmentPlans: Pick<TreatmentPlanRepository, 'listForPatient'>;
   readonly clock: Clock;
   readonly newId: () => VisitTreatmentExecutionId;
 }
@@ -120,7 +134,9 @@ export async function listTreatmentRecords(
  * The order is the whole contract: the visit first (the subject — a foreign visit is
  * `NOT_FOUND`), the treatment second (the resource being named — a foreign one is
  * `INVALID_INPUT`, the code the FK translation gave the same situation for a chair),
- * the tooth and notes judged on their own, and only then the insert.
+ * the linked plan item third when there is one (resolved on the patient's own plan,
+ * as `INVALID_INPUT` too), the tooth and notes judged on their own, and only then the
+ * insert.
  *
  * A blank tooth or notes is dropped to `null`, not stored empty: an empty string is a
  * field that was typed and then forgotten, and a clinical record that cannot see the
@@ -148,6 +164,32 @@ export async function recordVisitTreatment(
     );
   }
 
+  const treatmentPlanItemId = input.treatmentPlanItemId?.trim() || null;
+
+  if (treatmentPlanItemId) {
+    const plans =
+      (await dependencies.treatmentPlans.listForPatient(clinicId, visit.patientId)) ?? [];
+    const planItem = plans
+      .flatMap((plan) => plan.items)
+      .find((candidate) => candidate.id === treatmentPlanItemId);
+
+    if (!planItem) {
+      throw new DomainError(
+        'INVALID_INPUT',
+        'That treatment plan item is not on this patient\u2019s plan',
+        { treatmentPlanItemId },
+      );
+    }
+
+    if (planItem.treatmentId !== input.treatmentId) {
+      throw new DomainError(
+        'INVALID_INPUT',
+        'That treatment plan item is for a different treatment',
+        { treatmentPlanItemId, treatmentId: input.treatmentId },
+      );
+    }
+  }
+
   const tooth = input.tooth?.trim() || null;
 
   if (tooth && !isValidPermanentTooth(tooth) && !isValidPrimaryTooth(tooth)) {
@@ -169,7 +211,7 @@ export async function recordVisitTreatment(
     tooth,
     notes,
     performedAt: dependencies.clock.now(),
-    treatmentPlanItemId: input.treatmentPlanItemId ?? null,
+    treatmentPlanItemId,
   };
 
   await dependencies.treatmentRecords.save(record);

@@ -2635,3 +2635,74 @@ PostgreSQL suites skip on this machine exactly as every integration suite does.
   roadmap had written).
 - A stray commit `0f381ce` (invoice numbering) pre-dates this session and is
   unrelated.
+
+## Session 38 — the plan-item → visit link (provenance only)
+
+**What changed**
+
+- **Domain (`packages/domain/src/treatment/visit-treatment-records.ts`):**
+  `TreatmentRecordWriteDependencies` gained
+  `treatmentPlans: Pick<TreatmentPlanRepository, 'listForPatient'>`.
+  `recordVisitTreatment` now resolves an optional `treatmentPlanItemId`: when present it
+  reads `listForPatient(clinicId, visit.patientId)`, finds the item, and refuses
+  `INVALID_INPUT` ("That treatment plan item is not on this patient's plan" / "…is for a
+  different treatment") if it is absent or its `treatmentId` differs. A blank/absent id
+  is `null` and reads no plans. The link is **provenance only** — recording never
+  completes the item. 6 new tests in the `recordVisitTreatment — the plan link` block.
+- **Validation (`packages/validation/src/visits/index.ts`):**
+  `recordVisitTreatmentSchema` already carried `treatmentPlanItemId: uuidSchema.optional().nullable()`;
+  doc updated; 2 new tests in `visits.test.ts`.
+- **API repositories:** both engines' `treatment-record-repository.ts` (PG and SQLite)
+  now write `treatmentPlanItemId: record.treatmentPlanItemId` on insert.
+- **API route (`apps/api/src/http/routes/visits.ts`):** the visits deps gained
+  `treatmentPlans: Pick<TreatmentPlanRepository, 'listForPatient'>`; the POST spreads
+  `treatmentPlanItemId` into the use-case input only when defined and passes
+  `treatmentPlans`. `app.ts` destructures `treatmentPlans` from `connection.repositories`
+  and forwards it to `registerVisitsRoutes`.
+- **API tests:** `visits-route.integration.test.ts` (PG) gained a `DrizzleTreatmentPlanRepository`
+  dep, a `seedPlanItem` helper, plan cleanup in `clearFixtures`, and 2 tests (a linked
+  record writes the column and leaves the item incomplete; a foreign item is 422 writing
+  nothing) — **skipped** locally, typechecked.
+  `sqlite-smoke.integration.test.ts` gained the same flow (always runs).
+- **App:** `mutations/use-record-visit-treatment.ts` variables gained
+  `treatmentPlanItemId?: string | null`, sent as `treatmentPlanItemId || undefined`;
+  `visit-workspace.tsx`'s `VisitTreatmentsSection` reads `usePatientTreatmentPlans`,
+  offers an optional plan-item `Select` (`data-testid="treatment-plan-item"`, a
+  `Not linked to a plan item` default) listing the **open** items for the chosen
+  treatment (each spelling its tooth), resets the choice when the treatment changes, and
+  sends `treatmentPlanItemId: planItemId`. 1 new component test (33 total).
+- **E2e:** `fixtures/api-responses.ts` gained `linkedTreatment`;
+  `visit-workspace.spec.ts` gained "records a treatment against the open planned item it
+  fulfils".
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean (visit-treatment-records.ts reformatted first)
+pnpm run guard:boundaries OK (one pre-existing warning)
+pnpm run build            5/5 successful (web rebuilt before e2e)
+pnpm run test             12/12 tasks — domain 303, validation 141, app 307,
+                          api-client 15, database 6, desktop 3,
+                          API 81 passed / 256 skipped (PG suite needs a database)
+pnpm run test:e2e         120/120 passed (1 new link spec)
+```
+
+The always-on SQLite smoke suite covers the link write without a database; the PG
+visit-route block typechecks but skips here.
+
+**Decisions.** The link is provenance only (recording does not complete the item; the
+record mutation never invalidates the plan read); the item must be on the patient's own
+plan and for the same treatment (else 422); a blank id costs no plan read; the FK is
+`on delete set null` and the API cannot reach the deletion race; the recorder only offers
+items for the currently chosen treatment and drops the choice when it changes.
+
+**NOT done and deliberately.** The plan-item → **charge** link (billing) is untouched —
+the roadmap's M8 bullet is only half closed. No item-completion side effect on recording,
+by decision above. PG suites skip on this machine exactly as every integration suite does.
+
+**Notes**
+
+- Next up in Milestone 8 is the remaining half of the roadmap bullet — linking plan items
+  to the charges they generate — if the product wants it; otherwise M8 is complete.

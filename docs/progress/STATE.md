@@ -1,15 +1,15 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 37 (Milestone 8's treatment-plan write side, end to end)
+> Last updated: session 38 (the plan-item → visit link, provenance only)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
 
 **PHASE 4 — CLINICAL WORKFLOWS** (Milestone 5 of `docs/roadmap.md`)
 
-**Status: Milestones 5–7 complete; Milestone 8 (treatments) has its catalogue and its
-treatment-plan read _and_ write sides — the plan-item → visit/charge link remains.**
-Sessions 13–21
+**Status: Milestones 5–7 complete; Milestone 8 (treatments) has its catalogue, its
+treatment-plan read _and_ write sides, and the plan-item → visit link — only the charge
+side of that link remains open.** Sessions 13–21
 delivered the agenda end to end: the `AgendaEntry` read model and `AppointmentRepository`,
 `GET /api/v1/appointments`, the grid with day/week/month views confined to two adapters
 by an enforced guard, the three write endpoints with the tenant foreign keys that make
@@ -117,6 +117,26 @@ minor units, and a note per line) and each open line offers **Mark done**; both 
 non-optimistic and invalidate only `['patients','treatment-plans',patientId]`. Presenting and
 accepting a plan are deliberately **not** drawn — no status buttons — because the legal moves
 are not decided yet.
+
+Session 38 delivered **the plan-item → visit link**, the execution half of Milestone 8's
+remaining bullet. `recordVisitTreatment` in the domain gained one optional field and the
+rule that makes it mean something: when the caller names a `treatmentPlanItemId`, the
+item must be **on the patient's own plan in this clinic** and its `treatmentId` must equal
+the record's `treatmentId`, or the call is refused `INVALID_INPUT` ("That treatment plan
+item is not on this patient's plan" / "…is for a different treatment"). The lookup reuses
+`TreatmentPlanRepository.listForPatient(clinicId, visit.patientId)` — no new port verb —
+and the read is recorded like every other dependency read the use case makes. The new
+column follows the session-37 decision it was built for: `treatment_plan_item_id` is a
+nullable FK with `on delete set null`, so nothing an execution does can strand a performed
+record, and both engines write it in `save` (PostgreSQL and SQLite, twice as always).
+**The link is provenance only**: recording a linked treatment does **not** complete the
+plan item — completion stays `completeTreatmentPlanItem`'s own, explicit act — so the
+record mutation still invalidates only `['visits','treatments',visitId]` and deliberately
+**not** the plan read. On the visit workspace, once a treatment is chosen the recorder
+offers the open items for that treatment on that patient (a `Not linked to a plan item`
+default, each option spelling its tooth), the choice is dropped whenever the treatment
+changes, and the POST carries `treatmentPlanItemId` only when one was picked. The
+field was already on `recordVisitTreatmentSchema`; this session made it real end to end.
 
 Session 33 delivered **files** — the seventh workspace section and the seventh "per
 visit" book (Task 1 of the session's plan), the moment Milestone 6's "Files/attachments
@@ -281,26 +301,46 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 37 — Milestone 8's treatment-plan write side)
+## Verification log (last run, session 38 — the plan-item → visit link)
 
 | Command                     | Result                                                                              |
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                                                    |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)                    |
-| `pnpm run format:check`     | clean                                                                               |
-| `pnpm run test`             | 12/12 tasks pass — domain 297, validation 139, app 306, API 80 passed / 254 skipped |
+| `pnpm run format:check`     | clean (one file reformatted with `prettier --write` before the check)               |
+| `pnpm run test`             | 12/12 tasks pass — domain 303, validation 141, app 307, API 81 passed / 256 skipped |
 | `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                              |
 | `pnpm run build`            | 5/5 tasks pass (web rebuilt before e2e)                                             |
 | `pnpm run guard:boundaries` | OK                                                                                  |
-| `pnpm run test:e2e`         | 119/119 pass — 3 new specs (create, complete, refusal) on the existing plan spec    |
+| `pnpm run test:e2e`         | 120/120 pass — 1 new spec (the open planned item linked) on the visit workspace     |
 
 **The PostgreSQL integration suite could not be executed this session: Docker and every
 PostgreSQL client are absent from this environment** (no `docker`, no `podman`, no
-`psql`, no `/var/run/docker.sock`). Session 37's new write coverage was added to
-`apps/api/test/patient-profile-scope.integration.test.ts` (create → present → complete →
-idempotent → 404 → 422, cleanup by the created plan id) and it typechecks, but it
-**skips** here for the reason above; the always-on SQLite smoke suite — which gained the
-same create → present → complete → idempotent → 404 → 422 block — still runs.
+`psql`, no `/var/run/docker.sock`). Session 38's new link coverage was added to
+`apps/api/test/visits-route.integration.test.ts` (a linked record writes
+`treatment_plan_item_id` and leaves the item incomplete; a plan item that is not the
+patient's own is a 422 that writes nothing, cleanup widened to `treatment_plans`) and it
+typechecks, but it **skips** here for the reason above; the always-on SQLite smoke suite —
+which gained the same "links a recorded treatment to the planned item it fulfils, without
+completing it" block — still runs. Session 37's PG coverage (create → present → complete →
+idempotent → 404 → 422 in `patient-profile-scope.integration.test.ts`) still typechecks and
+still skips for the same reason.
+
+**What session 38's work is verified by.** 6 new domain tests in the
+`recordVisitTreatment — the plan link` block of `visit-treatment-records.test.ts` (the
+item id it was given is written, resolved on the patient's own plan and the plan read
+recorded; an item that is **not on the patient's plan** is refused `INVALID_INPUT` with
+nothing written; a patient with **no plans at all** is refused the same way; an item
+**planned for a different treatment** is refused; a blank id drops to `null` **without
+reading the patient's plans**; and a linked record **does not complete** its item — the
+plan is read, never written, the provenance-only decision), 2 new validation tests (the
+field accepts a uuid; a blank/absent one is dropped), 1 new component test in
+`visit-workspace.test.tsx` ("lets a recorded treatment name the open planned item it
+fulfils, and only that" — once a treatment is chosen the recorder offers only the **open**
+items for **that** treatment, and sends the picked `treatmentPlanItemId`), 1 new always-on
+SQLite-smoke block, and 1 new browser spec ("records a treatment against the open planned
+item it fulfils"). Session 37's read model was left untouched, so the read-side tests are
+unchanged.
 
 **What session 37's work is verified by.** 39 domain tests in
 `treatment-plan-writes.test.ts` (a plan is opened `DRAFT` with the clock and the
@@ -519,7 +559,34 @@ the new suite failed for a reason that had nothing to do with the workspace.
 
 ## Decisions made this session (not yet in ADRs)
 
-### Decisions from session 37 (the treatment-plan write side)
+### Decisions from session 38 (the plan-item → visit link)
+
+- **The link is provenance only; recording an execution never completes the item.**
+  Naming a plan item when a treatment is recorded says _which proposed line this
+  fulfils_; it does not mark that line done. Completion stays `completeTreatmentPlanItem`'s
+  own, explicit act. This keeps the two writes independent and means the record mutation
+  invalidates only `['visits','treatments',visitId]` and **not** the plan read — a test
+  asserts the linked item still reads incomplete after the write.
+- **The named item must be on the patient's own plan, and for the same treatment.**
+  `recordVisitTreatment` reads `listForPatient(clinicId, visit.patientId)` (no new port
+  verb) and walks the plans' items: an item it cannot find is `INVALID_INPUT` ("That
+  treatment plan item is not on this patient's plan"), and an item whose `treatmentId`
+  differs from the record's is `INVALID_INPUT` ("…is for a different treatment"). A blank
+  or absent id is `null` and **no plan read happens** — the dependency is only paid for
+  when the caller actually names an item.
+- **The FK is `on delete set null` and the API cannot reach the race it implies.** The
+  column's `on delete set null` means a deleted plan item would null a performed record's
+  link rather than strand it (session 37's decision), but no API path deletes a plan item,
+  so the foreign-key-translation race (where a stale id would surface as a misleading
+  "different treatment" sentence) is unreachable through the API. Documented, not
+  disambiguated with extra machinery.
+- **The recorder's picker only offers items for the chosen treatment, and drops the
+  choice when the treatment changes.** On the workspace, the plan-item Select appears
+  beside the treatment Select (a `Not linked to a plan item` default); its options are the
+  open (`!isCompleted`) items for the **currently selected** treatment, each spelling its
+  tooth, and switching the treatment resets the link — a link to an item for a treatment
+  the record no longer names would be refused by the domain, so the UI never lets it be
+  composed.
 
 - **`save` upserts by id and never deletes an item.** A plan's items are written
   whole when it is proposed; the same `save` re-upserts each item on the write
@@ -1537,8 +1604,9 @@ editing. Both sides now go through `PatientRepository`. Remaining:
    Milestone 7's odontogram landed in session 34. What remains of this spread is
    inventory and reports.
 
-**Milestone 8 — TREATMENTS, CATALOGUE AND PLANS.** Session 36 closed the App UI
-half; what remains is the write side of a plan itself.
+**Milestone 8 — TREATMENTS, CATALOGUE AND PLANS.** Sessions 36–38 closed the App UI,
+the plan's own write side and the plan-item → visit link; only the plan-item → **charge**
+link remains open.
 
 1. [x] **Catalogue write.** `addTreatment` over `TreatmentRepository.add`, both
        engines, `POST /api/v1/treatments`, `createTreatmentSchema`. No clinic id and
@@ -1550,10 +1618,19 @@ half; what remains is the write side of a plan itself.
        (a foreign patient is a 404), with `progress` projected client-side by the
        pure `describeTreatmentPlanProgress` rather than stored.
 3. [x] **App UI.** A `/treatments` catalogue page (the sidebar's dangling link)
-       with the add form, and a read-only treatment-plans section on the patient
+       with the add form, and a treatment-plans section on the patient
        profile beside the odontogram — plus the browser specs for both.
-4. [ ] Item states, plan acceptance/rejection, invoicing: Milestone 9's
-       commissioning, not this one.
+4. [x] **Plan write side (session 37).** `createTreatmentPlan`,
+       `updateTreatmentPlan`, idempotent `completeTreatmentPlanItem` over
+       `TreatmentPlanRepository.save`; the profile section proposes a plan and marks
+       a line done, both non-optimistically.
+5. [x] **Plan-item → visit link (session 38).** `recordVisitTreatment` accepts an
+       optional `treatmentPlanItemId` resolved on the patient's own plan and required
+       to name the same treatment; the link is **provenance only** (never completes
+       the item), written by both engines, offered by the visit workspace.
+6. [ ] **Plan item → charge link** and item states / plan acceptance-rejection /
+       invoicing: the charge side is billing's, and status transitions are
+       Milestone 9's commissioning, not this one.
 
 ## Last session log
 
@@ -2497,3 +2574,41 @@ write and the states of its items.
 warning) · format · guard:boundaries OK · build 5/5 · 755 unit/component (app 302,
 29 new this session) · 252 PG integration skipped (**no Docker or PostgreSQL client
 in this environment**) · e2e: **116/116** — 7 new specs, run three times in a row.
+
+Session 37: Milestone 8's treatment-plan write side, end to end. The
+`TreatmentPlanRepository` port gained `listForPatient`, `getForPatient` and a
+transactional `save` (write models `TreatmentPlanWriteModel`/`TreatmentPlanItemWriteModel`),
+upserting by id and **never deleting an item** (the execution FK is `on delete set null`).
+Three use cases — `createTreatmentPlan` (opens `DRAFT`, folds catalogue labels, returns
+the same summary the read produces), `updateTreatmentPlan` (stamps `presentedAt`/`acceptedAt`
+without overwriting or inventing a transition graph) and idempotent, bodyless
+`completeTreatmentPlanItem` — sit over the port. Routes `POST …/treatment-plans`,
+`PATCH …/:planId` and `POST …/:planId/items/:itemId/complete` are wired in `app.ts`, with a
+foreign-key refusal translated to `NOT_FOUND` naming the patient. The profile's plans
+section stopped being read-only (inline propose form, per-line Mark done), both writes
+non-optimistic and invalidating only `['patients','treatment-plans',patientId]`;
+presenting/accepting are deliberately not drawn — no status buttons.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
+warning) · format · guard:boundaries OK · build 5/5 · domain 297, validation 139,
+app 306, API 80 passed / 254 skipped (the PG plan-write block typechecks but **skips —
+no Docker or PostgreSQL client in this environment**; the SQLite smoke suite covers the
+same path) · e2e: **119/119** — 3 new plan specs.
+
+Session 38: the plan-item → visit link — the execution half of Milestone 8's remaining
+bullet, and a **provenance-only** link by decision. `recordVisitTreatment` gained an
+optional `treatmentPlanItemId` and the rule that makes it meaningful: when named, the
+item must be on the patient's own plan in this clinic and its `treatmentId` must equal
+the record's, else `INVALID_INPUT`; the lookup reuses `listForPatient` (no new port verb)
+and the read is recorded. Both engines write the `treatment_plan_item_id` column in
+`save`. Recording a linked treatment does **not** complete the item — completion stays
+`completeTreatmentPlanItem`'s explicit act — so the record mutation still invalidates only
+`['visits','treatments',visitId]`, never the plan read. On the visit workspace the
+recorder offers the open items for the chosen treatment (a `Not linked to a plan item`
+default, each option spelling its tooth), dropping the choice when the treatment changes.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
+warning) · format · guard:boundaries OK · build 5/5 · domain 303, validation 141, app 307,
+API 81 passed / 256 skipped (the PG link block typechecks but **skips — no Docker or
+PostgreSQL client in this environment**; the SQLite smoke suite covers the same path) ·
+e2e: **120/120** — 1 new link spec.

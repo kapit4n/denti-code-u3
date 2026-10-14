@@ -17,6 +17,7 @@ const PATIENT_ID = '11111111-1111-4111-8111-111111111111';
 const DENTIST_ID = '33333333-3333-4333-8333-333333333333';
 const CHAIR_ID = '77777777-7777-4777-8777-777777777777';
 const TREATMENT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const PLAN_ITEM_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 describe('startVisitSchema', () => {
   it('accepts an appointment id and nothing else', () => {
@@ -203,6 +204,33 @@ describe('recordVisitTreatmentSchema', () => {
         notes: 'x'.repeat(2_001),
       }).success,
     ).toBe(false);
+  });
+
+  it('accepts an optional plan item id, absent or null', () => {
+    expect(
+      recordVisitTreatmentSchema.safeParse({
+        treatmentId: TREATMENT_ID,
+        treatmentPlanItemId: PLAN_ITEM_ID,
+      }),
+    ).toEqual({
+      success: true,
+      data: { treatmentId: TREATMENT_ID, treatmentPlanItemId: PLAN_ITEM_ID },
+    });
+    expect(
+      recordVisitTreatmentSchema.safeParse({ treatmentId: TREATMENT_ID, treatmentPlanItemId: null })
+        .success,
+    ).toBe(true);
+  });
+
+  it('refuses a plan item id that is not a uuid, leaving the link rule to the domain', () => {
+    // The schema checks the shape only; that the item is on this patient's plan, and
+    // for this treatment, is the domain's read.
+    for (const treatmentPlanItemId of ['1', 'not-a-uuid', '']) {
+      expect(
+        recordVisitTreatmentSchema.safeParse({ treatmentId: TREATMENT_ID, treatmentPlanItemId })
+          .success,
+      ).toBe(false);
+    }
   });
 });
 

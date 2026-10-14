@@ -925,6 +925,23 @@ export const recordedTreatment = {
   performedAt: '2026-10-05T13:35:00.000Z',
 } as const;
 
+/**
+ * The row a linked write answers with: the record carries the planned item it fulfils.
+ *
+ * `treatmentPlanItemId` is the *open* prophylaxis line in {@link anaTreatmentPlans}
+ * (tooth 36), so a spec that records against the picker and asserts this id on the wire
+ * is asserting the link the clinician chose, not a value the browser could invent.
+ */
+export const linkedTreatment = {
+  id: '11111111-cccc-4ddd-8eee-000000000003',
+  visitId: VISIT_ID,
+  treatmentId: PROPHYLAXIS_TREATMENT_ID,
+  tooth: null,
+  notes: null,
+  treatmentPlanItemId: '11111111-bbbb-4a11-9ccc-000000000012',
+  performedAt: '2026-10-06T13:35:00.000Z',
+} as const;
+
 export function visitTreatments(treatments: readonly Record<string, unknown>[]): Fixture['body'] {
   return { treatments };
 }

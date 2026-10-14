@@ -15,6 +15,11 @@
  *    between the read and the insert answers the same `INVALID_INPUT` the read would
  *    have given, rather than a `23503` reaching the API as a 500. The record's visit is
  *    `on delete cascade`, so the row cannot outlive its visit in either direction.
+ *  - **The optional plan link is written as it arrives, validated above.** `treatment_plan_item_id`
+ *    is `on delete set null` and the use case has already resolved the item on the
+ *    patient's plan, so the link is a plain project of the record onto the row; the
+ *    translated refusal above still names the treatment, the only reference a client
+ *    can get wrong through the door this repository serves.
  *
  * Order is `performed_at` ascending with the id as a tiebreak, the same stable reading
  * order a clinical record gets: two treatments performed in the same millisecond still
@@ -73,6 +78,7 @@ export class DrizzleTreatmentRecordRepository implements TreatmentRecordReposito
         treatmentId: record.treatmentId,
         tooth: record.tooth,
         notes: record.notes,
+        treatmentPlanItemId: record.treatmentPlanItemId,
         performedAt: new Date(record.performedAt),
       });
     } catch (error) {

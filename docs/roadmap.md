@@ -357,6 +357,12 @@ validity rules, not a drawing hack.
   rows (never stored) and redrawn after each item is completed.
 - Link plan items → visits → charges — the item carries a nullable
   `treatment_plan_item_id` link from the execution side; charging stays open.
+  - **Plan item → visit (session 38):** `recordVisitTreatment` accepts an optional
+    `treatmentPlanItemId`, resolved on the patient's own plan and required to name the
+    same treatment (else 422); the record carries the link as **provenance only** — it
+    never completes the plan item — and both engines write the column. The visit
+    workspace offers the open items for the chosen treatment. **Plan item → charge
+    remains open.**
 
 ---
 

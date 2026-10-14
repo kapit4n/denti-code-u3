@@ -48,6 +48,7 @@ import type {
   IdGenerator,
   PaymentRepository,
   PrescriptionRepository,
+  TreatmentPlanRepository,
   TreatmentRecordRepository,
   TreatmentRepository,
   UnitOfWork,
@@ -164,6 +165,16 @@ export interface VisitsDependencies {
   readonly treatments: TreatmentRepository;
 
   /**
+   * The patient's plans, so a record can name the item it fulfils.
+   *
+   * A plain repository, read-only here: recording a treatment resolves the linked
+   * item on the patient's own plan before it inserts (the record validates the link),
+   * and it never writes the plan — linking is provenance, and completing a line is
+   * `completeTreatmentPlanItem`'s job, not a side effect of a record.
+   */
+  readonly treatmentPlans: Pick<TreatmentPlanRepository, 'listForPatient'>;
+
+  /**
    * The prescriptions written on a visit.
    *
    * A plain repository rather than the transaction, for the same reason the notes are:
@@ -235,6 +246,7 @@ export async function registerVisitsRoutes(
     attachments,
     treatmentRecords,
     treatments,
+    treatmentPlans,
     prescriptions,
     charges,
     payments,
@@ -620,6 +632,11 @@ export async function registerVisitsRoutes(
    * between that read and the insert. A blank tooth or notes is dropped to `null`; a
    * tooth that is not a real FDI number is refused with the odontogram's own error.
    *
+   * An optional `treatmentPlanItemId` names the planned item this record fulfils. The
+   * use case resolves it on the patient's own plan, so an item on another patient's
+   * plan — or one for a different treatment — is the same 422 a foreign treatment gets.
+   * The link is provenance only: it does not complete the item.
+   *
    * 404 for a visit this clinic does not hold — and for the race where the visit is
    * deleted between the read and the insert, answered by the domain the way its read
    * would.
@@ -645,10 +662,14 @@ export async function registerVisitsRoutes(
           treatmentId: asTreatmentId(parsed.data.treatmentId),
           ...(parsed.data.tooth !== undefined ? { tooth: parsed.data.tooth } : {}),
           ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes } : {}),
+          ...(parsed.data.treatmentPlanItemId !== undefined
+            ? { treatmentPlanItemId: parsed.data.treatmentPlanItemId }
+            : {}),
         },
         {
           visits,
           treatments,
+          treatmentPlans,
           treatmentRecords,
           clock,
           newId: () => asVisitTreatmentExecutionId(ids.nextId()),

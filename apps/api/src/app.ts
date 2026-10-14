@@ -99,6 +99,7 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     chairs,
     clinicalNotes,
     prescriptions,
+    treatmentPlans,
     treatmentRecords,
     treatments,
   } = connection.repositories;
@@ -189,6 +190,11 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     // shape as the notes, and a plain repository for the same reason (ADR 0014).
     treatmentRecords,
     treatments,
+    // The patient's plans, read-only here: a record may name the planned item it
+    // fulfils, and the write resolves that item on the patient's own plan before it
+    // inserts. Linking is provenance — it does not complete the item, so this door
+    // never reaches the plan's write side.
+    treatmentPlans,
     // What the patient was sent home with — the same read-then-write shape as the
     // notes, and a plain repository for the same reason (ADR 0014).
     prescriptions,

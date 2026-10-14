@@ -25,6 +25,13 @@ export interface RecordVisitTreatmentVariables {
   readonly treatmentId: string;
   readonly tooth?: string | null;
   readonly notes?: string | null;
+  /**
+   * The planned item this record fulfils, when the clinician picked one.
+   *
+   * Provenance only: the server checks the item is on the patient's plan for the same
+   * treatment, and never completes the line — the plan screen's own action does that.
+   */
+  readonly treatmentPlanItemId?: string | null;
 }
 
 export function useRecordVisitTreatment() {
@@ -32,19 +39,28 @@ export function useRecordVisitTreatment() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ visitId, treatmentId, tooth, notes }: RecordVisitTreatmentVariables) =>
-      client.post<TreatmentRecord, { treatmentId: string; tooth?: string; notes?: string }>(
-        `/visits/${visitId}/treatments`,
-        {
-          treatmentId,
-          // Trimmed on the way out, and a blank is dropped: an empty string is a
-          // field that was typed and then forgotten, and the server stores nil for
-          // it — a request that omits it and one that empties it look the same to
-          // the record, which is the only way they should.
-          tooth: tooth?.trim() || undefined,
-          notes: notes?.trim() || undefined,
-        },
-      ),
+    mutationFn: ({
+      visitId,
+      treatmentId,
+      tooth,
+      notes,
+      treatmentPlanItemId,
+    }: RecordVisitTreatmentVariables) =>
+      client.post<
+        TreatmentRecord,
+        { treatmentId: string; tooth?: string; notes?: string; treatmentPlanItemId?: string }
+      >(`/visits/${visitId}/treatments`, {
+        treatmentId,
+        // Trimmed on the way out, and a blank is dropped: an empty string is a
+        // field that was typed and then forgotten, and the server stores nil for
+        // it — a request that omits it and one that empties it look the same to
+        // the record, which is the only way they should.
+        tooth: tooth?.trim() || undefined,
+        notes: notes?.trim() || undefined,
+        treatmentPlanItemId: treatmentPlanItemId || undefined,
+      }),
+    // The plan's own read is deliberately not invalidated: linking is provenance, so it
+    // completes nothing and the plan screen has no progress that could have moved.
     onSuccess: async (_record, { visitId }) => {
       await queryClient.invalidateQueries({ queryKey: ['visits', 'treatments', visitId] });
     },

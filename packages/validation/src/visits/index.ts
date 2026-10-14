@@ -111,6 +111,10 @@ export type CreateVisitAttachmentInput = z.infer<typeof createVisitAttachmentSch
  * *domain* can say whether digits name a real FDI tooth — its error is the one every
  * door in this product already speaks. The schema's one restraint is a ceiling on the
  * tooth's length, so a request cannot arrive with a field masquerading as a tooth.
+ *
+ * `treatmentPlanItemId` names the planned item the record fulfils. The schema checks
+ * only that it is a uuid; whether the item is on *this patient's* plan, and for the
+ * same treatment, is a rule about the plan and is judged by the domain.
  */
 export const recordVisitTreatmentSchema = z.object({
   treatmentId: uuidSchema,
