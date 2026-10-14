@@ -25,6 +25,7 @@ import { registerChairsRoutes } from './http/routes/chairs.js';
 import { registerTreatmentsRoutes } from './http/routes/treatments.js';
 import { registerVisitsRoutes } from './http/routes/visits.js';
 import { registerPatientsRoutes } from './http/routes/patients.js';
+import { registerTreatmentPlanRoutes } from './http/routes/treatment-plans.js';
 import { systemClock } from './infrastructure/clock/system-clock.js';
 import { uuidGenerator } from './infrastructure/id/uuid-generator.js';
 import { sendProblem } from './http/problem.js';
@@ -150,6 +151,20 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   await registerTreatmentsRoutes(app, {
     treatments,
     ids: uuidGenerator,
+  });
+
+  // The treatment-plan write side: proposing a plan for a patient, moving it along,
+  // and marking a line done. Its read lives with the patient routes; the writes have
+  // their own address here because a plan is a resource a plan screen opens on. It is
+  // given the same repository instances the patient read uses, so a plan is written
+  // and read through one door (ADR 0014).
+  await registerTreatmentPlanRoutes(app, {
+    patients: connection.repositories.patients,
+    dentists,
+    treatments,
+    treatmentPlans: connection.repositories.treatmentPlans,
+    ids: uuidGenerator,
+    clock: systemClock,
   });
 
   // The bridge from scheduling to clinical, and the walk-in that has no bridge. It is

@@ -1,13 +1,15 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 36 (the App UI for Task 3 — catalogue page, plans section, and the racy e2e swaps)
+> Last updated: session 37 (Milestone 8's treatment-plan write side, end to end)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
 
 **PHASE 4 — CLINICAL WORKFLOWS** (Milestone 5 of `docs/roadmap.md`)
 
-**Status: Milestone 4 complete; Milestone 5 nearly so — visits remain.** Sessions 13–21
+**Status: Milestones 5–7 complete; Milestone 8 (treatments) has its catalogue and its
+treatment-plan read _and_ write sides — the plan-item → visit/charge link remains.**
+Sessions 13–21
 delivered the agenda end to end: the `AgendaEntry` read model and `AppointmentRepository`,
 `GET /api/v1/appointments`, the grid with day/week/month views confined to two adapters
 by an enforced guard, the three write endpoints with the tenant foreign keys that make
@@ -84,11 +86,37 @@ half. Both surfaces carry browser specs, each verified by reintroducing the defe
 
 The session also found a **pre-existing flake** in the e2e layer, reproduced at HEAD
 before any of this work was in the tree: six specs installed the POST's answer by
-calling `installApi` *after* clicking the button that sends the POST, which races the
+calling `installApi` _after_ clicking the button that sends the POST, which races the
 response — a slow swap lets the refetch read the answer the page had already drawn,
 and one test fails. The swap now happens before the write in all six places (the
 section's own read has already been awaited, so nothing on screen changes), and the
 suite ran 116/116 three times in a row.
+
+Session 37 delivered **Milestone 8's treatment-plan write side**, end to end. The
+`TreatmentPlanRepository` port grew the two write verbs and the bounded reads they need —
+`listForPatient`, `getForPatient(clinicId, patientId, id)` (scoping the plan through the
+patient in the statement) and `save(model)` — with the write models `TreatmentPlanWriteModel`
+and `TreatmentPlanItemWriteModel`; `save` is one transaction that upserts the plan row and
+each item **by id**, never clobbering `created_at`, never writing the tenancy columns in the
+conflict set, and **never deleting an item** (the execution table's
+`treatment_plan_item_id` FK is `on delete set null`, so a removal would strand a performed
+record). Every member is written twice — once per engine. Three use cases sit over the port:
+`createTreatmentPlan` opens a `DRAFT`, folds the catalogue's code/name into each item, and
+returns the same `TreatmentPlanSummary` the read produces (including
+`describeTreatmentPlanProgress`); `updateTreatmentPlan` sets the status/title/notes and
+stamps `presentedAt`/`acceptedAt` on `PROPOSED`/`ACCEPTED` without ever overwriting an
+existing stamp and without inventing a transition graph; `completeTreatmentPlanItem` is a
+bodyless, **idempotent** POST that keeps the first completion stamp on a second call.
+Routes `POST /api/v1/patients/:patientId/treatment-plans` (201 `{ plan }`),
+`PATCH …/:planId` (204) and `POST …/:planId/items/:itemId/complete` (204) are wired in
+`app.ts`; the request body never names the patient, the id or the clock (ADR 0014), and a
+foreign-key refusal on save is translated to a `NOT_FOUND` naming the patient, the
+odontogram's rule. On the profile, the plans section stopped being read-only: an inline form
+proposes a plan (a treatment picker, FDI tooth, quantity, a money box parsed to integer
+minor units, and a note per line) and each open line offers **Mark done**; both writes are
+non-optimistic and invalidate only `['patients','treatment-plans',patientId]`. Presenting and
+accepting a plan are deliberately **not** drawn — no status buttons — because the legal moves
+are not decided yet.
 
 Session 33 delivered **files** — the seventh workspace section and the seventh "per
 visit" book (Task 1 of the session's plan), the moment Milestone 6's "Files/attachments
@@ -253,25 +281,47 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 36 — the App UI for Task 3)
+## Verification log (last run, session 37 — Milestone 8's treatment-plan write side)
 
 | Command                     | Result                                                                              |
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                                                    |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)                    |
 | `pnpm run format:check`     | clean                                                                               |
-| `pnpm run test`             | 12/12 tasks pass — domain 280, validation 131, app 302, API 79 passed / 252 skipped |
+| `pnpm run test`             | 12/12 tasks pass — domain 297, validation 139, app 306, API 80 passed / 254 skipped |
 | `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                              |
 | `pnpm run build`            | 5/5 tasks pass (web rebuilt before e2e)                                             |
 | `pnpm run guard:boundaries` | OK                                                                                  |
-| `pnpm run test:e2e`         | 116/116 pass — 7 new specs (4 catalogue, 3 plans), run three times in a row         |
+| `pnpm run test:e2e`         | 119/119 pass — 3 new specs (create, complete, refusal) on the existing plan spec    |
 
 **The PostgreSQL integration suite could not be executed this session: Docker and every
 PostgreSQL client are absent from this environment** (no `docker`, no `podman`, no
-`psql`, no `/var/run/docker.sock`). Nothing this session added a new endpoint, so no
-new integration tests were written; session 35's three `patient-profile-scope` tests
-and two SQLite-smoke blocks stand as the API side's cover, and the always-on SQLite
-smoke suite still runs here.
+`psql`, no `/var/run/docker.sock`). Session 37's new write coverage was added to
+`apps/api/test/patient-profile-scope.integration.test.ts` (create → present → complete →
+idempotent → 404 → 422, cleanup by the created plan id) and it typechecks, but it
+**skips** here for the reason above; the always-on SQLite smoke suite — which gained the
+same create → present → complete → idempotent → 404 → 422 block — still runs.
+
+**What session 37's work is verified by.** 39 domain tests in
+`treatment-plan-writes.test.ts` (a plan is opened `DRAFT` with the clock and the
+catalogue's labels folded into the answer; a foreign patient or treatment is a
+`NOT_FOUND` with nothing written; a blank title/notes becomes null; sites are
+deduplicated into canonical order and blank tooth → null; `PROPOSED`/`ACCEPTED` stamp
+their instant and never overwrite an existing one; a refusal never reaches `save`;
+completing an item is idempotent and keeps the first stamp; a missing plan or item is a
+`NOT_FOUND`), 17 validation tests appended to `treatments.test.ts` (the status enum
+including `PROPOSED`, the one-item minimum, the surface enum reused from the
+odontogram, the item caps, the `update` schema's three fields), the component tests (the
+section proposes a plan and sends the composed body — a blank quantity dropped, the
+`"120.50"` box sent as `12050` — the new plan appears only after the refetch and the
+form closes only then; a refused plan keeps the draft in the open form; a line is marked
+done through a bodyless POST and the refetched list drops the control; a 404 on the
+write is a sentence about the item, not the network), and 3 new browser specs: a plan
+proposed and drawn only once the server has stored it (the POST's whole body asserted),
+a 422 that keeps the draft and does not refetch a list it did not change, and a line
+marked done and redrawn from the refetched plan. The seed's plan-item surfaces were
+corrected to the odontogram's own enum (`['MO']` → `['MESIAL','OCCLUSAL']`) in both
+engines; `db:migrate` + `db:seed` re-verified against the SQLite file.
 
 **What session 36's work is verified by.** 5 `treatment-catalogue` component tests
 (the catalogue draws rows with prices as money; an empty catalogue says so; a
@@ -469,6 +519,50 @@ the new suite failed for a reason that had nothing to do with the workspace.
 
 ## Decisions made this session (not yet in ADRs)
 
+### Decisions from session 37 (the treatment-plan write side)
+
+- **`save` upserts by id and never deletes an item.** A plan's items are written
+  whole when it is proposed; the same `save` re-upserts each item on the write
+  model's own id inside one transaction, and it deliberately has no delete arm —
+  `visit_treatment_executions.treatment_plan_item_id` is `on delete set null`, so
+  removing one would be the only way to write a row the domain cannot describe.
+  Item _removal_ is therefore not a use case yet, and that is stated rather than
+  implied.
+- **A foreign-key refusal on save is a `NOT_FOUND` naming the patient, not an
+  `INVALID_INPUT`.** The plan is written under the patient the path named; a
+  patient this clinic cannot see is the same 404 the read answers, so both engines
+  translate `23503` / `SQLITE_CONSTRAINT_FOREIGNKEY` to `NOT_FOUND` — the
+  odontogram's rule, applied to the plan.
+- **`updateTreatmentPlan` stamps and does not invent a transition graph.** The
+  boundary accepts the domain enum's values (`PROPOSED` among them); setting
+  `PROPOSED` fills `presentedAt` if it is null and `ACCEPTED` fills `acceptedAt` if
+  it is null, and an existing stamp is never overwritten. Which moves are _legal_
+  is not decided (no rule table), so there are deliberately **no status buttons**
+  in the UI — a control for a move the API has no rule for would lie about what the
+  clinic may do.
+- **`completeTreatmentPlanItem` is bodyless and idempotent.** The item is the path;
+  a second POST after the line is already done does not save again and keeps the
+  first stamp, so the endpoint is safe to retry. An unknown plan or item is a 404.
+- **The status on the write model is typed, not cast.** `TreatmentPlanWriteModel.status`
+  is `TreatmentPlanStatus`, so the two engines that read the column's text cannot
+  disagree about which values exist; the update schema mirrors the same enum in
+  `packages/validation` (which must not import `domain`), pinned by its own test.
+- **The tooth rule is duplicated, on purpose, like the odontogram's FDI regex.**
+  The item schema in `packages/validation` carries its own
+  `/^([1-4][1-8]|[5-8][1-5])$/` and the use case its own `assertFdiTooth`, because
+  the boundary package cannot depend on `domain`; both copies are pinned by tests
+  (blank → null, a non-FDI string refused).
+- **The inline plan form is controlled state, not React Hook Form.** It is the same
+  shape as its two siblings on the profile and in the workspace — the odontogram's
+  finding form and the visit's treatment recorder — and both are `useState`. A
+  money box parsed by `parseMajorUnitsToMinor` (the charge line's own parser,
+  imported from `features/visits/charge-presentation.ts`) blocks the submit when it
+  cannot parse, rather than silently sending an unpriceable line.
+- **Both writes invalidate only the one list they change.** Proposing a plan and
+  marking a line done each invalidate `['patients','treatment-plans',patientId]`
+  and nothing else — not `['patients']`, not a visit, not any other patient. The
+  mutation is non-optimistic, so the row on screen is always the refetch's.
+
 ### Decisions from session 36 (the App UI for Task 3)
 
 - **The price is typed once, as money, and crosses the wire as cents.** The add form
@@ -492,7 +586,7 @@ the new suite failed for a reason that had nothing to do with the workspace.
   spell differently.
 - **The e2e "install the POST's answer" pattern installs it before the click.**
   Six specs (complete visit, note, treatment, prescription, file, odontogram entry)
-  used to call `installApi` *after* the click that sends the POST — a race, since
+  used to call `installApi` _after_ the click that sends the POST — a race, since
   the refetch can beat a slow swap and read the answer the page had already drawn.
   Each now swaps before the write, after the section's own read has been awaited, so
   the property the tests assert (the row is the refetch's to produce, carrying the
@@ -2394,7 +2488,7 @@ the care cards and the odontogram. `useTreatments` moved to
 `features/treatments/queries/catalogue-query.ts`, keeping the `['treatments']` key so
 the workspace and the page share one request. Seven browser specs (four catalogue,
 three plans), each verified by reintroducing the defect. The session also found and
-fixed a **pre-existing e2e flake**: six specs installed the POST's answer *after*
+fixed a **pre-existing e2e flake**: six specs installed the POST's answer _after_
 clicking, which races the response; each swap now happens before the write, and the
 suite ran 116/116 three times in a row. Milestone 8's remaining half is a plan's own
 write and the states of its items.

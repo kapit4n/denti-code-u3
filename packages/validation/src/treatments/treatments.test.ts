@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createTreatmentSchema } from './index.js';
+import {
+  createTreatmentPlanSchema,
+  createTreatmentSchema,
+  updateTreatmentPlanSchema,
+} from './index.js';
 
 describe('createTreatmentSchema', () => {
   it('accepts a full catalogue row, trimming string fields', () => {
@@ -99,5 +103,74 @@ describe('createTreatmentSchema', () => {
     });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe('createTreatmentPlanSchema', () => {
+  it('accepts a plan whose body names no patient and defaults the item’s surfaces and quantity', () => {
+    const result = createTreatmentPlanSchema.safeParse({
+      items: [{ treatmentId: '44444444-4444-4444-8444-444444444444', tooth: '16' }],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({
+      dentistId: undefined,
+      title: undefined,
+      notes: undefined,
+      items: [
+        {
+          treatmentId: '44444444-4444-4444-8444-444444444444',
+          tooth: '16',
+          surfaces: [],
+          quantity: 1,
+          estimatedPriceMinor: undefined,
+          notes: undefined,
+        },
+      ],
+    });
+  });
+
+  it('accepts an item with nothing but a note — a plan can hold a to-do', () => {
+    const result = createTreatmentPlanSchema.safeParse({ items: [{ notes: 'Discuss whitening' }] });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('refuses a plan with no items', () => {
+    expect(createTreatmentPlanSchema.safeParse({ items: [] }).success).toBe(false);
+  });
+
+  it('carries the odontogram’s surfaces, not an abbreviation', () => {
+    expect(
+      createTreatmentPlanSchema.safeParse({ items: [{ surfaces: ['MESIAL', 'OCCLUSAL'] }] })
+        .success,
+    ).toBe(true);
+    expect(createTreatmentPlanSchema.safeParse({ items: [{ surfaces: ['MO'] }] }).success).toBe(
+      false,
+    );
+  });
+
+  it('refuses a tooth that is not FDI', () => {
+    expect(createTreatmentPlanSchema.safeParse({ items: [{ tooth: '99' }] }).success).toBe(false);
+  });
+});
+
+describe('updateTreatmentPlanSchema', () => {
+  it('accepts the domain’s own status names, PROPOSED among them', () => {
+    expect(updateTreatmentPlanSchema.safeParse({ status: 'PROPOSED' }).success).toBe(true);
+    expect(updateTreatmentPlanSchema.safeParse({ status: 'ACCEPTED' }).success).toBe(true);
+  });
+
+  it('refuses a status the domain does not know — PRESENTED included', () => {
+    expect(updateTreatmentPlanSchema.safeParse({ status: 'PRESENTED' }).success).toBe(false);
+  });
+
+  it('carries no items: moving a plan is not editing its lines', () => {
+    const result = updateTreatmentPlanSchema.parse({
+      status: 'ACCEPTED',
+      items: [{ treatmentId: '44444444-4444-4444-8444-444444444444' }],
+    });
+
+    expect(result).toEqual({ status: 'ACCEPTED' });
   });
 });

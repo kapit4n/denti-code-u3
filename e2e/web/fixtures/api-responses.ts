@@ -833,6 +833,45 @@ export const anaTreatmentPlans = {
 export const noTreatmentPlans = { items: [] } as const;
 
 /**
+ * The plan the API answers `POST .../treatment-plans` with.
+ *
+ * The `id` is the server's, which is what makes it useful: a spec asserting the
+ * section draws *this* plan after the write is asserting that the refetch produced
+ * it, because nothing in the browser could have invented that uuid. Its single
+ * item carries the "120.50" that was typed as the 12 050 minor units the boundary
+ * takes, and no quantity, because the box was left blank (the server's default of
+ * one). The status is `DRAFT` — the opening value only the server may choose.
+ */
+export const createdTreatmentPlan = {
+  plan: {
+    id: '11111111-bbbb-4a11-9ccc-000000000002',
+    dentistId: null,
+    status: 'DRAFT',
+    title: null,
+    notes: null,
+    presentedAt: null,
+    acceptedAt: null,
+    updatedAt: '2026-10-07T10:00:00.000Z',
+    items: [
+      {
+        id: '11111111-bbbb-4a11-9ccc-000000000021',
+        treatmentId: TREATMENT_CATALOGUE_ID,
+        treatmentCode: 'COMPO-ANT',
+        treatmentName: 'Composite restoration — anterior',
+        tooth: '36',
+        surfaces: [],
+        quantity: 1,
+        estimatedPriceMinor: 12050,
+        isCompleted: false,
+        completedAt: null,
+        notes: null,
+      },
+    ],
+    progress: { total: 1, completed: 0, inProgress: 0, pending: 1, percentComplete: 0 },
+  },
+} as const;
+
+/**
  * The row a spec files in the catalogue, and the row the API answers the POST
  * with.
  *

@@ -443,6 +443,116 @@ describe('API on SQLite', () => {
     expect(foreignRead.json().error.code).toBe('NOT_FOUND');
   });
 
+  it('proposes, presents and completes a treatment plan through the write side', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans`,
+      payload: {
+        title: '  Full mouth rehab  ',
+        items: [
+          {
+            treatmentId,
+            tooth: '36',
+            surfaces: ['OCCLUSAL', 'MESIAL'],
+            estimatedPriceMinor: 45_000,
+          },
+        ],
+      },
+    });
+
+    expect(created.statusCode).toBe(201);
+    const plan = created.json().plan;
+    expect(plan).toMatchObject({
+      status: 'DRAFT',
+      title: 'Full mouth rehab',
+      presentedAt: null,
+      acceptedAt: null,
+      progress: { total: 1, completed: 0, percentComplete: 0 },
+    });
+    expect(plan.items[0]).toMatchObject({
+      tooth: '36',
+      surfaces: ['MESIAL', 'OCCLUSAL'],
+      treatmentCode: 'COMPO',
+      treatmentName: 'Composite restoration',
+      isCompleted: false,
+    });
+
+    // Persisted: the read the plan screen draws shows it, with its line and its
+    // progress — the same two engines answering the same plan (ADR 0025).
+    const read = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans`,
+    });
+    const stored = read.json().items.find((entry: { id: string }) => entry.id === plan.id);
+    expect(stored).toMatchObject({
+      status: 'DRAFT',
+      title: 'Full mouth rehab',
+      progress: { total: 1, completed: 0 },
+    });
+    expect(stored.items).toHaveLength(1);
+
+    // Present it: the status moves and the first presented stamp is set.
+    const presented = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans/${plan.id}`,
+      payload: { status: 'PROPOSED' },
+    });
+    expect(presented.statusCode).toBe(204);
+
+    const itemId = plan.items[0].id;
+    const completed = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans/${plan.id}/items/${itemId}/complete`,
+    });
+    expect(completed.statusCode).toBe(204);
+
+    const after = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans`,
+    });
+    const updated = after.json().items.find((entry: { id: string }) => entry.id === plan.id);
+    expect(updated).toMatchObject({
+      status: 'PROPOSED',
+      progress: { total: 1, completed: 1, percentComplete: 100 },
+    });
+    expect(updated.presentedAt).not.toBeNull();
+    expect(updated.items[0]).toMatchObject({ isCompleted: true });
+    expect(updated.items[0].completedAt).not.toBeNull();
+
+    // Completing again keeps the first completion stamp: the write is the
+    // completion, not the second tap.
+    const firstStamp = updated.items[0].completedAt;
+    await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans/${plan.id}/items/${itemId}/complete`,
+    });
+    const again = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans`,
+    });
+    const unchanged = again.json().items.find((entry: { id: string }) => entry.id === plan.id);
+    expect(unchanged.items[0].completedAt).toBe(firstStamp);
+
+    // A plan for a patient this clinic does not hold answers 404, and nothing is
+    // written.
+    const foreign = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${foreignPatientId}/treatment-plans`,
+      payload: { items: [{}] },
+    });
+    expect(foreign.statusCode).toBe(404);
+    expect(foreign.json().error.code).toBe('NOT_FOUND');
+
+    // A body that cannot name a plan is refused before the domain is asked.
+    const empty = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans`,
+      payload: { items: [] },
+    });
+    expect(empty.statusCode).toBe(422);
+    expect(empty.json().error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('prescribes a medication on the visit, inheriting whom it is about from the visit', async () => {
     const filed = await app.inject({
       method: 'POST',

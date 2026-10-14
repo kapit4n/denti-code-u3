@@ -30,7 +30,11 @@ import type {
   AppointmentWindow,
 } from '../appointment/index.js';
 import type { Visit, VisitStatus, ClinicalNote, VisitAttachment } from '../visit/index.js';
-import type { TreatmentRecord, TreatmentPlanProgress } from '../treatment/index.js';
+import type {
+  TreatmentRecord,
+  TreatmentPlanProgress,
+  TreatmentPlanStatus,
+} from '../treatment/index.js';
 import type { OdontogramEntryRecord } from '../odontogram/index.js';
 import type {
   EditablePatientDetails,
@@ -681,23 +685,79 @@ export interface TreatmentPlanSummary {
 }
 
 /**
- * Reading one patient's treatment plans.
+ * One line of a treatment plan as it is written.
+ *
+ * The write's own shape rather than the read's: the joined treatment code and name
+ * are not here, because they belong to the catalogue and not to the row a save
+ * stores — the summary folds them in for a reader, the write never sends them back.
+ * `id` is the item's own identity so a save can upsert it in place; nothing rewrites
+ * ids, because `visit_treatment_executions.treatment_plan_item_id` points at them.
+ */
+export interface TreatmentPlanItemWriteModel {
+  readonly id: string;
+  readonly treatmentId: TreatmentId | null;
+  /** FDI tooth, when the item is tooth-specific. */
+  readonly tooth: string | null;
+  readonly surfaces: readonly string[];
+  readonly quantity: number;
+  readonly estimatedPriceMinor: number;
+  readonly isCompleted: boolean;
+  readonly completedAt: IsoDateTime | null;
+  readonly notes: string | null;
+}
+
+/**
+ * One treatment plan as it is written.
+ *
+ * The row plus its lines. `clinicId` and `patientId` travel with it because the
+ * table carries both tenant columns: a save scopes its own tenancy in the
+ * statement rather than trusting a caller to have read the patient first (ADR
+ * 0014). `status`, `title`, `notes`, `presentedAt` and `acceptedAt` are whatever
+ * the use case decided; the save is a plain project of the model onto the row.
+ */
+export interface TreatmentPlanWriteModel {
+  readonly id: TreatmentPlanId;
+  readonly clinicId: ClinicId;
+  readonly patientId: PatientId;
+  readonly dentistId: DentistId | null;
+  readonly status: TreatmentPlanStatus;
+  readonly title: string | null;
+  readonly notes: string | null;
+  readonly presentedAt: IsoDateTime | null;
+  readonly acceptedAt: IsoDateTime | null;
+  readonly updatedAt: IsoDateTime;
+  readonly items: readonly TreatmentPlanItemWriteModel[];
+}
+
+/**
+ * Reading and writing one patient's treatment plans.
  *
  * Unlike the clinical books above, `treatment_plans` has a `clinic_id` of its own,
  * so tenancy is scoped in the statement on that column — the charge pattern, not
- * the notes' join. The patient is still resolved first: `undefined` means "this
- * clinic holds no such patient" (the same 404 the profile and the odontogram give),
- * and only a real patient can answer with `[]` — the difference between "not here"
- * and "nothing planned", on purpose (ADR 0014).
+ * the notes' join. The patient is still resolved first on the read: `undefined`
+ * means "this clinic holds no such patient" (the same 404 the profile and the
+ * odontogram give), and only a real patient can answer with `[]` — the difference
+ * between "not here" and "nothing planned", on purpose (ADR 0014).
+ *
+ * `getForPatient` scopes by clinic *and* patient in the statement, so a plan is
+ * never read through a patient it does not belong to. `save` upserts the plan row
+ * and then each item it is given, **in one transaction**: a plan is its lines, and
+ * a save that left the plan without them would have written half a plan. Items are
+ * upserted in place, never deleted and reinserted — `visit_treatment_executions`
+ * points at an item by id, and `ON DELETE SET NULL` would unlink a performed
+ * treatment from the line that named it. Removing an item is not a use case yet.
  */
 export interface TreatmentPlanRepository {
   listForPatient(
     clinicId: ClinicId,
     patientId: PatientId,
   ): Promise<readonly TreatmentPlanSummary[] | undefined>;
-  save?(treatmentPlan: TreatmentPlanSummary): Promise<void>;
-  add?(treatmentPlan: TreatmentPlanSummary): Promise<void>;
-  getById?(clinicId: ClinicId, id: TreatmentPlanId): Promise<TreatmentPlanSummary | undefined>;
+  getForPatient(
+    clinicId: ClinicId,
+    patientId: PatientId,
+    id: TreatmentPlanId,
+  ): Promise<TreatmentPlanWriteModel | undefined>;
+  save(treatmentPlan: TreatmentPlanWriteModel): Promise<void>;
 }
 
 /**

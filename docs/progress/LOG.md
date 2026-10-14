@@ -2543,3 +2543,95 @@ Defect-injection verified: treating-catalogue tests fail when rendering raw cent
 - `parseMajorUnitsToMinor` lives in `features/visits/charge-presentation.ts` (cross-feature import accepted). `useTreatments` moved to the treatments feature with the same cache key.
 - Money: `formatMinorUnits` produces "300.00"; `parseMajorUnitsToMinor('750.00')` returns 75000; Playwright/RTL expect the string/number form as written in the tests.
 - No PostgreSQL integration tests run here (no Docker/psql). SQLite smoke covers catalogue write + plans read.
+
+## Session 37 — Milestone 8's treatment-plan write side, end to end
+
+**What changed**
+
+- **Domain ports (`packages/domain/src/ports/index.ts`):** `TreatmentPlanRepository`
+  gained the two write verbs and the bounded reads they need — `listForPatient`,
+  `getForPatient(clinicId, patientId, id)` (scopes the plan through the patient in
+  the statement) and `save(model)`. New write models `TreatmentPlanWriteModel` and
+  `TreatmentPlanItemWriteModel`; the status is typed `TreatmentPlanStatus` (no
+  cast). The dead optional methods and the unregistered route from the earlier
+  scaffold were removed, and the two competing schema sets collapsed into one.
+- **Domain use cases:** `create-treatment-plan.ts` (opens `DRAFT`, folds the
+  catalogue's code/name into each item, returns the same `TreatmentPlanSummary` the
+  read produces), `update-treatment-plan.ts` (status/title/notes; stamps
+  `presentedAt`/`acceptedAt` on `PROPOSED`/`ACCEPTED`, never overwriting;
+  `Pick<>` deps), `complete-treatment-plan-item.ts` (bodyless, idempotent). New
+  `treatment-plan-writes.test.ts` (39 tests). A harness-typing bug surfaced on the
+  first full typecheck — the shared fake was annotated with
+  `CreateTreatmentPlanDependencies`, which admits only `save`, erasing the
+  `getForPatient` the other two use cases require; fixed by widening the
+  annotation.
+- **Validation (`packages/validation/src/treatments/index.ts`):**
+  `createTreatmentPlanSchema` (no body patientId, items 1–50, surfaces default `[]`
+  max 6 via the odontogram's `odontogramSurfaceSchema`, quantity default 1),
+  `updateTreatmentPlanSchema` (status/title/notes only; status enum includes
+  `PROPOSED`). Removed `treatmentPlanCreateSchema`/`treatmentPlanUpdateSchema`/
+  `completeTreatmentPlanItemSchema`/`CompleteTreatmentPlanItemInput`. 17 tests
+  appended.
+- **API repositories:** `DrizzleTreatmentPlanRepository` on both engines gained
+  `getForPatient` and a transactional `save` (PG `db.transaction`, SQLite sync
+  `.run()`), upserting items by id, never clobbering `created_at`, never writing
+  tenancy columns in the conflict set, never deleting items; a foreign-key refusal
+  is translated to `NOT_FOUND` naming the patient.
+- **API routes (`apps/api/src/http/routes/treatment-plans.ts`, new):**
+  `POST /api/v1/patients/:patientId/treatment-plans` (201 `{ plan }`, validation 422
+  `VALIDATION_ERROR`), `PATCH …/:planId` (204),
+  `POST …/:planId/items/:itemId/complete` (204); typed
+  `TreatmentPlanRoutesDependencies {patients, dentists, treatments, treatmentPlans,
+ids, clock}`; branded id casts. Registered in `app.ts`.
+- **API tests:** write coverage appended to
+  `patient-profile-scope.integration.test.ts` (create → present → complete →
+  idempotent → 404 → 422; cleanup by created plan id) — **skipped** locally (no
+  `TEST_DATABASE_URL`), typechecked — and to `sqlite-smoke.integration.test.ts`
+  (same flow, always runs here).
+- **App (UI):** `mutations/use-create-patient-treatment-plan.ts`,
+  `mutations/use-complete-treatment-plan-item.ts` (both non-optimistic, invalidate
+  `['patients','treatment-plans',patientId]`), failure describers
+  `describe-treatment-plan-failure.ts` and `describe-plan-item-failure.ts`,
+  `components/new-treatment-plan-form.tsx` (controlled rows: treatment picker, FDI
+  tooth, quantity, money box via `parseMajorUnitsToMinor`, note; drop blank lines,
+  block an unparseable price), and `patient-treatment-plans-section.tsx` (a
+  **New plan** toggle plus a **Mark done** button per open line).
+  `patient-treatment-plans-section.test.tsx` grew from 5 to 9 tests.
+- **E2e:** `patient-treatment-plans.spec.ts` grew from 3 to 6 tests (create with
+  the whole POST body asserted, refusal keeps the draft, complete bodyless and
+  redrawn from the refetch); `fixtures/api-responses.ts` gained
+  `createdTreatmentPlan`.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run guard:boundaries OK (one pre-existing warning)
+pnpm run build            5/5 successful (web rebuilt before e2e)
+pnpm run test             12/12 tasks — domain 297, validation 139, app 306,
+                          api-client 15, database 6, desktop 3,
+                          API 80 passed / 254 skipped (PG suite needs a database)
+pnpm run test:e2e         119/119 passed (3 new plan-write specs)
+```
+
+Defect-reintroduction and boundary checks: a blank quantity is dropped from the POST
+body and `"120.50"` reaches the wire as `12050`; the create form closes only after the
+refetch; a 422 keeps the draft and does not refetch; the complete POST is bodyless and
+the refetched list drops the control. `db:migrate` + `db:seed` re-verified; the seed's
+plan-item surfaces were corrected to the odontogram's enum (`['MO']` →
+`['MESIAL','OCCLUSAL']`, `['OC']` → `['OCCLUSAL']`) in both engines.
+
+**NOT done and deliberately.** No status buttons (present/accept) — the legal moves are
+not decided, so the UI does not draw a move the API has no rule for. No item-removal use
+case, for the FK reason above. The plan-item → charge link (billing) is untouched. The
+PostgreSQL suites skip on this machine exactly as every integration suite does.
+
+**Notes**
+
+- The roadmap's M8 plan-read line was corrected: the endpoint is
+  `/api/v1/patients/:patientId/treatment-plans` (not the query-string form the
+  roadmap had written).
+- A stray commit `0f381ce` (invoice numbering) pre-dates this session and is
+  unrelated.

@@ -27,9 +27,12 @@ import { fileURLToPath } from 'node:url';
 
 import * as schema from '@denti-code-u3/database/schema';
 import { registerPatientsRoutes } from '../src/http/routes/patients.js';
+import { registerTreatmentPlanRoutes } from '../src/http/routes/treatment-plans.js';
 import { DrizzlePatientRepository } from '../src/infrastructure/persistence/repositories/patient-repository.js';
 import { DrizzleOdontogramEntryRepository } from '../src/infrastructure/persistence/repositories/odontogram-entry-repository.js';
 import { DrizzleTreatmentPlanRepository } from '../src/infrastructure/persistence/repositories/treatment-plan-repository.js';
+import { DrizzleDentistRepository } from '../src/infrastructure/persistence/repositories/dentist-repository.js';
+import { DrizzleTreatmentRepository } from '../src/infrastructure/persistence/repositories/treatment-repository.js';
 import { systemClock } from '../src/infrastructure/clock/system-clock.js';
 import { uuidGenerator } from '../src/infrastructure/id/uuid-generator.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
@@ -64,6 +67,8 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
    */
   let scopedClinicId = clinicId;
   let app: FastifyInstance;
+  /** The plan the write test creates, so `afterAll` can remove it. */
+  let createdPlanId: string | undefined;
 
   function getProfile(patientId: string, scope: string = clinicId) {
     scopedClinicId = scope;
@@ -80,10 +85,22 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
     });
     // The real write-side dependencies, not stubs: the same handle the server
     // uses, so the registration path is exercised against real PostgreSQL.
+    const patients = new DrizzlePatientRepository(db);
+    const treatmentPlans = new DrizzleTreatmentPlanRepository(db);
     await registerPatientsRoutes(app, {
-      patients: new DrizzlePatientRepository(db),
+      patients,
       odontogramEntries: new DrizzleOdontogramEntryRepository(db),
-      treatmentPlans: new DrizzleTreatmentPlanRepository(db),
+      treatmentPlans,
+      ids: uuidGenerator,
+      clock: systemClock,
+    });
+    // The plan write side, wired with the same repositories the read uses — the
+    // PostgreSQL twin of the SQLite smoke's write assertions (ADR 0025).
+    await registerTreatmentPlanRoutes(app, {
+      patients,
+      dentists: new DrizzleDentistRepository(db),
+      treatments: new DrizzleTreatmentRepository(db),
+      treatmentPlans,
       ids: uuidGenerator,
       clock: systemClock,
     });
@@ -142,6 +159,10 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
   afterAll(async () => {
     // Children first: `patients.clinic_id` is `on delete restrict`, so removing
     // the clinic before its patients fails the foreign key.
+    if (createdPlanId) {
+      await sql`delete from treatment_plan_items where treatment_plan_id = ${createdPlanId}`;
+      await sql`delete from treatment_plans where id = ${createdPlanId}`;
+    }
     await sql`delete from treatment_plan_items where id = ${itemId}`;
     await sql`delete from treatment_plans where id = ${planId}`;
     await sql`delete from charges where id = ${chargeId}`;
@@ -294,6 +315,95 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
     const response = await app.inject({
       method: 'GET',
       url: `/api/v1/patients/${otherClinicPatient}/treatment-plans`,
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe('NOT_FOUND');
+  });
+
+  it('proposes, presents and completes a plan through the write side', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${patientWithHistory}/treatment-plans`,
+      payload: {
+        title: '  Two-visit rehab  ',
+        items: [
+          { tooth: '16', surfaces: ['MESIAL', 'OCCLUSAL'], estimatedPriceMinor: 30_000 },
+          { notes: 'Review whitening after the crown settles' },
+        ],
+      },
+    });
+
+    expect(created.statusCode).toBe(201);
+    const plan = created.json().plan;
+    createdPlanId = plan.id;
+    expect(plan).toMatchObject({
+      status: 'DRAFT',
+      title: 'Two-visit rehab',
+      presentedAt: null,
+      acceptedAt: null,
+      progress: { total: 2, completed: 0, percentComplete: 0 },
+    });
+    expect(plan.items).toHaveLength(2);
+
+    // The write is really there: the read the screen draws shows it, scoped to its
+    // patient (ADR 0014).
+    const read = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${patientWithHistory}/treatment-plans`,
+    });
+    const stored = read.json().items.find((entry: { id: string }) => entry.id === plan.id);
+    expect(stored).toMatchObject({ status: 'DRAFT', title: 'Two-visit rehab' });
+
+    // Present it: the status moves and the first presented stamp is set.
+    const presented = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/patients/${patientWithHistory}/treatment-plans/${plan.id}`,
+      payload: { status: 'PROPOSED' },
+    });
+    expect(presented.statusCode).toBe(204);
+
+    // Complete the first line, then again: the second tap keeps the first stamp.
+    const itemId = plan.items[0].id;
+    await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${patientWithHistory}/treatment-plans/${plan.id}/items/${itemId}/complete`,
+    });
+    const firstRead = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${patientWithHistory}/treatment-plans`,
+    });
+    const afterFirst = firstRead.json().items.find((entry: { id: string }) => entry.id === plan.id);
+    const firstStamp = afterFirst.items.find(
+      (entry: { id: string }) => entry.id === itemId,
+    ).completedAt;
+    expect(firstStamp).toBeTruthy();
+    expect(afterFirst).toMatchObject({
+      status: 'PROPOSED',
+      progress: { total: 2, completed: 1, percentComplete: 50 },
+    });
+
+    await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${patientWithHistory}/treatment-plans/${plan.id}/items/${itemId}/complete`,
+    });
+    const secondRead = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${patientWithHistory}/treatment-plans`,
+    });
+    const afterSecond = secondRead
+      .json()
+      .items.find((entry: { id: string }) => entry.id === plan.id);
+    expect(afterSecond.items.find((entry: { id: string }) => entry.id === itemId).completedAt).toBe(
+      firstStamp,
+    );
+  });
+
+  it('does not propose a plan for another clinic’s patient', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${otherClinicPatient}/treatment-plans`,
+      payload: { items: [{}] },
     });
 
     expect(response.statusCode).toBe(404);

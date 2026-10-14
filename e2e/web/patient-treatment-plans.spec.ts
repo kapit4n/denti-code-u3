@@ -3,12 +3,14 @@
  *
  * The API is mocked (see `fixtures/mock-api.ts` for why), so these specs answer
  * presentation questions only: does the card draw what the API returned — with
- * the API's own progress block rather than a count of its own — and are "nothing
- * has been offered" and "the read failed" different sentences?
+ * the API's own progress block rather than a count of its own — does a proposed
+ * plan or a completed line reach the screen only once a refetch has produced it,
+ * and are "nothing has been offered", "the read failed" and "the write was
+ * refused" different sentences?
  *
  * What the API decides — which plans a patient has, what a foreign patient
- * answers — is the API's subject, covered against real databases in
- * `apps/api/test/patient-profile-scope.integration.test.ts` and
+ * answers, which statuses a move may reach — is the API's subject, covered against
+ * real databases in `apps/api/test/patient-profile-scope.integration.test.ts` and
  * `sqlite-smoke.integration.test.ts`.
  */
 
@@ -20,13 +22,66 @@ import {
   anaProfile,
   anaTreatmentPlans,
   clinicFixture,
+  createdTreatmentPlan,
   noTreatmentPlans,
+  TREATMENT_CATALOGUE_ID,
+  treatmentsCatalogue,
 } from './fixtures/api-responses.js';
 import { watchForConsoleErrors } from './fixtures/console-errors.js';
-import { installApi } from './fixtures/mock-api.js';
+import { installApi, type InstalledApi, type RecordedRequest } from './fixtures/mock-api.js';
 
 const PROFILE_PATH = `/api/v1/patients/${ANA_ID}`;
 const PLANS_PATH = `${PROFILE_PATH}/treatment-plans`;
+
+const PLAN_ID = anaTreatmentPlans.items[0].id;
+const PENDING_ITEM_ID = anaTreatmentPlans.items[0].items[1].id;
+
+/**
+ * The console-error list, minus the browser's own note about a refused response.
+ *
+ * The refusal spec makes the API answer 422, and Chromium logs that as a console
+ * error before the application has had any chance to react — so the raw list is
+ * never empty there. What is left after the filter is what must not happen: an
+ * uncaught exception or an error the application itself printed.
+ */
+function expectedResourceFailures(errors: readonly string[]): string[] {
+  return errors.filter((text) => !text.startsWith('Failed to load resource'));
+}
+
+/** How many times the plans list was read (the writes are different methods). */
+function planReads(recorded: readonly RecordedRequest[]): number {
+  return recorded.filter(
+    (entry) => entry.method === 'GET' && new URL(entry.url).pathname === PLANS_PATH,
+  ).length;
+}
+
+/** The plan body sent to the server, or `undefined` when nothing was sent. */
+function writtenPlan(api: InstalledApi): unknown {
+  return api.recorded.find(
+    (request) => request.method === 'POST' && new URL(request.url).pathname === PLANS_PATH,
+  )?.body;
+}
+
+/** The "mark done" request for the pending line, or `undefined` when none was sent. */
+function completionRequest(recorded: readonly RecordedRequest[]): RecordedRequest | undefined {
+  return recorded.find(
+    (request) =>
+      request.method === 'POST' && request.url.endsWith(`/items/${PENDING_ITEM_ID}/complete`),
+  );
+}
+
+/** The plans list as it reads after the pending line was marked done. */
+const plansAfterCompletion = {
+  items: anaTreatmentPlans.items.map((plan) => ({
+    ...plan,
+    items: plan.items.map((item) =>
+      item.id === PENDING_ITEM_ID
+        ? { ...item, isCompleted: true, completedAt: '2026-10-07T10:05:00.000Z' }
+        : item,
+    ),
+    progress: { total: 2, completed: 2, inProgress: 0, pending: 0, percentComplete: 100 },
+  })),
+};
 
 test.describe('Treatment plans on the profile', () => {
   test('draws the plan, the server’s progress and its items', async ({ page }) => {
@@ -98,6 +153,132 @@ test.describe('Treatment plans on the profile', () => {
 
     // The 501 reaches the console as a refused response before the application
     // can react; what must not happen is anything else.
-    expect(errors.filter((text) => !text.startsWith('Failed to load resource'))).toEqual([]);
+    expect(expectedResourceFailures(errors)).toEqual([]);
+  });
+
+  test('proposes a plan and shows it only once the server has stored it', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...clinicFixture(),
+      '/api/v1/treatments': { body: treatmentsCatalogue },
+      [PROFILE_PATH]: { body: anaProfile },
+      [`${PROFILE_PATH}/odontogram`]: { body: anaOdontogram },
+      [PLANS_PATH]: { body: noTreatmentPlans },
+      [`POST ${PLANS_PATH}`]: { status: 201, body: createdTreatmentPlan },
+    });
+
+    await page.goto(`/patients/${ANA_ID}`);
+
+    await page.getByTestId('new-plan-open').click();
+    await page.getByTestId('new-plan-treatment').click();
+    await page.getByRole('option', { name: /COMPO-ANT/ }).click();
+    await page.getByTestId('new-plan-tooth').fill('36');
+    await page.getByTestId('new-plan-price').fill('120.50');
+
+    // Installed before the write, like the odontogram spec: the refetch the
+    // mutation triggers is guaranteed to meet this answer instead of racing a swap
+    // that might land after it. The plan that appears carries the server's own id
+    // and status, which nothing in the browser could have produced.
+    await installApi(page, { [PLANS_PATH]: { body: { items: [createdTreatmentPlan.plan] } } });
+
+    await page.getByTestId('new-plan-submit').click();
+
+    const plan = page.getByTestId('patient-treatment-plan');
+    await expect(plan).toContainText('DRAFT');
+    await expect(plan).toContainText('Composite restoration — anterior');
+    await expect(page.getByTestId('plan-progress')).toContainText('1 item · 0 complete · 0%');
+
+    // The form closes only after the server has answered.
+    await expect(page.getByTestId('new-treatment-plan-form')).toHaveCount(0);
+
+    // The body is the composed line and nothing else: the patient is the path, the
+    // blank quantity is left out so the server's default of one applies, and the
+    // "120.50" the box held travels as the minor units the boundary takes.
+    expect(await writtenPlan(api)).toEqual({
+      items: [{ treatmentId: TREATMENT_CATALOGUE_ID, tooth: '36', estimatedPriceMinor: 12050 }],
+    });
+
+    // Two reads: the section's own, and the one the invalidation asked for.
+    await expect.poll(() => planReads(api.recorded)).toBe(2);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('keeps the draft when the API refuses the plan', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...clinicFixture(),
+      '/api/v1/treatments': { body: treatmentsCatalogue },
+      [PROFILE_PATH]: { body: anaProfile },
+      [`${PROFILE_PATH}/odontogram`]: { body: anaOdontogram },
+      [PLANS_PATH]: { body: noTreatmentPlans },
+      [`POST ${PLANS_PATH}`]: {
+        status: 422,
+        body: {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'A treatment plan needs at least one item',
+            requestId: 'req-plan-1',
+          },
+        },
+      },
+    });
+
+    await page.goto(`/patients/${ANA_ID}`);
+
+    await page.getByTestId('new-plan-open').click();
+    await page.getByTestId('new-plan-treatment').click();
+    await page.getByRole('option', { name: /COMPO-ANT/ }).click();
+    await page.getByTestId('new-plan-tooth').fill('36');
+    await page.getByTestId('new-plan-submit').click();
+
+    await expect(page.getByTestId('new-plan-error')).toContainText(
+      'A treatment plan needs at least one item',
+    );
+
+    // The refusal keeps the draft: the typed tooth is still there so the clinician
+    // can fix the one thing the API objected to.
+    await expect(page.getByTestId('new-treatment-plan-form')).toBeVisible();
+    await expect(page.getByTestId('new-plan-tooth')).toHaveValue('36');
+
+    // A refusal does not refetch a list it did not change.
+    expect(planReads(api.recorded)).toBe(1);
+
+    expect(expectedResourceFailures(errors)).toEqual([]);
+  });
+
+  test('marks an item done and redraws from the refetched plan', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...clinicFixture(),
+      [PROFILE_PATH]: { body: anaProfile },
+      [`${PROFILE_PATH}/odontogram`]: { body: anaOdontogram },
+      [PLANS_PATH]: { body: anaTreatmentPlans },
+      [`POST ${PLANS_PATH}/${PLAN_ID}/items/${PENDING_ITEM_ID}/complete`]: {
+        status: 204,
+        body: null,
+      },
+    });
+
+    await page.goto(`/patients/${ANA_ID}`);
+
+    // Only the incomplete line offers the control.
+    await expect(page.getByTestId('complete-plan-item')).toHaveCount(1);
+
+    await installApi(page, { [PLANS_PATH]: { body: plansAfterCompletion } });
+    await page.getByTestId('complete-plan-item').click();
+
+    // The refetched plan shows the line done and the server's own projection: 2 of
+    // 2, 100%.
+    await expect(page.getByTestId('plan-progress')).toContainText('2 items · 2 complete · 100%');
+    await expect(page.getByTestId('complete-plan-item')).toHaveCount(0);
+
+    // Bodyless: a body the endpoint never reads would let a client believe a field
+    // was accepted.
+    const completion = completionRequest(api.recorded);
+    expect(completion?.method).toBe('POST');
+    expect(completion?.body).toBeUndefined();
+
+    expect(errors).toEqual([]);
   });
 });

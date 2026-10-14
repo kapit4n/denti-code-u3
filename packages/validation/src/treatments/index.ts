@@ -21,6 +21,9 @@
 
 import { z } from 'zod';
 
+import { odontogramSurfaceSchema } from '../odontogram/index.js';
+import { uuidSchema } from '../common/index.js';
+
 /** The largest integer a PostgreSQL `integer` column holds, in minor units. */
 const MAX_PRICE_MINOR = 2_147_483_647;
 
@@ -62,71 +65,88 @@ export const createTreatmentSchema = z.object({
 
 export type CreateTreatmentInput = z.infer<typeof createTreatmentSchema>;
 
+/**
+ * Treatment-plan boundary schemas.
+ *
+ * `POST /api/v1/patients/:patientId/treatment-plans` proposes a plan and
+ * `PATCH /api/v1/patients/:patientId/treatment-plans/:planId` moves it along. The
+ * subject — the patient — is on the path and never in the body (the odontogram's
+ * rule, ADR 0014): a client that could name its own patient could file a plan under
+ * someone this request never saw. The plan id, the clock and the status's opening
+ * value (`DRAFT`) belong to the server too; the status the update accepts is the
+ * domain enum's values, `PROPOSED` among them, mirrored here the same way the
+ * odontogram's condition and surface lists are (ADR 0011).
+ *
+ * A plan item names a treatment, a tooth and surfaces. The tooth is FDI and the
+ * surfaces are the **odontogram's own enum** — the same `MESIAL`/`DISTAL`/… set the
+ * chart stores — because a plan's line and a chart's finding describe the same teeth
+ * and a second vocabulary would only let them disagree. The treatment id is optional
+ * (a line may be a note to self), the price is integer minor units capped at the
+ * column's range, and quantity is a whole positive count.
+ */
 
+/** FDI tooth number as text: permanent `11`–`48`, primary `51`–`85`. */
+const toothNumberSchema = z
+  .string()
+  .trim()
+  .regex(/^([1-4][1-8]|[5-8][1-5])$/, 'A tooth is an FDI number, like "36" or "75"');
 
-const toothNumberSchema = z.string().trim().regex(/^([1-4][1-8]|[5-8][1-5])$/, 'A tooth is an FDI number, like "36" or "75"');
-const toothSurfaceSchema = z.enum(['O','M','D','B','L','V']);
-const treatmentPlanStatusSchema = z.enum(['DRAFT','PRESENTED','ACCEPTED','IN_PROGRESS','COMPLETED','CANCELLED']);
+/** Every status a plan may be set to, mirrored from the domain enum's values. */
+const treatmentPlanStatusSchema = z.enum([
+  'DRAFT',
+  'PROPOSED',
+  'ACCEPTED',
+  'IN_PROGRESS',
+  'COMPLETED',
+  'CANCELLED',
+]);
 
-/** Schema for creating a treatment plan. */
+/** Shape of one line of a plan, shared by any future schema that nests one. */
+const treatmentPlanItemSchema = z.object({
+  treatmentId: uuidSchema.optional().nullable(),
+  tooth: toothNumberSchema.optional().nullable(),
+  surfaces: z.array(odontogramSurfaceSchema).max(6, 'A tooth has at most six surfaces').default([]),
+  quantity: z
+    .number()
+    .int()
+    .min(1, 'Quantity must be at least 1')
+    .max(100, 'Quantity is too high')
+    .default(1),
+  estimatedPriceMinor: z
+    .number()
+    .int()
+    .nonnegative('Price cannot be negative')
+    .max(MAX_PRICE_MINOR, 'Price is too large')
+    .optional(),
+  notes: z.string().trim().max(500, 'Item notes are too long').optional().nullable(),
+});
+
+/** Propose a treatment plan for the patient on the path. */
 export const createTreatmentPlanSchema = z.object({
-  patientId: z.string().uuid('A patient id is required'),
-  dentistId: z.string().uuid('A dentist id is required').optional().nullable(),
+  dentistId: uuidSchema.optional().nullable(),
   title: z.string().trim().max(200, 'The title is too long').optional().nullable(),
-  notes: z.string().trim().max(2000, 'The notes are too long').optional().nullable(),
+  notes: z.string().trim().max(2_000, 'The notes are too long').optional().nullable(),
   items: z
-    .array(
-      z.object({
-        treatmentId: z.string().uuid('A treatment id is required').optional().nullable(),
-        tooth: toothNumberSchema.optional().nullable(),
-        surfaces: z.array(toothSurfaceSchema).max(5).default([]),
-        quantity: z.number().int().min(1, 'Quantity must be at least 1').max(100, 'Quantity is too high').default(1),
-        estimatedPriceMinor: z
-          .number()
-          .int()
-          .nonnegative('Price cannot be negative')
-          .max(2_147_483_647, 'Price is too large')
-          .optional(),
-        notes: z.string().trim().max(500, 'Item notes are too long').optional().nullable(),
-      }),
-    )
+    .array(treatmentPlanItemSchema)
     .min(1, 'A treatment plan needs at least one item')
     .max(50, 'A treatment plan is too long to save'),
 });
 
-export const updateTreatmentPlanSchema = createTreatmentPlanSchema.partial().extend({
-  status: treatmentPlanStatusSchema.optional(),
-});
-
-export const completeTreatmentPlanItemSchema = z.object({
-  isCompleted: z.boolean(),
-});
-
 export type CreateTreatmentPlanInput = z.infer<typeof createTreatmentPlanSchema>;
+
+/**
+ * Move a plan along: its status, its title, its notes — nothing else.
+ *
+ * Deliberately not `createTreatmentPlanSchema.partial()`: a plan's lines are written
+ * when it is proposed, and editing them is a different operation than moving the
+ * plan through its statuses. `status` is the only field with a rule worth naming, and
+ * that rule (which statuses exist) is the enum above; which moves are *legal* is not
+ * decided yet, so this schema does not pretend to know.
+ */
+export const updateTreatmentPlanSchema = z.object({
+  status: treatmentPlanStatusSchema.optional(),
+  title: z.string().trim().max(200, 'The title is too long').optional().nullable(),
+  notes: z.string().trim().max(2_000, 'The notes are too long').optional().nullable(),
+});
+
 export type UpdateTreatmentPlanInput = z.infer<typeof updateTreatmentPlanSchema>;
-export type CompleteTreatmentPlanItemInput = z.infer<typeof completeTreatmentPlanItemSchema>;
-
-export const treatmentPlanCreateSchema = z.object({
-  patientId: z.string().min(1),
-  dentistId: z.string().min(1).nullable().optional(),
-  title: z.string().min(1).nullable().optional(),
-  notes: z.string().min(1).nullable().optional(),
-  items: z
-    .array(
-      z.object({
-        treatmentId: z.string().min(1).nullable().optional(),
-        tooth: z.string().nullable().optional(),
-        surfaces: z.array(z.string()).optional(),
-        quantity: z.number().int().positive().optional(),
-        estimatedPriceMinor: z.number().int().nonnegative().optional(),
-        notes: z.string().nullable().optional(),
-      }),
-    )
-    .default([]),
-});
-
-export const treatmentPlanUpdateSchema = z.object({
-  status: treatmentPlanStatusSchema.nullable().optional(),
-  title: z.string().min(1).nullable().optional(),
-  notes: z.string().min(1).nullable().optional(),
-});

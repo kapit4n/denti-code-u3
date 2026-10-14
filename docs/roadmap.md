@@ -341,14 +341,22 @@ validity rules, not a drawing hack.
     made), and the catalogue drawn with prices as the clinic's money. Nothing is
     listed from the form's own values — the new row is the refetch's to produce.
 - Treatment plans with ordered items
-  - **Read side (session 36):** `GET /api/v1/treatment-plans?patientId=` and
-    `GET /api/v1/treatment-plans/:id` on both engines, the progress computed by
-    `describeTreatmentPlanProgress` (over the stored table's `isCompleted`, which
-    is all a row can say) and drawn read-only on the patient's profile as its own
-    section. The write side and ordered items remain.
-- Progress tracking (pending treatments) — progress is drawn; a plan's own
-  write, and marking an item done, remain.
-- Link plan items → visits → charges
+  - **Read side (session 36):** `GET /api/v1/patients/:patientId/treatment-plans`
+    on both engines, the progress computed by `describeTreatmentPlanProgress`
+    (over the stored table's `isCompleted`, which is all a row can say) and drawn
+    on the patient's profile as its own section.
+  - **Write side (session 37):** `POST /api/v1/patients/:patientId/treatment-plans`
+    proposes a plan (opened `DRAFT`, items written whole),
+    `PATCH /api/v1/patients/:patientId/treatment-plans/:planId` moves its status
+    through the domain enum's values, and
+    `POST …/:planId/items/:itemId/complete` marks one line done (bodyless,
+    idempotent). The plan save is one transaction; the profile section proposes a
+    plan and marks a line done, both non-optimistically. Charging a completed
+    line, and a plan's own ordered-edit UI, remain.
+- Progress tracking (pending treatments) — progress is projected from the stored
+  rows (never stored) and redrawn after each item is completed.
+- Link plan items → visits → charges — the item carries a nullable
+  `treatment_plan_item_id` link from the execution side; charging stays open.
 
 ---
 
