@@ -833,6 +833,54 @@ export const anaTreatmentPlans = {
 export const noTreatmentPlans = { items: [] } as const;
 
 /**
+ * A patient's invoices, newest first — the ledger's read the profile card draws.
+ *
+ * Two documents: one still owed (23 000 outstanding, two charges) and one settled
+ * (paid in full). The `totalMinor`/`balanceMinor` are the fixture's own stored
+ * numbers, deliberately *not* derived here — a fixture that computed them would
+ * agree with a card that computed them too, and the pair could be wrong together.
+ * The issued day is early enough in the day that Lima (UTC−5) reads the previous
+ * day, so a spec can tell the clinic's clock from the browser's.
+ */
+export const anaInvoices = {
+  items: [
+    {
+      id: '11111111-cccc-4a11-9ccc-000000000001',
+      number: 'F001-00001',
+      status: 'ISSUED',
+      currency: 'USD',
+      subtotalMinor: 24000,
+      discountMinor: 1000,
+      taxRatePercent: 0,
+      totalMinor: 23000,
+      allocatedMinor: 0,
+      balanceMinor: 23000,
+      chargeCount: 2,
+      issuedAt: '2026-10-05T02:00:00.000Z',
+      createdAt: '2026-10-05T02:00:00.000Z',
+    },
+    {
+      id: '11111111-cccc-4a11-9ccc-000000000002',
+      number: 'F001-00002',
+      status: 'PAID',
+      currency: 'USD',
+      subtotalMinor: 12000,
+      discountMinor: 0,
+      taxRatePercent: 0,
+      totalMinor: 12000,
+      allocatedMinor: 12000,
+      balanceMinor: 0,
+      chargeCount: 1,
+      issuedAt: '2026-10-06T15:00:00.000Z',
+      createdAt: '2026-10-06T15:00:00.000Z',
+    },
+  ],
+} as const;
+
+/** A patient with nothing billed — the section's empty sentence. */
+export const noInvoices = { items: [] } as const;
+
+/**
  * The plan the API answers `POST .../treatment-plans` with.
  *
  * The `id` is the server's, which is what makes it useful: a spec asserting the
@@ -1162,10 +1210,10 @@ export function visitAttachments(attachments: readonly Record<string, unknown>[]
 /**
  * The read that fires the moment a patient's profile opens is `GET
  * /api/v1/patients/:id/odontogram`, so it is part of the shared profile wiring
- * here like the profile itself is — and the treatment plans card mounts with
- * them, so `…/treatment-plans` rides along for the same reason. A profile that
- * opened with a red "could not be loaded" beside the chart would be a fixture
- * that had forgotten half the screen.
+ * here like the profile itself is — and the treatment plans card and the invoice
+ * card mount with them, so `…/treatment-plans` and `…/invoices` ride along for the
+ * same reason. A profile that opened with a red "could not be loaded" beside the
+ * chart would be a fixture that had forgotten half the screen.
  *
  * The section reads — `/notes`, `/treatments`, `/prescriptions`, `/charges`,
  * `/payments`, `/attachments` — are *not* here, for the stronger reason that they
@@ -1183,6 +1231,7 @@ export function visitWorkspaceFixtures(overrides: MockedResponses = {}): MockedR
     [`/api/v1/patients/${ANA_ID}`]: { body: anaProfile },
     [`/api/v1/patients/${ANA_ID}/odontogram`]: { body: anaOdontogram },
     [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
+    [`/api/v1/patients/${ANA_ID}/invoices`]: { body: noInvoices },
     '/api/v1/clinic': { body: clinicSettings },
     '/api/v1/dentists': { body: everyDentistList },
     '/api/v1/chairs': { body: everyChairList },

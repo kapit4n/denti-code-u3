@@ -30,7 +30,13 @@ import { charges } from '@denti-code-u3/database/schema/sqlite';
 import type { SqliteDatabase } from '../connection.js';
 import { isForeignKeyViolation } from '../sqlite-error.js';
 
-const CHARGE_COLUMNS = {
+/**
+ * The charge columns and the row mapper are exported because the invoice detail
+ * read needs the very same rows: an `InvoiceDetail` carries the charges its
+ * document folded in, and a second copy of this mapping would let the two engines
+ * and the two reads drift (ADR 0011's one-implementation rule).
+ */
+export const CHARGE_COLUMNS = {
   id: charges.id,
   clinicId: charges.clinicId,
   patientId: charges.patientId,
@@ -118,7 +124,7 @@ export class SQLiteChargeRepository implements ChargeRepository {
   }
 }
 
-function toEntity(row: {
+export function toEntity(row: {
   id: string;
   clinicId: string;
   patientId: string;

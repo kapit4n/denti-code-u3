@@ -61,6 +61,7 @@ import {
   addVisitPrescription,
   completeVisitRecord,
   getVisit,
+  issueVisitInvoice,
   listClinicalNotes,
   listTreatmentRecords,
   listVisitAttachments,
@@ -962,6 +963,43 @@ export async function registerVisitsRoutes(
       );
 
       return reply.status(201).send(payment);
+    } catch (error) {
+      return sendProblem(reply, request, error);
+    }
+  });
+
+  /**
+   * `POST /api/v1/visits/:visitId/invoices` — raise this visit's bill as a
+   * document, collecting nothing.
+   *
+   * 201 with the invoice as it was issued. Bodyless, because nothing here is the
+   * caller's to say: the visit is the path, the clinic is the request scope, the
+   * charges it folds are the visit's own un-invoiced ones, the currency is the
+   * clinic's record, the document number is the store's sequence (ADR 0014). It
+   * exists apart from the payment so a clinic can bill a patient who has not paid
+   * yet — the settlement keeps issuing its own invoice as a side effect only when
+   * it has no document to raise, and never a second one for the same charges.
+   *
+   * 422 when there is nothing left to invoice — every charge on the visit is
+   * already on a document.
+   *
+   * 404 for a visit this clinic does not hold.
+   */
+  app.post('/api/v1/visits/:visitId/invoices', async (request, reply) => {
+    const path = readVisitId(request.params, request.clinicId as ClinicId);
+
+    if (!path.valid) {
+      return sendInvalidVisitId(reply, request);
+    }
+
+    try {
+      const invoice = await issueVisitInvoice(path.clinicId, path.visitId, {
+        unitOfWork,
+        clock,
+        newInvoiceId: () => asInvoiceId(ids.nextId()),
+      });
+
+      return reply.status(201).send(invoice);
     } catch (error) {
       return sendProblem(reply, request, error);
     }

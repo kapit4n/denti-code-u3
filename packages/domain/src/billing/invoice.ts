@@ -84,6 +84,14 @@ export interface Invoice {
   readonly patientId: PatientId;
   readonly currency: CurrencyCode;
   readonly status: InvoiceStatus;
+  /**
+   * The human-facing document number, `F001-00001`, assigned by the repository
+   * when the invoice is issued. Null on a document that has not been issued —
+   * a `DRAFT` never printed, or a write model built before the number is read.
+   */
+  readonly number: string | null;
+  /** The instant the document was issued; null until then, like `number`. */
+  readonly issuedAt: IsoDateTime | null;
   readonly discountMinor: number;
   readonly taxRatePercent: number;
   readonly charges: readonly Charge[];

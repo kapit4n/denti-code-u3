@@ -15,6 +15,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import type {
+  InvoiceSummary,
   PatientListEntry,
   PatientOdontogram,
   PatientProfile,
@@ -97,6 +98,28 @@ export function usePatientTreatmentPlans(patientId: string) {
     queryKey: ['patients', 'treatment-plans', patientId],
     queryFn: () =>
       client.get<PatientTreatmentPlansResponse>(`/patients/${patientId}/treatment-plans`),
+    enabled: patientId.length > 0,
+  });
+}
+
+export interface PatientInvoicesResponse {
+  readonly items: readonly InvoiceSummary[];
+}
+
+/**
+ * Every document this patient has been issued, newest first.
+ *
+ * Scoped through the patient, so a patient this clinic does not hold answers 404
+ * rather than `[]` — "not here" and "nothing billed" are different sentences. Each
+ * row's totals are the server's stored numbers and its `balanceMinor` the server's
+ * arithmetic, so the section never recomputes what a printed document says.
+ */
+export function usePatientInvoices(patientId: string) {
+  const client = useApiClient();
+
+  return useQuery({
+    queryKey: ['patients', 'invoices', patientId],
+    queryFn: () => client.get<PatientInvoicesResponse>(`/patients/${patientId}/invoices`),
     enabled: patientId.length > 0,
   });
 }

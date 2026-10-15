@@ -1010,6 +1010,76 @@ describe('API on SQLite', () => {
     expect(refused.json().error.code).toBe('VALIDATION_ERROR');
   });
 
+  it('raises a visit’s bill as a numbered document, and reads the ledger back', async () => {
+    // The settlement above issued F001-00001 for the first charge; the planned-line
+    // charge that followed it is still un-invoiced, so this is the clinic's second
+    // document. (The suite shares one visit and runs in order, deliberately.)
+    const raised = await app.inject({ method: 'POST', url: `/api/v1/visits/${visitId}/invoices` });
+
+    expect(raised.statusCode).toBe(201);
+    // The number is the store's, assigned from the clinic's own series; the status
+    // and the currency are the server's too — a bodyless request cannot restate any.
+    expect(raised.json()).toMatchObject({
+      clinicId,
+      patientId: apiPatientId,
+      number: 'F001-00002',
+      status: 'ISSUED',
+      currency: 'USD',
+    });
+    const invoiceId = raised.json().id as string;
+
+    // The charge it folded is stamped invoiced, so issuing the visit again finds
+    // nothing left and answers the same 422 an empty bill does.
+    const again = await app.inject({ method: 'POST', url: `/api/v1/visits/${visitId}/invoices` });
+    expect(again.statusCode).toBe(422);
+    expect(again.json().error.code).toBe('VALIDATION_ERROR');
+
+    // The detail read: the document's own stored totals, the charge it folded in,
+    // nothing allocated, and the full balance outstanding.
+    const detail = await app.inject({ method: 'GET', url: `/api/v1/invoices/${invoiceId}` });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json()).toMatchObject({
+      id: invoiceId,
+      number: 'F001-00002',
+      status: 'ISSUED',
+      chargeCount: 1,
+      allocatedMinor: 0,
+      balanceMinor: 22_000,
+      totalMinor: 22_000,
+    });
+    expect(detail.json().charges).toHaveLength(1);
+
+    // The patient's ledger: both documents, newest first.
+    const list = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/invoices`,
+    });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().items).toHaveLength(2);
+    expect(list.json().items[0].number).toBe('F001-00002');
+
+    // Another clinic's visit cannot be billed, and another clinic's patient's ledger
+    // is not this clinic's to read — the same 404 the clinical reads answer (ADR 0014).
+    const foreignVisit = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${foreignVisitId}/invoices`,
+    });
+    expect(foreignVisit.statusCode).toBe(404);
+
+    const foreignPatient = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${foreignPatientId}/invoices`,
+    });
+    expect(foreignPatient.statusCode).toBe(404);
+
+    // An invoice this clinic does not hold answers 404, the same as one that never was.
+    const missing = await app.inject({
+      method: 'GET',
+      url: '/api/v1/invoices/00000000-0000-4000-8000-000000000000',
+    });
+    expect(missing.statusCode).toBe(404);
+  });
+
   it('summarises the day on the dashboard, occupancy included', async () => {
     // Two disjoint 30-minute bookings from a capacity of 08:00–17:00 × one
     // dentist: 60 of 540 minutes, which rounds to 11% occupancy.

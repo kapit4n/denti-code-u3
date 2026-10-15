@@ -53,6 +53,7 @@ import {
 import { useClinicSettings } from '../features/clinic/queries/clinic-settings-query.js';
 import { usePatient } from '../features/patients/hooks/use-patients.js';
 import { PatientTreatmentPlansSection } from '../features/patients/components/patient-treatment-plans-section.js';
+import { PatientInvoicesSection } from '../features/patients/components/patient-invoices-section.js';
 import { PatientOdontogramSection } from '../features/patients/components/patient-odontogram-section.js';
 
 export const Route = createFileRoute('/patients_/$patientId')({
@@ -302,6 +303,13 @@ function PatientProfile() {
         of decisions, not a fact about the person.
       */}
       <PatientTreatmentPlansSection patientId={patient.id} clinicTimeZone={timeZone} />
+
+      {/*
+        The documents the clinic has issued: a sibling of the plans, because an
+        invoice is a financial document with its own address, not a fact folded into
+        a clinical card.
+      */}
+      <PatientInvoicesSection patientId={patient.id} clinicTimeZone={timeZone} />
 
       {/*
         The clinical map: its own request and its own write, mounted as a sibling of

@@ -173,9 +173,12 @@ function harness(
   };
 
   const invoices: InvoiceRepository = {
-    save: async (invoice) => {
+    issue: async (invoice) => {
       recorded.invoices.push(invoice);
+      return 'F001-00001';
     },
+    findForPatient: async () => undefined,
+    findById: async () => undefined,
   };
 
   const payments: PaymentRepository = {
@@ -244,6 +247,8 @@ describe('payVisitCharges', () => {
         patientId: PATIENT,
         currency: 'PEN',
         status: 'PAID',
+        number: null,
+        issuedAt: '2026-10-05T14:30:00.000Z',
         discountMinor: 0,
         taxRatePercent: 0,
         charges: [due],

@@ -24,6 +24,7 @@ import {
   clinicFixture,
   luisOdontogram,
   luisProfile,
+  noInvoices,
   noTreatmentPlans,
   patientSummaries,
 } from './fixtures/api-responses.js';
@@ -115,6 +116,7 @@ test.describe('Patient profile', () => {
       [`${LIST_PATH}/${ANA_ID}`]: { body: anaProfile },
       [`${LIST_PATH}/${ANA_ID}/odontogram`]: { body: anaOdontogram },
       [`${LIST_PATH}/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
+      [`${LIST_PATH}/${ANA_ID}/invoices`]: { body: noInvoices },
       [LIST_PATH]: { body: PATIENT_LIST_RESPONSE },
     });
 
@@ -144,6 +146,7 @@ test.describe('Patient profile', () => {
       [`${LIST_PATH}/${LUIS_ID}`]: { body: luisProfile },
       [`${LIST_PATH}/${LUIS_ID}/odontogram`]: { body: luisOdontogram },
       [`${LIST_PATH}/${LUIS_ID}/treatment-plans`]: { body: noTreatmentPlans },
+      [`${LIST_PATH}/${LUIS_ID}/invoices`]: { body: noInvoices },
     });
 
     await page.goto(`/patients/${LUIS_ID}`);
@@ -163,6 +166,7 @@ test.describe('Patient profile', () => {
       [`${LIST_PATH}/${LUIS_ID}`]: { body: luisProfile },
       [`${LIST_PATH}/${LUIS_ID}/odontogram`]: { body: luisOdontogram },
       [`${LIST_PATH}/${LUIS_ID}/treatment-plans`]: { body: noTreatmentPlans },
+      [`${LIST_PATH}/${LUIS_ID}/invoices`]: { body: noInvoices },
     });
 
     await page.goto(`/patients/${LUIS_ID}`);
@@ -197,6 +201,7 @@ test.describe('Global patient search', () => {
       [`${LIST_PATH}/${ANA_ID}`]: { body: anaProfile },
       [`${LIST_PATH}/${ANA_ID}/odontogram`]: { body: anaOdontogram },
       [`${LIST_PATH}/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
+      [`${LIST_PATH}/${ANA_ID}/invoices`]: { body: noInvoices },
     });
 
     await page.goto('/');

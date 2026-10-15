@@ -24,6 +24,7 @@ import { registerDentistsRoutes } from './http/routes/dentists.js';
 import { registerChairsRoutes } from './http/routes/chairs.js';
 import { registerTreatmentsRoutes } from './http/routes/treatments.js';
 import { registerVisitsRoutes } from './http/routes/visits.js';
+import { registerInvoiceRoutes } from './http/routes/invoices.js';
 import { registerPatientsRoutes } from './http/routes/patients.js';
 import { registerTreatmentPlanRoutes } from './http/routes/treatment-plans.js';
 import { systemClock } from './infrastructure/clock/system-clock.js';
@@ -219,6 +220,16 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     chairs,
     clock: systemClock,
     ids: uuidGenerator,
+  });
+
+  // The invoice read side — the documents a settlement or an explicit billing pass
+  // raises. Its own address, because an invoice is a resource with a life of its
+  // own: `GET /invoices/:id` opens one, and the patient's list hangs off the
+  // patient the way the plans and the profile do. Given the same repository
+  // instance the visit settlement writes through, so a document is raised and read
+  // through one door (ADR 0014).
+  await registerInvoiceRoutes(app, {
+    invoices: connection.repositories.invoices,
   });
 
   app.get('/', async () => ({

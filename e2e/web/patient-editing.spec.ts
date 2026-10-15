@@ -27,6 +27,7 @@ import {
   anaProfile,
   anaTreatmentPlans,
   clinicFixture,
+  noInvoices,
 } from './fixtures/api-responses.js';
 import { watchForConsoleErrors } from './fixtures/console-errors.js';
 import { installApi } from './fixtures/mock-api.js';
@@ -47,6 +48,8 @@ async function installPatientApi(page: Page) {
     // opens, so a spec that mocked only the profile would leave it a 501.
     [`${PROFILE_PATH}/odontogram`]: { body: anaOdontogram },
     [`${PROFILE_PATH}/treatment-plans`]: { body: anaTreatmentPlans },
+    // The document card is the profile's other own read, for the same reason.
+    [`${PROFILE_PATH}/invoices`]: { body: noInvoices },
     [LIST_PATH]: { body: { data: [], meta: { page: 1, pageSize: 25, total: 0 } } },
     // The edit endpoint answers 204 with nothing in it.
     [EDIT_PATH]: { status: 204, body: null },

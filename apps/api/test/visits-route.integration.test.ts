@@ -39,8 +39,10 @@ import { fileURLToPath } from 'node:url';
 
 import * as schema from '@denti-code-u3/database/schema';
 import { registerVisitsRoutes } from '../src/http/routes/visits.js';
+import { registerInvoiceRoutes } from '../src/http/routes/invoices.js';
 import { DrizzleVisitRepository } from '../src/infrastructure/persistence/repositories/visit-repository.js';
 import { DrizzleChargeRepository } from '../src/infrastructure/persistence/repositories/charge-repository.js';
+import { DrizzleInvoiceRepository } from '../src/infrastructure/persistence/repositories/invoice-repository.js';
 import { DrizzleClinicalNoteRepository } from '../src/infrastructure/persistence/repositories/clinical-note-repository.js';
 import { DrizzleVisitAttachmentRepository } from '../src/infrastructure/persistence/repositories/visit-attachment-repository.js';
 import { DrizzleClinicRepository } from '../src/infrastructure/persistence/repositories/clinic-repository.js';
@@ -336,6 +338,27 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       payload: payload as object,
     });
 
+  const issueInvoice = (visitId: string, clinic = clinicId) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/invoices`,
+      headers: { 'x-clinic-id': clinic },
+    });
+
+  const getPatientInvoices = (patientId: string, clinic = clinicId) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${patientId}/invoices`,
+      headers: { 'x-clinic-id': clinic },
+    });
+
+  const getInvoice = (invoiceId: string, clinic = clinicId) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/v1/invoices/${invoiceId}`,
+      headers: { 'x-clinic-id': clinic },
+    });
+
   /**
    * The row as stored, with the timestamp read as an instant.
    *
@@ -454,6 +477,13 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       // The route asks for an id rather than making one, so a test can hand it a fixed
       // generator — but the shape is the real `uuidGenerator`'s.
       ids: { nextId: () => crypto.randomUUID() },
+    });
+
+    // The invoice read side, on the same handle the visit settlement writes through.
+    // The issuing route itself lives with the visit routes above; these are the
+    // ledger's two reads, exercised by the invoice tests below.
+    await registerInvoiceRoutes(app, {
+      invoices: new DrizzleInvoiceRepository(db),
     });
 
     await sql`
@@ -2183,6 +2213,100 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
         expect(response.statusCode).toBe(422);
         expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
       }
+    });
+  });
+
+  describe('POST /api/v1/visits/:visitId/invoices and the ledger reads', () => {
+    const bill = { description: 'Composite restoration, tooth 16', unitPriceMinor: 12_000 };
+
+    it('raises a visit’s un-invoiced charges as one numbered document, and reads it back', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+      await raiseCharge(visitId, { ...bill, quantity: 2, discountMinor: 1_000 });
+
+      const issued = await issueInvoice(visitId);
+
+      expect(issued.statusCode).toBe(201);
+      const invoice = issued.json() as Record<string, unknown>;
+      // The number is the store's own series — the clinic's first — and the status,
+      // currency and totals are the server's, never the body's (there is no body).
+      expect(invoice).toMatchObject({
+        clinicId,
+        patientId: patient,
+        number: 'F001-00001',
+        status: 'ISSUED',
+        currency: 'USD',
+      });
+
+      // The charge is stamped invoiced, so a second issue has nothing left to fold.
+      const again = await issueInvoice(visitId);
+      expect(again.statusCode).toBe(422);
+      expect(again.json()).toMatchObject({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'There is nothing left to invoice on this visit',
+        },
+      });
+
+      // The detail read: the document's stored totals, the charge it folded, nothing
+      // allocated, and the full balance outstanding (total 24_000 − 1_000 = 23_000).
+      const detail = await getInvoice(invoice.id as string);
+      expect(detail.statusCode).toBe(200);
+      expect(detail.json()).toMatchObject({
+        id: invoice.id,
+        number: 'F001-00001',
+        status: 'ISSUED',
+        subtotalMinor: 24_000,
+        totalMinor: 23_000,
+        allocatedMinor: 0,
+        balanceMinor: 23_000,
+        chargeCount: 1,
+      });
+      expect((detail.json() as { charges: unknown[] }).charges).toHaveLength(1);
+    });
+
+    it('numbers documents per clinic, so a second visit’s bill is the next number', async () => {
+      const first = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+      const second = await seedVisit({ startedAt: `${day}T10:00:00.000Z` });
+      await raiseCharge(first, bill);
+      await raiseCharge(second, bill);
+
+      expect((await issueInvoice(first)).json()).toMatchObject({ number: 'F001-00001' });
+      expect((await issueInvoice(second)).json()).toMatchObject({ number: 'F001-00002' });
+
+      // The patient's ledger holds both, newest first, with the stored totals and a
+      // full balance each.
+      const list = await getPatientInvoices(patient);
+      expect(list.statusCode).toBe(200);
+      const items = (list.json() as { items: { number: string; balanceMinor: number }[] }).items;
+      expect(items.map((item) => item.number)).toEqual(['F001-00002', 'F001-00001']);
+      expect(items[0]?.balanceMinor).toBe(12_000);
+    });
+
+    it('answers 422 for a visit with nothing un-invoiced, and writes nothing', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const refused = await issueInvoice(visitId);
+
+      expect(refused.statusCode).toBe(422);
+      expect(refused.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+      const [invoices] = await sql`select count(*)::int as total from invoices`;
+      expect((invoices as { total: number }).total).toBe(0);
+    });
+
+    it('answers 404 for another clinic’s visit, and for its patient’s ledger', async () => {
+      const foreign = await seedVisit({
+        startedAt: `${day}T09:00:00.000Z`,
+        clinic: otherClinicId,
+        patientId: otherPatient,
+      });
+      await raiseCharge(foreign, bill, otherClinicId);
+
+      expect((await issueInvoice(foreign)).statusCode).toBe(404);
+      expect((await getPatientInvoices(otherPatient)).statusCode).toBe(404);
+      expect((await getInvoice(missingId)).statusCode).toBe(404);
+
+      const [invoices] = await sql`select count(*)::int as total from invoices`;
+      expect((invoices as { total: number }).total).toBe(0);
     });
   });
 

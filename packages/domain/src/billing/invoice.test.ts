@@ -38,6 +38,8 @@ function invoice(overrides: Partial<Invoice> = {}): Invoice {
     patientId: 'patient-1' as Invoice['patientId'],
     currency: 'USD',
     status: 'ISSUED',
+    number: null,
+    issuedAt: null,
     discountMinor: 0,
     taxRatePercent: 0,
     charges: [charge()],

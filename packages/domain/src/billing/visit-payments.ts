@@ -42,14 +42,10 @@ import type { Clock } from '../shared/clock.js';
 import { DomainError, notFound } from '../shared/errors.js';
 import type { PaymentRepository, UnitOfWork, VisitRepository } from '../ports/index.js';
 import { getVisit } from '../visit/visit-read.js';
-import {
-  calculateChargeTotal,
-  deriveInvoiceStatus,
-  type Invoice,
-  type Payment,
-  type PaymentMethod,
-} from './invoice.js';
+import { calculateChargeTotal, deriveInvoiceStatus } from './invoice.js';
+import type { Invoice, Payment, PaymentMethod } from './invoice.js';
 import { sumMoney } from './money.js';
+import { issueInvoice } from './visit-invoices.js';
 
 /** The as-yet-unbilled bill a visit has grown, read without writing anything. */
 export interface VisitPaymentsReadDependencies {
@@ -162,23 +158,33 @@ export async function payVisitCharges(
     }
 
     const invoiceId = dependencies.newInvoiceId();
-    const invoice: Invoice = {
+    const issuedAt = dependencies.clock.now();
+
+    // The settlement issues the bill as it raises it: the document is born with the
+    // status `deriveInvoiceStatus` gives a freshly-allocated invoice, never a `DRAFT`
+    // it never spent a moment in. The draft below exists only to compute that status
+    // — the number is the store's to assign (see `issueInvoice`).
+    const draft: Invoice = {
       id: invoiceId,
       clinicId,
       patientId: visit.patientId,
       currency: clinic.currency,
-      // A settlement issues the bill as it raises it: the moment the invoice is
-      // born it has already been allocated to, so its status is decided by how much
-      // it was allocated, never by a DRAFT it never spent a moment in.
       status: 'ISSUED',
+      number: null,
+      issuedAt,
       discountMinor: 0,
       taxRatePercent: 0,
       charges: uninvoiced,
     };
 
-    await repositories.invoices.save({
-      ...invoice,
-      status: deriveInvoiceStatus(invoice, input.amountMinor),
+    await issueInvoice(repositories, {
+      clinicId,
+      patientId: visit.patientId,
+      currency: clinic.currency,
+      charges: uninvoiced,
+      invoiceId,
+      issuedAt,
+      status: deriveInvoiceStatus(draft, input.amountMinor),
     });
 
     const payment: Payment = {
@@ -189,7 +195,7 @@ export async function payVisitCharges(
       currency: clinic.currency,
       amountMinor: input.amountMinor,
       reference,
-      receivedAt: dependencies.clock.now(),
+      receivedAt: issuedAt,
     };
 
     await repositories.payments.save(payment);
@@ -199,13 +205,6 @@ export async function payVisitCharges(
       invoiceId,
       amountMinor: input.amountMinor,
     });
-
-    await repositories.charges.markInvoiced(
-      clinicId,
-      uninvoiced.map((charge) => charge.id),
-      invoiceId,
-      dependencies.clock.now(),
-    );
 
     return payment;
   });

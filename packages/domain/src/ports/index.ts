@@ -14,6 +14,7 @@ import type {
   ChargeId,
   ChairId,
   ClinicId,
+  CurrencyCode,
   DentistId,
   InvoiceId,
   IsoDateTime,
@@ -44,7 +45,13 @@ import type {
   PatientProfile,
 } from '../patient/index.js';
 import type { Clinic, ClinicRole } from '../organization/index.js';
-import type { Charge, Invoice, Payment, PaymentAllocation } from '../billing/index.js';
+import type {
+  Charge,
+  Invoice,
+  InvoiceStatus,
+  Payment,
+  PaymentAllocation,
+} from '../billing/index.js';
 import type { Prescription } from '../prescription/index.js';
 
 /**
@@ -835,23 +842,77 @@ export interface ChargeRepository {
 }
 
 /**
- * One issued invoice, written whole.
+ * One invoice as a statement draws it: the document's own stored totals, the
+ * money allocated to it, and what is left.
  *
- * The persistence is deliberately a single `save`. An invoice is a legal document
- * whose totals are written down, not derived on read (the `invoices` table persists
- * `subtotal_minor` and `total_minor` on purpose), and nothing in this milestone
- * edits or retires one — reading invoices is Milestone 9's ledger, not this task.
- * The implementation computes the totals through the domain's own
- * `calculateInvoiceTotals`, so a number stored twice cannot disagree with a number
- * derived once.
+ * The read model lives here, beside the port that returns it, the same place
+ * `TreatmentPlanSummary` does — a shape the store assembles, not a domain entity.
+ * The totals are the **stored** `subtotal_minor`/`total_minor`, not a recompute:
+ * an invoice is a legal document and its printed total must not change if a price
+ * is edited afterwards (the reason the table persists them at all). `balanceMinor`
+ * is `total − allocated`, floored at zero — an over-allocation is impossible by
+ * the settlement's own rule, so a floor is a defence, not a business case.
+ */
+export interface InvoiceSummary {
+  readonly id: InvoiceId;
+  readonly number: string | null;
+  readonly status: InvoiceStatus;
+  readonly currency: CurrencyCode;
+  readonly subtotalMinor: number;
+  readonly discountMinor: number;
+  readonly taxRatePercent: number;
+  readonly totalMinor: number;
+  readonly allocatedMinor: number;
+  readonly balanceMinor: number;
+  readonly chargeCount: number;
+  readonly issuedAt: IsoDateTime | null;
+  readonly createdAt: IsoDateTime;
+}
+
+/**
+ * One invoice with the charges it folded in — the document's own detail read.
  *
- * `save` takes no clinic, because the use case has already resolved the visit and the
- * clinic inside its transaction. The translated refusal is the foreign key — the
+ * `chargeCount` is redundant with `charges.length` on purpose: a list read has the
+ * count without the rows, and the two shapes share one base so a future column
+ * lands on both.
+ */
+export interface InvoiceDetail extends InvoiceSummary {
+  readonly charges: readonly Charge[];
+}
+
+/**
+ * One issued invoice, written whole — and read back by the ledger's first two reads.
+ *
+ * The persistence of a document is a single `issue`: the store assigns the next
+ * per-clinic number (reading the highest already issued, guarded by the
+ * `(clinic_id, number)` unique index) and inserts the row. An invoice is a legal
+ * document whose totals are written down, not derived on read (the `invoices` table
+ * persists `subtotal_minor` and `total_minor` on purpose), and nothing in this
+ * milestone edits or retires one. The implementation computes the totals through the
+ * domain's own `calculateInvoiceTotals`, so a number stored twice cannot disagree
+ * with a number derived once.
+ *
+ * `issue` takes no clinic, because the use case has already resolved the visit and
+ * the clinic inside its transaction. The translated refusal is the foreign key — the
  * patient deleted between the read and the insert answers `NOT_FOUND` rather than a
  * `23503` reaching the API as a 500.
+ *
+ * The two reads answer the ledger: `findForPatient` is `undefined` when the patient
+ * is not in this clinic (so a list route can 404 rather than leak a foreign id), and
+ * `[]` when the patient exists and simply has no bills; `findById` is `undefined` for
+ * an invoice this clinic does not hold, whether it never existed or belongs to
+ * someone else.
  */
 export interface InvoiceRepository {
-  save(invoice: Invoice): Promise<void>;
+  /** Assign the next per-clinic document number and insert the invoice, returning the number. */
+  issue(invoice: Invoice): Promise<string>;
+  /** The invoices of a patient, newest first; undefined when the patient does not exist in this clinic. */
+  findForPatient(
+    clinicId: ClinicId,
+    patientId: PatientId,
+  ): Promise<readonly InvoiceSummary[] | undefined>;
+  /** One invoice in this clinic with the charges it folded in, or undefined if it is not found. */
+  findById(clinicId: ClinicId, invoiceId: InvoiceId): Promise<InvoiceDetail | undefined>;
 }
 
 /**

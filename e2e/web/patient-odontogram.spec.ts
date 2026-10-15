@@ -22,6 +22,7 @@ import {
   anaProfile,
   anaTreatmentPlans,
   clinicFixture,
+  noInvoices,
   patientOdontogram,
   recordedOdontogramEntry,
 } from './fixtures/api-responses.js';
@@ -65,6 +66,7 @@ test.describe('Odontogram chart', () => {
       [PROFILE_PATH]: { body: anaProfile },
       [CHART_PATH]: { body: anaOdontogram },
       [`${PROFILE_PATH}/treatment-plans`]: { body: anaTreatmentPlans },
+      [`${PROFILE_PATH}/invoices`]: { body: noInvoices },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -105,6 +107,7 @@ test.describe('Odontogram chart', () => {
       [PROFILE_PATH]: { body: anaProfile },
       [CHART_PATH]: { body: anaOdontogram },
       [`${PROFILE_PATH}/treatment-plans`]: { body: anaTreatmentPlans },
+      [`${PROFILE_PATH}/invoices`]: { body: noInvoices },
       [`POST ${CHART_PATH}/entries`]: { status: 201, body: recordedOdontogramEntry },
     });
 
@@ -164,6 +167,7 @@ test.describe('Odontogram chart', () => {
       [PROFILE_PATH]: { body: anaProfile },
       [CHART_PATH]: { body: anaOdontogram },
       [`${PROFILE_PATH}/treatment-plans`]: { body: anaTreatmentPlans },
+      [`${PROFILE_PATH}/invoices`]: { body: noInvoices },
       [`POST ${CHART_PATH}/entries`]: {
         status: 422,
         body: {
