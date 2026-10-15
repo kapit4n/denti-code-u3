@@ -27,12 +27,22 @@ import {
   asChargeId,
   asClinicId,
   asPatientId,
+  asTreatmentId,
+  asTreatmentPlanId,
   asVisitId,
   type ClinicId,
   type IsoDateTime,
+  type PatientId,
+  type TreatmentId,
   type VisitId,
 } from '@denti-code-u3/types';
-import type { ChargeRepository, ClinicRepository, VisitRepository } from '../ports/index.js';
+import type {
+  ChargeRepository,
+  ClinicRepository,
+  TreatmentPlanRepository,
+  TreatmentPlanSummary,
+  VisitRepository,
+} from '../ports/index.js';
 import type { Clinic } from '../organization/index.js';
 import type { Visit } from '../visit/index.js';
 import type { Charge } from './invoice.js';
@@ -44,6 +54,42 @@ const PATIENT = asPatientId('11111111-1111-4111-8111-111111111111');
 const VISIT = asVisitId('33333333-3333-4333-8333-333333333333');
 const CHARGE = asChargeId('77777777-7777-4777-8777-777777777777');
 const NOW = '2026-10-05T14:30:00.000Z' as IsoDateTime;
+const TREATMENT_ID = asTreatmentId('99999999-9999-4999-8999-999999999999');
+const PLAN_ITEM = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+
+/**
+ * One plan with one open item, the shape `listForPatient` answers with. A test can
+ * override the item's treatment to prove the fold, or leave the item id unmatched to
+ * prove the scope.
+ */
+function aPlan(overrides: { treatmentId?: TreatmentId | null } = {}): TreatmentPlanSummary {
+  return {
+    id: asTreatmentPlanId('55555555-7777-4777-8777-777777777777'),
+    dentistId: null,
+    status: 'ACCEPTED',
+    title: 'Restorative plan',
+    notes: null,
+    presentedAt: null,
+    acceptedAt: null,
+    updatedAt: NOW,
+    items: [
+      {
+        id: PLAN_ITEM,
+        treatmentId: overrides.treatmentId === undefined ? TREATMENT_ID : overrides.treatmentId,
+        treatmentCode: 'RES-01',
+        treatmentName: 'Composite restoration',
+        tooth: '16',
+        surfaces: [],
+        quantity: 1,
+        estimatedPriceMinor: 20_000,
+        isCompleted: false,
+        completedAt: null,
+        notes: null,
+      },
+    ],
+    progress: { total: 1, completed: 0, inProgress: 0, pending: 1, percentComplete: 0 },
+  };
+}
 
 function openVisit(overrides: Partial<Visit> = {}): Visit {
   return {
@@ -76,6 +122,7 @@ function aCharge(overrides: Partial<Charge> = {}): Charge {
     patientId: PATIENT,
     visitId: VISIT,
     treatmentId: null,
+    treatmentPlanItemId: null,
     description: 'Composite restoration, tooth 16',
     quantity: 1,
     unitPriceMinor: 20_000,
@@ -93,18 +140,34 @@ function aCharge(overrides: Partial<Charge> = {}): Charge {
 interface Recorded {
   saved: Charge[];
   reads: { clinicId: ClinicId; visitId: VisitId }[];
+  /** Every `listForPatient` the use case made while resolving a named plan item. */
+  planReads: {
+    clinicId: ClinicId;
+    patientId: Parameters<TreatmentPlanRepository['listForPatient']>[1];
+  }[];
 }
 
 /**
  * `visit: undefined` means *no such visit*, chosen with `in` rather than `??` for the
  * reason `visit-prescriptions.test.ts` gives: "the visit does not exist" and "the
  * visit is open" must not be the same fixture.
+ *
+ * `plans` is what `listForPatient` answers: a plan item is resolved by walking the
+ * patient's own plans, so an empty list is "the patient has no plans to name".
  */
-function harness(options: { visit?: Visit; clinic?: Clinic; stored?: readonly Charge[] } = {}) {
-  const recorded: Recorded = { saved: [], reads: [] };
+function harness(
+  options: {
+    visit?: Visit;
+    clinic?: Clinic;
+    stored?: readonly Charge[];
+    plans?: readonly TreatmentPlanSummary[];
+  } = {},
+) {
+  const recorded: Recorded = { saved: [], reads: [], planReads: [] };
 
   const storedVisit: Visit | undefined = 'visit' in options ? options.visit : openVisit();
   const storedClinic: Clinic | undefined = 'clinic' in options ? options.clinic : aClinic();
+  const storedPlans = options.plans ?? [];
 
   const visits: VisitRepository = {
     findById: async (clinicId, visitId) =>
@@ -140,6 +203,12 @@ function harness(options: { visit?: Visit; clinic?: Clinic; stored?: readonly Ch
       visits,
       clinics,
       charges,
+      treatmentPlans: {
+        listForPatient: async (clinicId: ClinicId, patientId: PatientId) => {
+          recorded.planReads.push({ clinicId, patientId });
+          return storedPlans;
+        },
+      },
       clock: { now: () => NOW },
       newId: () => CHARGE,
     },
@@ -170,6 +239,8 @@ describe('addVisitCharge', () => {
       visitId: VISIT,
       // A charge recorded by hand names no catalogue treatment.
       treatmentId: null,
+      // ...and bills no planned line.
+      treatmentPlanItemId: null,
       description: 'Composite restoration, tooth 16',
       quantity: 2,
       unitPriceMinor: 12_000,
@@ -319,6 +390,114 @@ describe('addVisitCharge', () => {
       ),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(recorded.saved).toEqual([]);
+  });
+
+  /**
+   * The plan-item link — provenance, the same decision the recorded treatment made.
+   *
+   * Naming a planned line says *which* line the money is for; it never completes the
+   * line. The item is resolved on the patient's own plan (`listForPatient`), and its
+   * own treatment is folded into the charge so the bill reads without joining back —
+   * so the fold is asserted, not merely the id.
+   */
+  describe('the plan-item link', () => {
+    it('bills the named planned item and folds its catalogue treatment into the charge', async () => {
+      const { recorded, dependencies } = harness({ plans: [aPlan()] });
+
+      const charge = await addVisitCharge(
+        CLINIC,
+        VISIT,
+        {
+          description: 'Composite restoration',
+          unitPriceMinor: 20_000,
+          treatmentPlanItemId: PLAN_ITEM,
+        },
+        dependencies,
+      );
+
+      expect(charge.treatmentPlanItemId).toBe(PLAN_ITEM);
+      // The fold: the item's own treatment becomes the charge's, so the bill names
+      // what was done without reading the plan back.
+      expect(charge.treatmentId).toBe(TREATMENT_ID);
+      expect(recorded.saved).toEqual([charge]);
+      // Scoped to this clinic and the visit's own patient, never the caller's word.
+      expect(recorded.planReads).toEqual([{ clinicId: CLINIC, patientId: PATIENT }]);
+    });
+
+    it('links the item but folds a null treatment when the planned line names no catalogue entry', async () => {
+      const { recorded, dependencies } = harness({ plans: [aPlan({ treatmentId: null })] });
+
+      const charge = await addVisitCharge(
+        CLINIC,
+        VISIT,
+        {
+          description: 'Manual restoration',
+          unitPriceMinor: 20_000,
+          treatmentPlanItemId: PLAN_ITEM,
+        },
+        dependencies,
+      );
+
+      // An item may be described rather than coded; the link still holds.
+      expect(charge.treatmentPlanItemId).toBe(PLAN_ITEM);
+      expect(charge.treatmentId).toBeNull();
+      expect(recorded.saved.at(-1)!.treatmentPlanItemId).toBe(PLAN_ITEM);
+    });
+
+    it('refuses a plan item that is not on the patient’s plan, and writes nothing', async () => {
+      const { recorded, dependencies } = harness({ plans: [aPlan()] });
+
+      await expect(
+        addVisitCharge(
+          CLINIC,
+          VISIT,
+          {
+            description: 'Composite restoration',
+            unitPriceMinor: 20_000,
+            treatmentPlanItemId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+          },
+          dependencies,
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+      expect(recorded.saved).toEqual([]);
+      // The plan *was* read: the refusal is the lookup's finding, not a skipped check.
+      expect(recorded.planReads).toEqual([{ clinicId: CLINIC, patientId: PATIENT }]);
+    });
+
+    it('refuses a named plan item when the patient has no plans at all', async () => {
+      const { recorded, dependencies } = harness({ plans: [] });
+
+      await expect(
+        addVisitCharge(
+          CLINIC,
+          VISIT,
+          {
+            description: 'Composite restoration',
+            unitPriceMinor: 20_000,
+            treatmentPlanItemId: PLAN_ITEM,
+          },
+          dependencies,
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+      expect(recorded.saved).toEqual([]);
+      expect(recorded.planReads).toEqual([{ clinicId: CLINIC, patientId: PATIENT }]);
+    });
+
+    it('drops a blank plan item to null without reading the patient’s plans', async () => {
+      const { recorded, dependencies } = harness({ plans: [aPlan()] });
+
+      const charge = await addVisitCharge(
+        CLINIC,
+        VISIT,
+        { description: 'Cleaning', unitPriceMinor: 5_000, treatmentPlanItemId: '   ' },
+        dependencies,
+      );
+
+      expect(charge.treatmentPlanItemId).toBeNull();
+      expect(charge.treatmentId).toBeNull();
+      // The dependency is only paid for when the caller actually names an item.
+      expect(recorded.planReads).toEqual([]);
+    });
   });
 });
 

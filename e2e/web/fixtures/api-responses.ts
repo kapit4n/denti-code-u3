@@ -1011,6 +1011,7 @@ export const visitCharge = {
   invoicedAt: null,
   createdAt: '2026-10-05T13:10:00.000Z',
   treatmentId: null,
+  treatmentPlanItemId: null,
   description: 'Composite restoration',
   quantity: 1,
   unitPriceMinor: 8500,
@@ -1033,12 +1034,33 @@ export const raisedCharge = {
   invoicedAt: null,
   createdAt: '2026-10-05T13:35:00.000Z',
   treatmentId: null,
+  treatmentPlanItemId: null,
   description: 'Composite',
   quantity: 2,
   unitPriceMinor: 8500,
   discountMinor: 0,
   taxRatePercent: 0,
   currency: 'USD',
+} as const;
+
+/**
+ * The row a linked charge write answers with: the charge carries the planned item it
+ * bills, and the item's own treatment is folded into `treatmentId`.
+ *
+ * `treatmentPlanItemId` is the *open* prophylaxis line in {@link anaTreatmentPlans}
+ * (tooth 36), so a spec that raises a charge against the picker and asserts this id
+ * on the wire is asserting the link the front desk chose, not a value the browser
+ * could invent. The folded `treatmentId` is that same line's treatment — the
+ * server's own work, never sent in the body.
+ */
+export const billedCharge = {
+  ...visitCharge,
+  id: '11111111-cccc-4ddd-8eee-000000000007',
+  createdAt: '2026-10-05T13:40:00.000Z',
+  treatmentId: PROPHYLAXIS_TREATMENT_ID,
+  treatmentPlanItemId: '11111111-bbbb-4a11-9ccc-000000000012',
+  description: 'Scaling and prophylaxis',
+  unitPriceMinor: 4500,
 } as const;
 
 export function visitCharges(charges: readonly Record<string, unknown>[]): Fixture['body'] {

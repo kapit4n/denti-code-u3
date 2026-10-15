@@ -322,7 +322,11 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
             <VisitPrescriptionsSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
           ) : null}
           {section === 'charges' ? (
-            <VisitChargesSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
+            <VisitChargesSection
+              visitId={visit.id}
+              patientId={visit.patientId}
+              clinicTimeZone={clinic?.timeZone}
+            />
           ) : null}
           {section === 'payments' ? (
             <VisitPaymentsSection visitId={visit.id} clinicTimeZone={clinic?.timeZone} />
@@ -764,6 +768,19 @@ function describePlannedItem(plan: TreatmentPlanSummary, item: TreatmentPlanItem
   const tooth = item.tooth ? ` — tooth ${item.tooth}` : '';
 
   return `${title}${tooth}`;
+}
+
+/**
+ * A planned line as the charge picker spells it: the treatment it is for, under its
+ * plan and on its tooth. A charge has no treatment select of its own, so the line's
+ * own treatment name is what tells one open item from another.
+ */
+function describeBilledItem(plan: TreatmentPlanSummary, item: TreatmentPlanItemSummary): string {
+  const title = plan.title?.trim() || 'Plan';
+  const treatment = item.treatmentName?.trim() || 'Planned line';
+  const tooth = item.tooth ? ` — tooth ${item.tooth}` : '';
+
+  return `${title}: ${treatment}${tooth}`;
 }
 
 interface VisitTreatmentsSectionProps {
@@ -1273,20 +1290,30 @@ function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptio
  * domain's own `calculateChargeTotal` — quantity × unit price, minus the discount,
  * priced in the clinic's currency — never a total this screen re-derived and could
  * disagree with the record about.
+ *
+ * **A charge may name the planned line it bills, as provenance and nothing more.**
+ * When this patient's plan has open lines, the form offers them beside the price
+ * (the same optional link the treatment recorder draws); picking one sends its id,
+ * it does not complete the line, and the charge's free-text description is the
+ * desk's own — the link is recorded, not read back into the boxes.
  */
 interface VisitChargesSectionProps {
   readonly visitId: string;
+  /** Whose plans the "planned item" picker reads. */
+  readonly patientId: string;
   /** Absent while the clinic is still being fetched; the times then wait for it. */
   readonly clinicTimeZone: string | undefined;
 }
 
-function VisitChargesSection({ visitId, clinicTimeZone }: VisitChargesSectionProps) {
+function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitChargesSectionProps) {
   const chargesQuery = useVisitCharges(visitId);
+  const plansQuery = usePatientTreatmentPlans(patientId);
   const createCharge = useCreateCharge();
   const [description, setDescription] = useState('');
   const [priceMajor, setPriceMajor] = useState('');
   const [quantity, setQuantity] = useState('');
   const [discountMajor, setDiscountMajor] = useState('');
+  const [planItemId, setPlanItemId] = useState('');
 
   const failure = describeChargeFailure(createCharge.error, 'The charge could not be raised.');
 
@@ -1300,6 +1327,13 @@ function VisitChargesSection({ visitId, clinicTimeZone }: VisitChargesSectionPro
 
   const list = chargesQuery.data?.charges ?? [];
   const totalMinor = list.length > 0 ? chargesTotal(list, list[0]!.currency) : undefined;
+
+  // The still-open lines on this patient's plans: billing is provenance, so a line
+  // already done is not offered again — the same rule the treatment recorder holds.
+  const plannedItems =
+    plansQuery.data?.items.flatMap((plan) =>
+      plan.items.filter((item) => !item.isCompleted).map((item) => ({ plan, item })),
+    ) ?? [];
 
   return (
     <Card data-testid="visit-charges">
@@ -1353,6 +1387,7 @@ function VisitChargesSection({ visitId, clinicTimeZone }: VisitChargesSectionPro
                 ...(parsedDiscount !== undefined && parsedDiscount > 0
                   ? { discountMinor: parsedDiscount }
                   : {}),
+                treatmentPlanItemId: planItemId || undefined,
               },
               {
                 onSuccess: () => {
@@ -1360,6 +1395,7 @@ function VisitChargesSection({ visitId, clinicTimeZone }: VisitChargesSectionPro
                   setPriceMajor('');
                   setQuantity('');
                   setDiscountMajor('');
+                  setPlanItemId('');
                 },
               },
             );
@@ -1378,6 +1414,35 @@ function VisitChargesSection({ visitId, clinicTimeZone }: VisitChargesSectionPro
               maxLength={200}
             />
           </div>
+
+          {/* Offered only when this patient's plan has an open line to bill. Linking
+              is provenance, so a charge with nothing planned for it simply has no
+              item to name. */}
+          {plannedItems.length > 0 ? (
+            <div className="space-y-1">
+              <Label htmlFor="charge-plan-item">Planned item (optional)</Label>
+              <Select
+                value={planItemId || NOT_LINKED}
+                onValueChange={(value) => setPlanItemId(value === NOT_LINKED ? '' : value)}
+                disabled={createCharge.isPending}
+              >
+                <SelectTrigger id="charge-plan-item" data-testid="charge-plan-item">
+                  <SelectValue placeholder="Not linked to a plan item" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NOT_LINKED}>Not linked to a plan item</SelectItem>
+                  {plannedItems.map(({ plan, item }) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {describeBilledItem(plan, item)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Records which planned line this charge bills; it does not mark the line done.
+              </p>
+            </div>
+          ) : null}
 
           <div className="grid gap-2 sm:grid-cols-3">
             <div className="space-y-1">

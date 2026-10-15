@@ -351,18 +351,24 @@ validity rules, not a drawing hack.
     through the domain enum's values, and
     `POST …/:planId/items/:itemId/complete` marks one line done (bodyless,
     idempotent). The plan save is one transaction; the profile section proposes a
-    plan and marks a line done, both non-optimistically. Charging a completed
-    line, and a plan's own ordered-edit UI, remain.
+    plan and marks a line done, both non-optimistically. A plan's own ordered-edit UI
+    remains; billing a planned line is delivered under the link bullet below.
 - Progress tracking (pending treatments) — progress is projected from the stored
   rows (never stored) and redrawn after each item is completed.
 - Link plan items → visits → charges — the item carries a nullable
-  `treatment_plan_item_id` link from the execution side; charging stays open.
+  `treatment_plan_item_id` link from both the execution and the charge side, each a
+  provenance-only record that never completes the line.
   - **Plan item → visit (session 38):** `recordVisitTreatment` accepts an optional
     `treatmentPlanItemId`, resolved on the patient's own plan and required to name the
     same treatment (else 422); the record carries the link as **provenance only** — it
     never completes the plan item — and both engines write the column. The visit
-    workspace offers the open items for the chosen treatment. **Plan item → charge
-    remains open.**
+    workspace offers the open items for the chosen treatment.
+  - **Plan item → charge (session 39):** `POST /api/v1/visits/:visitId/charges` accepts
+    an optional `treatmentPlanItemId`, resolved on the visit's patient's own plan (else 422) and folding that item's catalogue treatment into the charge's `treatmentId`;
+    the `charges` table gained the same nullable `on delete set null` column in both
+    engines. The link is **provenance only** — billing a planned line does not complete
+    it — and the charges section offers the patient's open lines beside the price. The
+    roadmap's M8 bullet is now closed.
 
 ---
 

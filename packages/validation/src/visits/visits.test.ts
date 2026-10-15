@@ -570,6 +570,37 @@ describe('createChargeSchema', () => {
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ description: 'Cleaning', unitPriceMinor: 100 });
   });
+
+  it('accepts a planned item id, or a null one, and refuses a string that is not a uuid', () => {
+    const linked = createChargeSchema.safeParse({
+      description: 'Composite restoration',
+      unitPriceMinor: 20_000,
+      treatmentPlanItemId: PLAN_ITEM_ID,
+    });
+    expect(linked.success).toBe(true);
+    if (!linked.success) return;
+    expect(linked.data.treatmentPlanItemId).toBe(PLAN_ITEM_ID);
+
+    expect(
+      createChargeSchema.safeParse({
+        description: 'Composite restoration',
+        unitPriceMinor: 20_000,
+        treatmentPlanItemId: null,
+      }).success,
+    ).toBe(true);
+
+    // The schema's only restraint is that it is a uuid; whether the item is on the
+    // patient's plan is the domain's rule.
+    for (const treatmentPlanItemId of ['1', 'not-a-uuid', '']) {
+      expect(
+        createChargeSchema.safeParse({
+          description: 'Composite restoration',
+          unitPriceMinor: 20_000,
+          treatmentPlanItemId,
+        }).success,
+      ).toBe(false);
+    }
+  });
 });
 
 describe('paymentMethodSchema', () => {

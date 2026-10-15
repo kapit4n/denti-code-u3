@@ -43,6 +43,13 @@
       "when": 1791469940457,
       "tag": "0005_gorgeous_landau",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792004653160,
+      "tag": "0006_modern_lake",
+      "breakpoints": true
     }
   ]
 }

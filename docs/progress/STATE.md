@@ -1,15 +1,16 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 38 (the plan-item → visit link, provenance only)
+> Last updated: session 39 (the plan-item → charge link, provenance only)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
 
 **PHASE 4 — CLINICAL WORKFLOWS** (Milestone 5 of `docs/roadmap.md`)
 
-**Status: Milestones 5–7 complete; Milestone 8 (treatments) has its catalogue, its
-treatment-plan read _and_ write sides, and the plan-item → visit link — only the charge
-side of that link remains open.** Sessions 13–21
+**Status: Milestones 5–8 complete. Milestone 8 (treatments) now has its catalogue, its
+treatment-plan read _and_ write sides, and both halves of the plan-item link — the
+plan-item → visit link (session 38) and the plan-item → charge link (session 39) — so
+the roadmap's "Link plan items → visits → charges" bullet is closed.** Sessions 13–21
 delivered the agenda end to end: the `AgendaEntry` read model and `AppointmentRepository`,
 `GET /api/v1/appointments`, the grid with day/week/month views confined to two adapters
 by an enforced guard, the three write endpoints with the tenant foreign keys that make
@@ -137,6 +138,34 @@ offers the open items for that treatment on that patient (a `Not linked to a pla
 default, each option spelling its tooth), the choice is dropped whenever the treatment
 changes, and the POST carries `treatmentPlanItemId` only when one was picked. The
 field was already on `recordVisitTreatmentSchema`; this session made it real end to end.
+
+Session 39 delivered **the plan-item → charge link**, the second half of Milestone 8's
+remaining bullet and the moment the roadmap's "Link plan items → visits → charges" line
+closed. The `charges` table gained a nullable `treatment_plan_item_id` FK with
+`on delete set null` — the execution link's own column and rule, so nothing a bill does
+can strand a performed record — landing in `database/schema` _and_
+`database/schema/sqlite` with a generated migration per engine (ADR 0025). `Charge`
+grew `treatmentPlanItemId`, and `addVisitCharge` gained the optional field that makes it
+mean something: when the caller names a plan item, the use case reads
+`treatmentPlans.listForPatient(clinicId, visit.patientId)` — the same read the record
+link reuses, no new port verb — and walks the patient's own plans; an item it cannot
+find is `INVALID_INPUT` ("That treatment plan item is not on this patient's plan"), and
+the item's own catalogue treatment is **folded into the charge's `treatmentId`**, so a
+bill raised from a planned line names what was done without joining the plan back. A
+blank or absent id is `null` and reads no plans. Like the record link, it is
+**provenance only**: billing a planned line does **not** complete it — completion stays
+`completeTreatmentPlanItem`'s own act — so the charge mutation still invalidates only
+`['visits','charges',visitId]` and deliberately **not** the plan read. Both engines write
+the column and map it back (`CHARGE_COLUMNS` and `save`, twice as always); the wire is
+`createChargeSchema`'s new `treatmentPlanItemId: uuidSchema.optional().nullable()`, and
+the route passes `treatmentPlans` (already a `VisitsDependencies` member) and spreads the
+field only when the body carried it. On the visit workspace the charges section gained
+the patient's plans read and an optional **Planned item** picker beside the price: once
+the patient's plan has open lines, each is offered named by its plan, treatment and
+tooth (a charge has no treatment select of its own, so the line's own treatment name is
+what tells one from another), the choice resets with the form, and the POST carries
+`treatmentPlanItemId` only when one was picked. It is not read back into the boxes — the
+description stays the desk's own words.
 
 Session 33 delivered **files** — the seventh workspace section and the seventh "per
 visit" book (Task 1 of the session's plan), the moment Milestone 6's "Files/attachments
@@ -301,30 +330,49 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 38 — the plan-item → visit link)
+## Verification log (last run, session 39 — the plan-item → charge link)
 
 | Command                     | Result                                                                              |
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                                                    |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)                    |
-| `pnpm run format:check`     | clean (one file reformatted with `prettier --write` before the check)               |
-| `pnpm run test`             | 12/12 tasks pass — domain 303, validation 141, app 307, API 81 passed / 256 skipped |
+| `pnpm run format:check`     | clean (6 files reformatted with `prettier --write` before the check)                |
+| `pnpm run test`             | 12/12 tasks pass — domain 308, validation 142, app 308, API 82 passed / 258 skipped |
 | `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                              |
 | `pnpm run build`            | 5/5 tasks pass (web rebuilt before e2e)                                             |
 | `pnpm run guard:boundaries` | OK                                                                                  |
-| `pnpm run test:e2e`         | 120/120 pass — 1 new spec (the open planned item linked) on the visit workspace     |
+| `pnpm run test:e2e`         | 121/121 pass — 1 new spec (the open planned line billed) on the visit workspace     |
 
 **The PostgreSQL integration suite could not be executed this session: Docker and every
 PostgreSQL client are absent from this environment** (no `docker`, no `podman`, no
-`psql`, no `/var/run/docker.sock`). Session 38's new link coverage was added to
-`apps/api/test/visits-route.integration.test.ts` (a linked record writes
+`psql`, no `/var/run/docker.sock`). Session 39's new link coverage was added to
+`apps/api/test/visits-route.integration.test.ts` (a linked charge writes
 `treatment_plan_item_id` and leaves the item incomplete; a plan item that is not the
-patient's own is a 422 that writes nothing, cleanup widened to `treatment_plans`) and it
-typechecks, but it **skips** here for the reason above; the always-on SQLite smoke suite —
-which gained the same "links a recorded treatment to the planned item it fulfils, without
-completing it" block — still runs. Session 37's PG coverage (create → present → complete →
-idempotent → 404 → 422 in `patient-profile-scope.integration.test.ts`) still typechecks and
-still skips for the same reason.
+patient's own is a 422 that writes nothing) and it typechecks, but it **skips** here for
+the reason above; the always-on SQLite smoke suite — which gained the same "bills a
+planned line on a charge, without completing it" block — still runs. Session 38's PG
+coverage (the record link) still typechecks and still skips for the same reason.
+
+**What session 39's work is verified by.** 5 new domain tests in the `the plan-item
+link` block of `visit-charges.test.ts` (the item id it was given is written, resolved on
+the patient's own plan and the plan read recorded, and the item's **own treatment folded
+into the charge's** `treatmentId` so a bill raised from a line names what was done; an
+item that is **not on the patient's plan** is refused `INVALID_INPUT` with nothing
+written; an item with a **null treatment** keeps the charge's own treatment; a patient
+with **no plans at all** is refused the same way; a blank id drops to `null` **without
+reading the patient's plans** — and, in every case, the plan is read, never written: the
+provenance-only decision), 1 new validation test (the `createChargeSchema` field accepts
+a uuid or null, refuses a non-uuid), 1 new component test in `visit-workspace.test.tsx`
+("lets a charge bill an open planned line, and only that" — the section offers the
+patient's **open** lines across plans, a completed line is absent, the POST body carries
+the picked `treatmentPlanItemId`, and the picker resets with the form), 1 new always-on
+SQLite-smoke block, and 1 new browser spec ("bills the open planned line a charge names,
+without completing it" — the picker is drawn from the plan read, the POST body is
+asserted, and exactly one plans read is made). The two write-path assertions were checked
+by reintroducing the defect (the SQLite `save` not writing the column → the smoke test
+fails; the domain not folding the item's `treatmentId` → the fold test fails) and
+reverting each. Session 38's read model and record link were left untouched, so those
+tests are unchanged.
 
 **What session 38's work is verified by.** 6 new domain tests in the
 `recordVisitTreatment — the plan link` block of `visit-treatment-records.test.ts` (the
@@ -558,6 +606,45 @@ router — a `<Link>` with no router context renders nothing — and the mock is
 the new suite failed for a reason that had nothing to do with the workspace.
 
 ## Decisions made this session (not yet in ADRs)
+
+### Decisions from session 39 (the plan-item → charge link)
+
+- **The link is provenance only; billing a planned line never completes the item.**
+  Naming a plan item when a charge is raised says _which proposed line this bill is for_;
+  it does not mark that line done. Completion stays `completeTreatmentPlanItem`'s own,
+  explicit act — the same decision session 38 made for the execution link. The charge
+  mutation therefore still invalidates only `['visits','charges',visitId]` and **not** the
+  plan read; the smoke test asserts the linked item still reads open after the write.
+- **Naming an item folds that item's own treatment into the charge.** A charge has no
+  treatment select of its own (it carries an optional `treatmentId`), so the item is the
+  one place the intended treatment can come from: when `addVisitCharge` resolves the plan
+  item it uses `planItem.treatmentId` as the charge's `treatmentId`, overriding a
+  caller-supplied one. An item whose treatment is `null` leaves the charge's own
+  `treatmentId` as the caller gave it. This is why the workspace picker names each line by
+  its treatment — it is the only label that distinguishes two lines.
+- **The named item must be on the visit's patient's own plan; no treatment match is
+  required (unlike the record link).** `addVisitCharge` reads
+  `treatmentPlans.listForPatient(clinicId, visit.patientId)` (the same read the record
+  link reuses, no new port verb) and walks the patient's plans; an item it cannot find is
+  `INVALID_INPUT` ("That treatment plan item is not on this patient's plan"). Because the
+  item's treatment is folded _in_, there is no second treatment to disagree with, so the
+  record link's "different treatment" refusal has no analogue here. A blank or absent id
+  is `null` and **no plan read happens**.
+- **The FK column and its `on delete set null` rule are copied from the execution link,
+  not shared.** `charges.treatment_plan_item_id` is a second nullable FK to
+  `treatment_plan_items(id)` with the identical `on delete set null` rule, declared in
+  `database/schema` and `database/schema/sqlite` and migrated per engine. Two engines,
+  one column each — the dual-engine rule (ADR 0025), not an abstraction over the two. The
+  same "no API path deletes a plan item, so the foreign-key-translation race is
+  unreachable" note from session 38 applies.
+- **The picker lives beside the price, offers the patient's open lines across all plans,
+  and resets with the form.** The charges section already reads the patient for its own
+  reasons, so it gained `usePatientTreatmentPlans` and a `Planned item` `<Select>` (a
+  `Not linked to a plan item` sentinel). Options are every **open** (`!isCompleted`) line
+  across the patient's plans — not filtered to a treatment, since a charge names none —
+  each spelled "plan: treatment — tooth". The choice is dropped when the form is cleared,
+  and the POST carries `treatmentPlanItemId` only when one was picked; it is **not** read
+  back into the description, which stays the desk's own words.
 
 ### Decisions from session 38 (the plan-item → visit link)
 
@@ -1604,9 +1691,10 @@ editing. Both sides now go through `PatientRepository`. Remaining:
    Milestone 7's odontogram landed in session 34. What remains of this spread is
    inventory and reports.
 
-**Milestone 8 — TREATMENTS, CATALOGUE AND PLANS.** Sessions 36–38 closed the App UI,
-the plan's own write side and the plan-item → visit link; only the plan-item → **charge**
-link remains open.
+**Milestone 8 — TREATMENTS, CATALOGUE AND PLANS.** Sessions 36–39 closed the App UI,
+the plan's own write side, and both halves of the plan-item link (the → visit link and
+the → charge link). **Milestone 8 is complete**; status transitions are Milestone 9's
+commissioning, not this one.
 
 1. [x] **Catalogue write.** `addTreatment` over `TreatmentRepository.add`, both
        engines, `POST /api/v1/treatments`, `createTreatmentSchema`. No clinic id and
@@ -1628,8 +1716,11 @@ link remains open.
        optional `treatmentPlanItemId` resolved on the patient's own plan and required
        to name the same treatment; the link is **provenance only** (never completes
        the item), written by both engines, offered by the visit workspace.
-6. [ ] **Plan item → charge link** and item states / plan acceptance-rejection /
-       invoicing: the charge side is billing's, and status transitions are
+6. [x] **Plan-item → charge link (session 39).** `addVisitCharge` accepts an optional
+       `treatmentPlanItemId` resolved on the visit's patient's own plan and folds the
+       item's own catalogue treatment into the charge; the link is **provenance only**
+       (never completes the item), a nullable `on delete set null` column written by both
+       engines, offered by the visit workspace's charges section. Status transitions are
        Milestone 9's commissioning, not this one.
 
 ## Last session log
@@ -2612,3 +2703,26 @@ warning) · format · guard:boundaries OK · build 5/5 · domain 303, validation
 API 81 passed / 256 skipped (the PG link block typechecks but **skips — no Docker or
 PostgreSQL client in this environment**; the SQLite smoke suite covers the same path) ·
 e2e: **120/120** — 1 new link spec.
+
+Session 39: the plan-item → charge link — the second half of Milestone 8's remaining
+bullet, closing the roadmap's "Link plan items → visits → charges" line. `Charge` gained
+`treatmentPlanItemId` and `addVisitCharge` the optional field: when a plan item is named,
+the use case reads `treatmentPlans.listForPatient(clinicId, visit.patientId)` (the same
+read the record link reuses), refuses an item not on the patient's own plan with
+`INVALID_INPUT`, and **folds the item's own catalogue treatment into the charge's
+`treatmentId`**; a blank/absent id is `null` and reads no plans. Like the execution link
+it is **provenance only** — billing a planned line never completes it — so the charge
+mutation still invalidates only `['visits','charges',visitId]`, never the plan read. The
+`charges` table gained a nullable `treatment_plan_item_id` FK with `on delete set null` in
+`database/schema` _and_ `database/schema/sqlite`, migrated per engine (ADR 0025); both
+repositories write and map the column. The wire is `createChargeSchema`'s new optional
+nullable uuid; the route spreads it and passes `treatmentPlans`. The visit workspace's
+charges section now offers the patient's open lines in a `Planned item` picker beside the
+price, resetting with the form.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
+warning) · format · guard:boundaries OK · build 5/5 · domain 308, validation 142, app 308,
+API 82 passed / 258 skipped (the PG link block typechecks but **skips — no Docker or
+PostgreSQL client in this environment**; the SQLite smoke suite covers the same path; two
+write-path assertions checked by reintroducing the defect) · db:migrate + db:seed
+re-verified against the SQLite file · e2e: **121/121** — 1 new billing spec.

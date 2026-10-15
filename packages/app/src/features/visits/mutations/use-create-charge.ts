@@ -27,6 +27,13 @@ export interface CreateChargeVariables {
   readonly unitPriceMinor: number;
   /** A zero discount is dropped, so a charge without one is not stored with one. */
   readonly discountMinor?: number;
+  /**
+   * The planned line this charge bills, when the desk raised it from a plan item.
+   *
+   * Provenance only: naming an item does not complete it. Sent only when one was
+   * picked, so a hand-raised charge is not asked to name a plan it has none of.
+   */
+  readonly treatmentPlanItemId?: string | null;
 }
 
 export function useCreateCharge() {
@@ -40,6 +47,7 @@ export function useCreateCharge() {
       quantity,
       unitPriceMinor,
       discountMinor,
+      treatmentPlanItemId,
     }: CreateChargeVariables) =>
       client.post<
         Charge,
@@ -48,6 +56,7 @@ export function useCreateCharge() {
           quantity?: number;
           unitPriceMinor: number;
           discountMinor?: number;
+          treatmentPlanItemId?: string;
         }
       >(`/visits/${visitId}/charges`, {
         // Trimmed on the way out, so the server is not asked to store what the
@@ -58,6 +67,8 @@ export function useCreateCharge() {
         // A zero discount is the domain's default; sending it would be a body
         // that says what is already true.
         ...(discountMinor !== undefined && discountMinor > 0 ? { discountMinor } : {}),
+        // A blank link is dropped, sending only what was actually chosen.
+        ...(treatmentPlanItemId ? { treatmentPlanItemId } : {}),
       }),
     onSuccess: async (_charge, { visitId }) => {
       await queryClient.invalidateQueries({ queryKey: ['visits', 'charges', visitId] });

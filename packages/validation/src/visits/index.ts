@@ -209,6 +209,10 @@ export type CreatePrescriptionInput = z.infer<typeof createPrescriptionSchema>;
  * is not a charge with a hidden one. A non-positive quantity and a negative price or
  * discount are refused at this boundary and again by the domain, because money is the
  * one thing no boundary may be trusted to get right twice.
+ *
+ * `treatmentPlanItemId` names the planned line the charge bills. As with the recorded
+ * treatment's link, the schema checks only that it is a uuid; whether the item is on
+ * *this patient's* plan is a rule about the plan and is judged by the domain.
  */
 export const createChargeSchema = z.object({
   description: z
@@ -219,6 +223,7 @@ export const createChargeSchema = z.object({
   quantity: z.number().positive('A quantity must be greater than zero').optional(),
   unitPriceMinor: z.number().int().nonnegative('A unit price cannot be negative'),
   discountMinor: z.number().int().nonnegative('A discount cannot be negative').optional(),
+  treatmentPlanItemId: uuidSchema.optional().nullable(),
 });
 
 export type CreateChargeInput = z.infer<typeof createChargeSchema>;

@@ -812,6 +812,11 @@ export async function registerVisitsRoutes(
    * ADR 0021) — a body that could restate the patient or the visit could restate them
    * differently from the record it is filed on.
    *
+   * An optional `treatmentPlanItemId` names the planned line this charge bills. The use
+   * case resolves it on the patient's own plan, so an item on another patient's plan is
+   * the same 422 a foreign treatment gets, and folds the item's own treatment into the
+   * charge. The link is provenance only: it does not complete the item.
+   *
    * 422 for a charge that says nothing or is not priced lawfully (a blank or
    * over-long description, a non-positive quantity, a negative price or discount).
    *
@@ -843,11 +848,15 @@ export async function registerVisitsRoutes(
           ...(parsed.data.discountMinor !== undefined
             ? { discountMinor: parsed.data.discountMinor }
             : {}),
+          ...(parsed.data.treatmentPlanItemId !== undefined
+            ? { treatmentPlanItemId: parsed.data.treatmentPlanItemId }
+            : {}),
         },
         {
           visits,
           charges,
           clinics,
+          treatmentPlans,
           clock,
           newId: () => asChargeId(ids.nextId()),
         },

@@ -36,6 +36,13 @@
       "when": 1791469944813,
       "tag": "0004_stiff_richard_fisk",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792004660828,
+      "tag": "0005_faithful_secret_warriors",
+      "breakpoints": true
     }
   ]
 }

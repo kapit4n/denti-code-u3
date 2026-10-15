@@ -94,6 +94,7 @@ function aCharge(overrides: Partial<Charge> = {}): Charge {
     patientId: PATIENT,
     visitId: VISIT,
     treatmentId: null,
+    treatmentPlanItemId: null,
     description: 'Composite restoration, tooth 16',
     quantity: 1,
     unitPriceMinor: 20_000,

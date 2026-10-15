@@ -36,6 +36,7 @@ const CHARGE_COLUMNS = {
   patientId: charges.patientId,
   visitId: charges.visitId,
   treatmentId: charges.treatmentId,
+  treatmentPlanItemId: charges.treatmentPlanItemId,
   description: charges.description,
   quantity: charges.quantity,
   unitPriceMinor: charges.unitPriceMinor,
@@ -70,6 +71,7 @@ export class SQLiteChargeRepository implements ChargeRepository {
           patientId: charge.patientId,
           visitId: charge.visitId,
           treatmentId: charge.treatmentId,
+          treatmentPlanItemId: charge.treatmentPlanItemId,
           description: charge.description,
           quantity: String(charge.quantity),
           unitPriceMinor: charge.unitPriceMinor,
@@ -122,6 +124,7 @@ function toEntity(row: {
   patientId: string;
   visitId: string | null;
   treatmentId: string | null;
+  treatmentPlanItemId: string | null;
   description: string;
   quantity: string;
   unitPriceMinor: number;
@@ -141,6 +144,7 @@ function toEntity(row: {
     // non-clinical charge — one filed from the patient tab.
     visitId: row.visitId ? asVisitId(row.visitId) : null,
     treatmentId: row.treatmentId ? asTreatmentId(row.treatmentId) : null,
+    treatmentPlanItemId: row.treatmentPlanItemId ?? null,
     description: row.description,
     quantity: Number(row.quantity),
     unitPriceMinor: row.unitPriceMinor,

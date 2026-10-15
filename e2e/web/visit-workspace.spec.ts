@@ -60,6 +60,7 @@ import {
   linkedTreatment,
   filedPrescription,
   invoicedCharge,
+  billedCharge,
   openVisit,
   recordedPayment,
   recordedTreatment,
@@ -783,6 +784,76 @@ test.describe('Visit workspace', () => {
 
     // Two reads, not one: the section's own, and the one the invalidation asked for.
     await expect.poll(() => chargesReads(api.recorded)).toBe(2);
+
+    expect(expectedResourceFailures(errors)).toEqual([]);
+  });
+
+  test('bills the open planned line a charge names, without completing it', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...visitWorkspaceFixtures({
+        [`/api/v1/visits/${VISIT_ID}/charges`]: {
+          body: visitCharges([]),
+        },
+        [`POST /api/v1/visits/${VISIT_ID}/charges`]: {
+          status: 201,
+          body: billedCharge,
+        },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+    await page.getByTestId('visit-section-charges').click();
+    await expect(page.getByText('No charges raised yet.')).toBeVisible();
+
+    // Every open line on the patient's plans is offered — a charge has no treatment
+    // of its own — named by plan, treatment and tooth; the one already completed
+    // (tooth 26) is not offered again, because billing records provenance for work
+    // still planned.
+    await page.getByTestId('charge-plan-item').click();
+    await expect(
+      page.getByRole('option', { name: /Restorative plan: Scaling and prophylaxis — tooth 36/ }),
+    ).toBeVisible();
+    await expect(page.getByRole('option', { name: /tooth 26/ })).toHaveCount(0);
+    await page
+      .getByRole('option', { name: /Restorative plan: Scaling and prophylaxis — tooth 36/ })
+      .click();
+
+    // The read swaps in the linked row before the write, so the row on screen can
+    // only have come from the invalidation's refetch.
+    await installApi(page, {
+      [`GET /api/v1/visits/${VISIT_ID}/charges`]: {
+        body: visitCharges([billedCharge]),
+      },
+    });
+
+    await page.getByTestId('charge-description').fill('Scaling and prophylaxis');
+    await page.getByTestId('charge-unit-price').fill('45.00');
+    await page.getByTestId('raise-charge').click();
+
+    const post = api.recorded.find(
+      (entry) => entry.method === 'POST' && entry.url.includes(`/visits/${VISIT_ID}/charges`),
+    );
+    expect(post).toBeTruthy();
+    // The chosen line travels as its id; the folded treatment is the server's work,
+    // never sent in the body.
+    expect(post?.body).toEqual({
+      description: 'Scaling and prophylaxis',
+      unitPriceMinor: 4500,
+      treatmentPlanItemId: '11111111-bbbb-4a11-9ccc-000000000012',
+    });
+
+    const row = page.getByTestId('charge').filter({ hasText: 'Scaling and prophylaxis' });
+    await expect(row).toBeVisible();
+
+    // Linking is provenance, so the plan's own read is asked for once — when the
+    // section opened — and never again: nothing about the plan could have changed.
+    const planReads = api.recorded.filter(
+      (entry) =>
+        entry.method === 'GET' &&
+        new URL(entry.url).pathname === `/api/v1/patients/${ANA_ID}/treatment-plans`,
+    );
+    expect(planReads).toHaveLength(1);
 
     expect(expectedResourceFailures(errors)).toEqual([]);
   });

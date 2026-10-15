@@ -30,7 +30,7 @@ import { nowDefault, uuidDefault } from './defaults.js';
 import { enumCheck } from './enum-check.js';
 import { clinics, users } from './organization.js';
 import { patients } from './patient.js';
-import { treatments } from './treatment.js';
+import { treatmentPlanItems, treatments } from './treatment.js';
 import { visits } from './visit.js';
 
 export const charges = sqliteTable(
@@ -45,6 +45,10 @@ export const charges = sqliteTable(
       .references(() => patients.id, { onDelete: 'restrict' }),
     visitId: text('visit_id').references(() => visits.id, { onDelete: 'set null' }),
     treatmentId: text('treatment_id').references(() => treatments.id, { onDelete: 'set null' }),
+    /** The planned line this charge bills, when it was raised from one. */
+    treatmentPlanItemId: text('treatment_plan_item_id').references(() => treatmentPlanItems.id, {
+      onDelete: 'set null',
+    }),
     description: text('description').notNull(),
     quantity: numeric('quantity').notNull().default('1'),
     unitPriceMinor: integer('unit_price_minor').notNull(),

@@ -2706,3 +2706,83 @@ by decision above. PG suites skip on this machine exactly as every integration s
 
 - Next up in Milestone 8 is the remaining half of the roadmap bullet — linking plan items
   to the charges they generate — if the product wants it; otherwise M8 is complete.
+
+## Session 39 — the plan-item → charge link (provenance only)
+
+**What changed**
+
+- **Domain (`packages/domain/src/billing/visit-charges.ts`):** `Charge` gained
+  `treatmentPlanItemId: string | null`; `ChargeWriteDependencies` gained
+  `treatmentPlans: Pick<TreatmentPlanRepository, 'listForPatient'>`. `addVisitCharge`
+  now resolves an optional `treatmentPlanItemId`: when present it reads
+  `listForPatient(clinicId, visit.patientId)`, finds the item, refuses `INVALID_INPUT`
+  ("That treatment plan item is not on this patient's plan") if absent, and **folds the
+  item's own `treatmentId` into the charge**. A blank/absent id is `null` and reads no
+  plans. The link is **provenance only** — billing never completes the item. 5 new tests
+  in the `the plan-item link` block of `visit-charges.test.ts`; fixtures in `invoice.test.ts`
+  and `visit-payments.test.ts` gained `treatmentPlanItemId: null`.
+- **Schema/migrations:** `database/schema/billing.ts` and `database/schema/sqlite/billing.ts`
+  gained `treatmentPlanItemId` (nullable FK to `treatment_plan_items(id)`, `on delete set
+null`); generated migrations `database/migrations/0006_modern_lake.sql` and
+  `database/migrations-sqlite/0005_faithful_secret_warriors.sql` (with snapshots + journal).
+- **Validation (`packages/validation/src/visits/index.ts`):** `createChargeSchema` gained
+  `treatmentPlanItemId: uuidSchema.optional().nullable()`; 1 new test in `visits.test.ts`.
+- **API repositories:** both engines' `charge-repository.ts` (PG and SQLite) gained the
+  column in `CHARGE_COLUMNS`, the insert values, the row type, and `toEntity`
+  (`row.treatmentPlanItemId ?? null`).
+- **API route (`apps/api/src/http/routes/visits.ts`):** the POST charges handler spreads
+  `treatmentPlanItemId` and passes the `treatmentPlans` dep into `addVisitCharge`.
+- **API tests:** `visits-route.integration.test.ts` (PG) gained 2 tests (a linked charge
+  writes the column and leaves the item open; a foreign item is 422 writing nothing) —
+  **skipped** locally, typechecked. `sqlite-smoke.integration.test.ts` gained "bills a
+  planned line on a charge, without completing it" (always runs).
+- **App:** `mutations/use-create-charge.ts` variables gained
+  `treatmentPlanItemId?: string | null`, spread into the POST body only when defined;
+  `visit-workspace.tsx`'s `VisitChargesSection` gained a `patientId` prop, reads
+  `usePatientTreatmentPlans`, offers a `Planned item` `Select` (`data-testid="charge-plan-item"`,
+  a `Not linked to a plan item` sentinel) listing the patient's **open** lines across all
+  plans (each spelled "plan: treatment — tooth"), resets with the form, and sends
+  `treatmentPlanItemId` only when picked. New `describeBilledItem` helper and the render
+  site now passes `visit.patientId`. 1 new component test.
+- **E2e:** `fixtures/api-responses.ts` gained `billedCharge` and `treatmentPlanItemId: null`
+  on `visitCharge`/`raisedCharge`; `visit-workspace.spec.ts` gained "bills the open planned
+  line a charge names, without completing it".
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean (6 files reformatted with prettier --write first)
+pnpm run guard:boundaries OK (one pre-existing warning)
+pnpm run build            5/5 successful (web rebuilt before e2e)
+pnpm run test             12/12 tasks — domain 308, validation 142, app 308,
+                          api-client 15, database 6, desktop 3,
+                          API 82 passed / 258 skipped (PG suite needs a database)
+pnpm run db:migrate       applied cleanly to the SQLite file
+pnpm run db:seed          seeded cleanly (1 plan, 2 items, 3 charges)
+pnpm run test:e2e         121/121 passed (1 new billing spec)
+```
+
+Two write-path assertions were checked by reintroducing the defect: removing
+`treatmentPlanItemId` from the SQLite `save`'s insert made the smoke test fail; making the
+domain stop folding the item's `treatmentId` made the fold test fail. Both reverted. The
+always-on SQLite smoke suite covers the link write without a database; the PG visit-route
+block typechecks but skips here.
+
+**Decisions.** The link is provenance only (billing does not complete the item; the charge
+mutation never invalidates the plan read); the item must be on the visit's patient's own
+plan (else 422) — no treatment-match rule, because the item's own treatment is folded into
+the charge instead; a blank id costs no plan read; the FK column and its `on delete set
+null` rule are copied from the execution link, not shared; the picker offers the patient's
+open lines across all plans and resets with the form.
+
+**NOT done and deliberately.** No item-completion side effect on charging, by decision
+above. Status transitions / plan acceptance-rejection remain Milestone 9's commissioning.
+PG suites skip on this machine exactly as every integration suite does.
+
+**Notes**
+
+- This closes the roadmap's "Link plan items → visits → charges" bullet. **Milestone 8 is
+  complete.** Next is **Milestone 9 — payments/billing** (charges → invoices, invoice
+  numbering and status, payment allocation, balances and statements).

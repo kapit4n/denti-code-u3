@@ -949,6 +949,67 @@ describe('API on SQLite', () => {
     expect(refused.json().error.code).toBe('VALIDATION_ERROR');
   });
 
+  it('bills a planned line on a charge, without completing it', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans`,
+      payload: { items: [{ treatmentId, tooth: '37', estimatedPriceMinor: 22_000 }] },
+    });
+    expect(created.statusCode).toBe(201);
+    const plan = created.json().plan;
+    const itemId = plan.items[0].id;
+
+    const raised = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/charges`,
+      payload: {
+        description: 'Composite restoration, tooth 37',
+        unitPriceMinor: 22_000,
+        treatmentPlanItemId: itemId,
+      },
+    });
+
+    expect(raised.statusCode).toBe(201);
+    // The link is written on the charge side and the item's own treatment is folded
+    // in, so the bill names what was done — the same envelope PostgreSQL answers with.
+    expect(raised.json()).toMatchObject({
+      visitId,
+      treatmentId,
+      treatmentPlanItemId: itemId,
+      description: 'Composite restoration, tooth 37',
+      unitPriceMinor: 22_000,
+    });
+
+    const listed = await app.inject({ method: 'GET', url: `/api/v1/visits/${visitId}/charges` });
+    const stored = (
+      listed.json() as { charges: { treatmentPlanItemId: string | null }[] }
+    ).charges.find((charge) => charge.treatmentPlanItemId === itemId);
+    expect(stored).toBeTruthy();
+
+    // Provenance only: billing a planned line does not complete it.
+    const plans = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans`,
+    });
+    const after = plans.json().items.find((entry: { id: string }) => entry.id === plan.id);
+    expect(after.progress).toMatchObject({ total: 1, completed: 0 });
+    expect(after.items[0].isCompleted).toBe(false);
+
+    // An item that is not on the patient's plan is refused by the domain and folded
+    // to 422 by the wire, and nothing is written.
+    const refused = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/charges`,
+      payload: {
+        description: 'Composite restoration',
+        unitPriceMinor: 22_000,
+        treatmentPlanItemId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      },
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('summarises the day on the dashboard, occupancy included', async () => {
     // Two disjoint 30-minute bookings from a capacity of 08:00–17:00 × one
     // dentist: 60 of 540 minutes, which rounds to 11% occupancy.

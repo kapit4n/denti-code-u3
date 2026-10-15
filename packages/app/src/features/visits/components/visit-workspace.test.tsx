@@ -1331,6 +1331,81 @@ describe('VisitWorkspace', () => {
     expect(screen.queryByTestId('charge')).toBeNull();
   });
 
+  it('lets a charge bill an open planned line, and only that', async () => {
+    const { fetchImplementation } = renderWorkspace({
+      patientPlans: [
+        {
+          id: 'plan-1',
+          title: 'Full mouth rehab',
+          status: 'ACCEPTED',
+          items: [
+            {
+              id: 'item-open',
+              treatmentId: 'treatment-1',
+              treatmentName: 'Composite filling',
+              tooth: '16',
+              isCompleted: false,
+            },
+            // Already done: not offered again, because billing records provenance for
+            // work that is still planned.
+            {
+              id: 'item-done',
+              treatmentId: 'treatment-1',
+              treatmentName: 'Composite filling',
+              tooth: '26',
+              isCompleted: true,
+            },
+            {
+              id: 'item-other',
+              treatmentId: 'treatment-2',
+              treatmentName: 'Extraction',
+              tooth: '36',
+              isCompleted: false,
+            },
+          ],
+        },
+      ],
+    });
+
+    await user.click(await screen.findByTestId('visit-section-charges'));
+    await screen.findByText('No charges raised yet.');
+
+    const picker = await screen.findByTestId('charge-plan-item');
+    await user.click(picker);
+    // Every open line is offered — a charge has no treatment of its own — each naming
+    // its plan, treatment and tooth; the already-done line is not.
+    expect(
+      screen.getByRole('option', { name: /Full mouth rehab: Composite filling — tooth 16/ }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('option', { name: /Full mouth rehab: Extraction — tooth 36/ }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /tooth 26/ })).toBeNull();
+    await user.click(
+      screen.getByRole('option', { name: /Full mouth rehab: Composite filling — tooth 16/ }),
+    );
+
+    await user.type(screen.getByTestId('charge-description'), 'Composite restoration');
+    await user.type(screen.getByTestId('charge-unit-price'), '220.00');
+    await user.click(screen.getByTestId('raise-charge'));
+
+    const post = fetchImplementation.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}/charges`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'POST',
+    );
+    expect(post).toBeTruthy();
+    // The chosen line travels as its id; the description stays the desk's own words.
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      description: 'Composite restoration',
+      unitPriceMinor: 22000,
+      treatmentPlanItemId: 'item-open',
+    });
+    expect(await screen.findByTestId('charge')).toBeTruthy();
+    // The picker resets with the rest of the form on success.
+    expect(screen.getByTestId('charge-plan-item')).toHaveTextContent('Not linked to a plan item');
+  });
+
   it('lists the payments on the visit, in the clinic’s clock, only once the section is open', async () => {
     const { fetchImplementation } = renderWorkspace({
       visitCharges: [

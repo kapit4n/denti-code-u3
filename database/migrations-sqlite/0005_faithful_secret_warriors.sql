@@ -1,0 +1,1 @@
+ALTER TABLE `charges` ADD `treatment_plan_item_id` text REFERENCES treatment_plan_items(id) ON DELETE SET NULL;

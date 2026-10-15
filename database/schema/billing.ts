@@ -27,7 +27,7 @@ import {
 import { invoiceStatusEnum, paymentMethodEnum } from './enums.js';
 import { clinics, users } from './organization.js';
 import { patients } from './patient.js';
-import { treatments } from './treatment.js';
+import { treatmentPlanItems, treatments } from './treatment.js';
 import { visits } from './visit.js';
 
 export const charges = pgTable(
@@ -42,6 +42,17 @@ export const charges = pgTable(
       .references(() => patients.id, { onDelete: 'restrict' }),
     visitId: uuid('visit_id').references(() => visits.id, { onDelete: 'set null' }),
     treatmentId: uuid('treatment_id').references(() => treatments.id, { onDelete: 'set null' }),
+    /**
+     * The planned line this charge bills, when it was raised from one.
+     *
+     * `on delete set null` like the execution's own link: a charge that billed a
+     * planned line is a fact of the bill and must survive the plan item being
+     * removed, so the link disappears rather than the row (ADR 0025's rule that a
+     * schema change lands in both engines).
+     */
+    treatmentPlanItemId: uuid('treatment_plan_item_id').references(() => treatmentPlanItems.id, {
+      onDelete: 'set null',
+    }),
     description: text('description').notNull(),
     quantity: numeric('quantity', { precision: 10, scale: 2 }).notNull().default('1'),
     unitPriceMinor: integer('unit_price_minor').notNull(),
@@ -149,6 +160,10 @@ export const chargeRelations = relations(charges, ({ one }) => ({
   patient: one(patients, { fields: [charges.patientId], references: [patients.id] }),
   visit: one(visits, { fields: [charges.visitId], references: [visits.id] }),
   treatment: one(treatments, { fields: [charges.treatmentId], references: [treatments.id] }),
+  treatmentPlanItem: one(treatmentPlanItems, {
+    fields: [charges.treatmentPlanItemId],
+    references: [treatmentPlanItems.id],
+  }),
   invoice: one(invoices, { fields: [charges.invoiceId], references: [invoices.id] }),
 }));
 

@@ -20,6 +20,7 @@ function charge(overrides: Partial<Charge> = {}): Charge {
     invoicedAt: null,
     createdAt: '2026-10-05T14:00:00.000Z' as Charge['createdAt'],
     treatmentId: null,
+    treatmentPlanItemId: null,
     description: 'Composite restoration, tooth 16',
     quantity: 1,
     unitPriceMinor: 20_000,

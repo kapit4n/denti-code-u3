@@ -48,6 +48,15 @@ export interface Charge {
   readonly createdAt: IsoDateTime;
   /** Null for a charge recorded by hand rather than from a treatment plan item. */
   readonly treatmentId: TreatmentId | null;
+  /**
+   * The planned line this charge bills, when it was raised from one.
+   *
+   * Null for a charge raised by hand. Provenance only: naming a plan item records
+   * *which* planned line the money is for, and does not complete that line —
+   * completion is `completeTreatmentPlanItem`'s own act, exactly as a recorded
+   * treatment's link is.
+   */
+  readonly treatmentPlanItemId: string | null;
   readonly description: string;
   readonly quantity: number;
   readonly unitPriceMinor: number;

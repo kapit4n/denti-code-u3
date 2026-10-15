@@ -27,6 +27,14 @@
  * and the invoice totals already read it wherever it lands. Recorded in
  * `docs/open-questions.md` with the billing rows, so the decision is not forgotten.
  *
+ * **A charge may bill a planned line, as provenance and nothing more.** When the
+ * caller names a `treatmentPlanItemId`, the item must be on the visit's patient's own
+ * plan or the write is `INVALID_INPUT`; the item's own treatment is folded into
+ * `treatmentId` so the bill reads without joining the plan back. Naming the item does
+ * **not** complete it — completion is `completeTreatmentPlanItem`'s own act, exactly
+ * as a recorded treatment's link is — so a charge and a plan can be written in either
+ * order and neither silently decides the other.
+ *
  * **Reading *then* writing, and no `UnitOfWork`.** A foreign visit must answer 404
  * before anything is inserted, so the refusal arrives as a domain error rather than
  * as a foreign-key violation translated afterwards; and once the visit is proven,
@@ -39,7 +47,12 @@
 import type { ChargeId, ClinicId, VisitId } from '@denti-code-u3/types';
 import type { Clock } from '../shared/clock.js';
 import { DomainError, notFound } from '../shared/errors.js';
-import type { ChargeRepository, ClinicRepository, VisitRepository } from '../ports/index.js';
+import type {
+  ChargeRepository,
+  ClinicRepository,
+  TreatmentPlanRepository,
+  VisitRepository,
+} from '../ports/index.js';
 import { getVisit } from '../visit/visit-read.js';
 import type { Charge } from './invoice.js';
 
@@ -52,6 +65,14 @@ export interface ChargeReadDependencies {
 /** A write adds the three things only a writer knows: whose clock, what id, what currency. */
 export interface ChargeWriteDependencies extends ChargeReadDependencies {
   readonly clinics: ClinicRepository;
+  /**
+   * The patient's plans, to resolve the planned line a charge optionally bills.
+   *
+   * `listForPatient` is enough for the same reason the treatment record's link is:
+   * an item is found by walking the patient's own plans, which is both the scoping
+   * (the item must be on *this* patient's plan) and the lookup in one read.
+   */
+  readonly treatmentPlans: Pick<TreatmentPlanRepository, 'listForPatient'>;
   readonly clock: Clock;
   readonly newId: () => ChargeId;
 }
@@ -64,6 +85,14 @@ export interface NewCharge {
   readonly unitPriceMinor: number;
   /** Defaults to 0 when omitted. Never negative. */
   readonly discountMinor?: number;
+  /**
+   * The planned line this charge bills, when raised from a plan item.
+   *
+   * Provenance only: it does not complete the item. Naming one folds that item's
+   * own treatment into the charge's `treatmentId`, so a billed planned line is
+   * readable without joining the plan back.
+   */
+  readonly treatmentPlanItemId?: string | null;
 }
 
 /**
@@ -89,8 +118,9 @@ export async function listVisitCharges(
  * Raise a charge on a visit this clinic holds.
  *
  * **The order is the whole contract**: the visit first (the subject — a foreign visit
- * is `NOT_FOUND`), then the clinic that prices it, then each field judged on its own,
- * and only then the insert. `patientId` and `visitId` are copied from the visit and
+ * is `NOT_FOUND`), then the clinic that prices it, then the planned line when one is
+ * named (resolved on the patient's own plan, `INVALID_INPUT` otherwise), then each
+ * field judged on its own, and only then the insert. `patientId` and `visitId` are copied from the visit and
  * the currency from the clinic, never taken from the request; `createdAt` is stamped
  * by the clock; and the id comes from the caller's generator — the same division of
  * labour every write here has, so a test can hold both still.
@@ -120,6 +150,27 @@ export async function addVisitCharge(
   // otherwise price a charge in a currency that no longer means anything here.
   if (!clinic) {
     throw notFound('Clinic', clinicId);
+  }
+
+  const treatmentPlanItemId = input.treatmentPlanItemId?.trim() || null;
+  let plannedTreatmentId: Charge['treatmentId'] = null;
+
+  if (treatmentPlanItemId) {
+    const plans =
+      (await dependencies.treatmentPlans.listForPatient(clinicId, visit.patientId)) ?? [];
+    const planItem = plans
+      .flatMap((plan) => plan.items)
+      .find((candidate) => candidate.id === treatmentPlanItemId);
+
+    if (!planItem) {
+      throw new DomainError(
+        'INVALID_INPUT',
+        'That treatment plan item is not on this patient\u2019s plan',
+        { treatmentPlanItemId },
+      );
+    }
+
+    plannedTreatmentId = planItem.treatmentId;
   }
 
   const description = input.description.trim();
@@ -157,7 +208,10 @@ export async function addVisitCharge(
     clinicId,
     patientId: visit.patientId,
     visitId,
-    treatmentId: null,
+    // A hand-raised charge names no catalogue treatment; one raised from a planned
+    // line folds that item's own treatment in, so the bill says what was done.
+    treatmentId: plannedTreatmentId,
+    treatmentPlanItemId,
     description,
     quantity,
     unitPriceMinor: input.unitPriceMinor,

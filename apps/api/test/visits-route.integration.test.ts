@@ -1829,6 +1829,60 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       expect((raised.json() as { discountMinor: number }).discountMinor).toBe(0);
     });
 
+    it('bills the planned line a charge names, folding its treatment in and leaving it open', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+      const planItemId = await seedPlanItem(treatment);
+
+      const raised = await raiseCharge(visitId, aCharge({ treatmentPlanItemId: planItemId }));
+
+      expect(raised.statusCode).toBe(201);
+      // The item's own catalogue treatment is folded into the charge, so the bill
+      // names what was done without reading the plan back.
+      expect(raised.json()).toMatchObject({
+        visitId,
+        treatmentId: treatment,
+        treatmentPlanItemId: planItemId,
+      });
+
+      // The row itself carries the link and the fold: a route that echoed the body
+      // without writing the columns would pass the assertion above and lose both.
+      const [row] = await sql`
+        select treatment_id, treatment_plan_item_id
+        from charges where visit_id = ${visitId}
+      `;
+      expect(row).toMatchObject({
+        treatment_id: treatment,
+        treatment_plan_item_id: planItemId,
+      });
+
+      // Provenance only: billing the linked line does not complete it —
+      // `completeTreatmentPlanItem` stays the line's own act.
+      const [item] = await sql`
+        select is_completed, completed_at from treatment_plan_items where id = ${planItemId}
+      `;
+      expect(item).toMatchObject({ is_completed: false, completed_at: null });
+    });
+
+    it('refuses a charge that bills a plan item not on the patient’s plan, and writes nothing', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+
+      const refused = await raiseCharge(
+        visitId,
+        aCharge({ treatmentPlanItemId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' }),
+      );
+
+      expect(refused.statusCode).toBe(422);
+      expect(refused.json()).toMatchObject({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'That treatment plan item is not on this patient’s plan',
+        },
+      });
+
+      const [count] = await sql`select count(*)::int as total from charges`;
+      expect((count as { total: number }).total).toBe(0);
+    });
+
     it('lists the bill in the order it grew', async () => {
       const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
 
