@@ -845,21 +845,6 @@ export const noTreatmentPlans = { items: [] } as const;
 export const anaInvoices = {
   items: [
     {
-      id: '11111111-cccc-4a11-9ccc-000000000001',
-      number: 'F001-00001',
-      status: 'ISSUED',
-      currency: 'USD',
-      subtotalMinor: 24000,
-      discountMinor: 1000,
-      taxRatePercent: 0,
-      totalMinor: 23000,
-      allocatedMinor: 0,
-      balanceMinor: 23000,
-      chargeCount: 2,
-      issuedAt: '2026-10-05T02:00:00.000Z',
-      createdAt: '2026-10-05T02:00:00.000Z',
-    },
-    {
       id: '11111111-cccc-4a11-9ccc-000000000002',
       number: 'F001-00002',
       status: 'PAID',
@@ -873,6 +858,21 @@ export const anaInvoices = {
       chargeCount: 1,
       issuedAt: '2026-10-06T15:00:00.000Z',
       createdAt: '2026-10-06T15:00:00.000Z',
+    },
+    {
+      id: '11111111-cccc-4a11-9ccc-000000000001',
+      number: 'F001-00001',
+      status: 'ISSUED',
+      currency: 'USD',
+      subtotalMinor: 24000,
+      discountMinor: 1000,
+      taxRatePercent: 0,
+      totalMinor: 23000,
+      allocatedMinor: 0,
+      balanceMinor: 23000,
+      chargeCount: 2,
+      issuedAt: '2026-10-05T02:00:00.000Z',
+      createdAt: '2026-10-05T02:00:00.000Z',
     },
   ],
 } as const;

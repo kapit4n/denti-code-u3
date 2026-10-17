@@ -2786,3 +2786,84 @@ PG suites skip on this machine exactly as every integration suite does.
 - This closes the roadmap's "Link plan items → visits → charges" bullet. **Milestone 8 is
   complete.** Next is **Milestone 9 — payments/billing** (charges → invoices, invoice
   numbering and status, payment allocation, balances and statements).
+
+## Session 40 — Milestone 9 slice 1: issue invoice + read side
+
+The user chose the recommended first slice: "issue a visit's un-invoiced charges as one numbered ISSUED invoice independent of payment" + read side (`GET /patients/:id/invoices`, `GET /invoices/:id`) and a read-only Invoices card on the patient profile. This delivers the "Charges → invoices" and "Invoice numbering" bullets of M9.
+
+**Changes**
+
+- **Domain**
+  - `packages/domain/src/billing/invoice.ts`: `Invoice` now carries `number: string | null` and `issuedAt: IsoDateTime | null`.
+  - `packages/domain/src/billing/visit-invoices.ts`: new `nextInvoiceNumber(clinicId, number)` (reads highest `F001-[0-9]+$` per clinic), `issueInvoice(...)` computes totals, persists, assigns next number; `issueVisitInvoice(useCases, visitId)` loads visit+clinic, requires un-invoiced charges, runs inside `UnitOfWork`, uses `newInvoiceId()`/`clock`, emits `DOMAIN_RULE_VIOLATION` (`INVALID_INPUT`) when "nothing left to invoice".
+  - `packages/domain/src/billing/visit-payments.ts`: settlement now routes through `issueInvoice` (one invoice per settlement call, payment allocation unchanged).
+  - `packages/domain/src/ports/index.ts`: moved `InvoiceSummary`/`InvoiceDetail` read models into ports (pattern with `TreatmentPlanSummary`); `InvoiceRepository.issue` returns `string` (the number), `findForPatient`/`findById` answer read models (port return types tightened). Added `CurrencyCode` import; `InvoiceStatus` from billing.
+- **Persistence (both engines, ADR 0025)**
+  - `apps/api/src/infrastructure/persistence/repositories/charge-repository.ts` (PG) and `sqlite/.../charge-repository.ts`: export `CHARGE_COLUMNS` and `toEntity` as `toChargeEntity` so invoice detail reuse the charge mapper (ADR 0011).
+  - `apps/api/src/infrastructure/persistence/repositories/invoice-repository.ts` (PG): `issue` takes the written invoice, uses `pg_advisory_xact_lock(hashtext(clinicId))`, finds highest number via `~ '^F001-[0-9]+$'`, calls `nextInvoiceNumber`, inserts; translates FK/unique to `NOT_FOUND`/`DUPLICATED_RECORD`. `findForPatient`: patient existence check → `undefined` when patient not in clinic (404 mapping in routes), reads invoices newest-first (`desc(createdAt), desc(id)`), builds charge-count and allocated totals maps, maps to `InvoiceSummary`. `findById`: loads invoice, charge rows, allocated map, returns `InvoiceDetail` with `charges`. Private helpers `chargeCounts`/`allocatedTotals`, `toSummary`.
+  - `apps/api/src/infrastructure/persistence/sqlite/repositories/invoice-repository.ts` (SQLite): mirror `issue/findForPatient/findById` without advisory lock, highest via `GLOB 'F001-[0-9][0-9]*'`, uses `.run()` for insert.
+- **API HTTP**
+  - `apps/api/src/http/routes/visits.ts`: `POST /api/v1/visits/:visitId/invoices` (bodyless, 201) — reads visitId, validates, calls `issueVisitInvoice` with `unitOfWork`, `clock`, `newInvoiceId: () => asInvoiceId(ids.nextId())`.
+  - `apps/api/src/http/routes/invoices.ts` (new): `registerInvoiceRoutes(app, { invoices })` — `GET /api/v1/patients/:patientId/invoices` returns `{ items }` (404 when `undefined`), `GET /api/v1/invoices/:invoiceId` returns invoice (404 when `undefined`).
+  - `apps/api/src/app.ts`: registers `invoices` repository in routes.
+- **API tests**
+  - `apps/api/test/sqlite-smoke.integration.test.ts`: added "raises a visit's bill as a numbered document, and reads the ledger back" (runs). Asserts 201 number `F001-00002` (after existing bill), ISSUED, second issue 422 `VALIDATION_ERROR`, detail (chargeCount 1, allocatedMinor 0, balanceMinor 22000, totalMinor 22000, charges length 1), patient invoices list length 2, items[0].number `F001-00002`, foreign visit POST 404, foreign patient GET 404, missing invoice GET 404. SQLite smoke coverage 83 passed total.
+  - `apps/api/test/visits-route.integration.test.ts`: added helpers + `registerInvoiceRoutes`, 4 PG tests (issue+read, per-clinic numbering F001-00001/F001-00002 + list newest-first, 422 empty writes nothing, 404 foreign/missing) — typecheck clean, skipped without DB.
+- **App (React)**
+  - `packages/app/src/features/patients/hooks/use-patients.ts`: `usePatientInvoices(patientId)` + `PatientInvoicesResponse`.
+  - `packages/app/src/features/patients/components/patient-invoices-section.tsx` (new): read-only card showing invoices (newest first), status, number, clinic day (`formatClinicDay` + `READING_THE_CLINIC_CLOCK`), currency and stored totals (`formatMinorUnits`), charge count, empty/error states; `data-testid`-friendly row IDs.
+  - `packages/app/src/routes/patients_.$patientId.tsx`: mounted `PatientInvoicesSection` after `PatientTreatmentPlansSection`.
+  - `packages/app/src/features/patients/components/patient-invoices-section.test.tsx` (new): 5 tests (renders items, empty, error, newest-first, formats money/clinic day) — all pass. App tests 313 passed (was 308).
+- **E2E fixtures + tests**
+  - `e2e/web/fixtures/api-responses.ts`: added `anaInvoices` (two docs, newest-first) and `noInvoices`; `visitWorkspaceFixtures` now also registers `.../invoices` (with note update).
+  - Registered invoices path in `booking-without-a-slot.spec.ts`, `patient-editing.spec.ts`, `patient-odontogram.spec.ts`, `patients.spec.ts`, `patient-treatment-plans.spec.ts` (where profiles load) to avoid 501 → console errors; imports include `noInvoices`.
+  - `e2e/web/patient-invoices.spec.ts` (new): 3 tests — shows ledger newest-first with numbers/statuses/totals and clinic day, empty state, error state.
+
+**The slice's new domain logic had no tests either, and this adds them.**
+`packages/domain/src/billing/visit-invoices.ts` (197 lines: `nextInvoiceNumber`,
+`issueInvoice`, `issueVisitInvoice`) landed in the commit with **no test file** — the
+first draft's claim that "domain logic/unit tests cover numbering and rules" was false,
+and the only domain change in the commit was +2 lines to `invoice.test.ts` and +7 to
+`visit-payments.test.ts`. The new `visit-invoices.test.ts` adds 10 tests over the
+decisions the file makes: the series starts at `F001-00001` and is highest-plus-one (a
+gap is never refilled); a number outside the series is ignored rather than parsed as
+zero; the width survives overflow; issuing folds only the un-invoiced charges into one
+`ISSUED` document and stamps exactly those; a charge already on a document is left alone;
+a visit with nothing left to invoice (emptied or never billed) is a `INVALID_INPUT` that
+writes nothing; a foreign visit is a `NOT_FOUND` that writes nothing; the currency is the
+clinic's, not the charge's. Domain goes 308 → 318.
+
+**The invoices browser spec was written against a card that did not exist yet, and this
+completes the slice by realigning it.** The first cut of the spec (committed) asserted
+`patient-invoice-row-<id>` test ids, `$12.00` money and the sentence "No invoices yet";
+the card draws `data-testid="patient-invoice"`, `formatMinorUnits` + currency
+(`120.00 USD`) and "No invoices for this patient yet." — so the spec failed 3/3. The card
+was right and the spec was written from the intended design rather than from the
+component. Fixed by: reading the profile's other sections in the spec's own setup (an
+unregistered path is a 501 the browser logs, and the original spec commented that it
+_deliberately_ let odontogram/treatment-plans 501 while still asserting no
+"Failed to load resource" lines — a contradiction), targeting the row by
+`data-testid="patient-invoice"` and the title by role, correcting the money/status/empty
+sentences to what the card emits, and flipping the `anaInvoices` fixture to the
+newest-first order the repository itself produces (it had been written oldest-first while
+the comment claimed newest-first). `e2e/test-results/` from the failed run was left in the
+tree and is removed by the next run's config.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful (domain, validation, types, ui, api-client, app, database, api, e2e, desktop, web, config)
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean (after pnpm run format — LOG.md was the only offender)
+pnpm run guard:boundaries OK (one pre-existing warning)
+pnpm run build            5/5 successful
+pnpm run test             12/12 tasks — domain 318, validation 142, app 313, api-client 15, database 6, desktop 3; API 83 passed / 262 skipped (PG visit-route + invoices block typechecks, skips without DB). SQLite smoke passes.
+pnpm run test:e2e         124/124 passed — the 121 that existed before this slice plus the 3 new invoices specs, all green in one full run.
+```
+
+**Notes**
+
+- Invoice numbering: `F001-00001` prefix `F001-`, 5 digits. PG uses advisory lock per clinic (`pg_advisory_xact_lock(hashtext(clinicId))`). SQLite has no lock (single synchronous writer). Both read highest matching series.
+- No schema changes — invoices/payments/paymentAllocations already modelled. Links are provenance only; issuing invoice does not complete plan items.
+- PG integration suites skipped locally (no Docker/Postgres) — SQLite smoke covers the full read-side path. Domain logic/unit tests cover numbering and rules.
+- Next: Milestone 9 continues (invoice-scoped payments/installments, patient balance/statements, or UI to issue invoice from visit) per user direction.

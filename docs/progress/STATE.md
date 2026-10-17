@@ -1,13 +1,27 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 39 (the plan-item → charge link, provenance only)
+> Last updated: session 40 (Milestone 9 slice 1 — issue invoice + read side)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 ## Phase
 
 **PHASE 4 — CLINICAL WORKFLOWS** (Milestone 5 of `docs/roadmap.md`)
 
-**Status: Milestones 5–8 complete. Milestone 8 (treatments) now has its catalogue, its
+**Milestone 9 — PAYMENTS / BILLING has begun (session 40).** The first slice issued an
+invoice and read it back: a visit's un-invoiced charges are raised as one numbered
+`ISSUED` document (`POST /api/v1/visits/:visitId/invoices`, bodyless, 201), and the
+ledger is read through `GET /api/v1/patients/:patientId/invoices` (newest-first) and
+`GET /api/v1/invoices/:invoiceId`. Numbering is per clinic, `F001-00001` — PostgreSQL
+serializes the read-then-write under `pg_advisory_xact_lock(hashtext(clinic_id))`, SQLite
+relies on its single synchronous writer. The patient profile gained a read-only
+**Invoices** card. Issuing is deliberately independent of payment; settlement (session 32) now routes through the same `issueInvoice`. The session also finished the slice's
+browser spec, which had been committed against the intended card rather than the card
+that exists — see the LOG. The other Milestone 9 bullets (invoice-scoped
+payments/installments, patient balances and statements, invoice controls in the visit
+workspace) remain.
+
+**Status: Milestones 5–8 complete; Milestone 9 in progress (slice 1, session 40).
+Milestone 8 (treatments) now has its catalogue, its
 treatment-plan read _and_ write sides, and both halves of the plan-item link — the
 plan-item → visit link (session 38) and the plan-item → charge link (session 39) — so
 the roadmap's "Link plan items → visits → charges" bullet is closed.** Sessions 13–21
@@ -330,28 +344,53 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 39 — the plan-item → charge link)
+## Verification log (last run, session 40 — Milestone 9 slice 1: issue invoice + read side)
 
 | Command                     | Result                                                                              |
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                                                    |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)                    |
-| `pnpm run format:check`     | clean (6 files reformatted with `prettier --write` before the check)                |
-| `pnpm run test`             | 12/12 tasks pass — domain 308, validation 142, app 308, API 82 passed / 258 skipped |
+| `pnpm run format:check`     | clean (LOG.md reformatted with `prettier --write` before the check)                 |
+| `pnpm run test`             | 12/12 tasks pass — domain 318, validation 142, app 313, API 83 passed / 262 skipped |
 | `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                              |
-| `pnpm run build`            | 5/5 tasks pass (web rebuilt before e2e)                                             |
+| `pnpm run build`            | 5/5 tasks pass                                                                      |
 | `pnpm run guard:boundaries` | OK                                                                                  |
-| `pnpm run test:e2e`         | 121/121 pass — 1 new spec (the open planned line billed) on the visit workspace     |
+| `pnpm run test:e2e`         | 124/124 pass — 121 pre-existing plus 3 new invoices specs                           |
 
-**The PostgreSQL integration suite could not be executed this session: Docker and every
-PostgreSQL client are absent from this environment** (no `docker`, no `podman`, no
-`psql`, no `/var/run/docker.sock`). Session 39's new link coverage was added to
-`apps/api/test/visits-route.integration.test.ts` (a linked charge writes
-`treatment_plan_item_id` and leaves the item incomplete; a plan item that is not the
-patient's own is a 422 that writes nothing) and it typechecks, but it **skips** here for
-the reason above; the always-on SQLite smoke suite — which gained the same "bills a
-planned line on a charge, without completing it" block — still runs. Session 38's PG
-coverage (the record link) still typechecks and still skips for the same reason.
+**The PostgreSQL integration suite still could not be executed this session: Docker and
+every PostgreSQL client are absent from this environment** (no `docker`, no `podman`, no
+`psql`, no `/var/run/docker.sock`). Session 40's new PG coverage was added to
+`apps/api/test/visits-route.integration.test.ts` (issue + read, per-clinic numbering and
+newest-first listing, a 422 that writes nothing, foreign/missing 404s) and it typechecks,
+but it **skips** here for the reason above; the always-on SQLite smoke suite — which
+gained the same "raises a visit's bill as a numbered document, and reads the ledger back"
+block — still runs. Where the slice's domain logic lives, `packages/domain`'s own tests
+cover the numbering and the "nothing left to invoice" refusal.
+
+**What session 40's work is verified by.** 10 domain tests in the new
+`packages/domain/src/billing/visit-invoices.test.ts` (the series starts at `F001-00001`
+and is the highest-plus-one rather than the count-plus-one, so a gap is never refilled; a
+number outside the series — a hand-entered or foreign one — is ignored rather than parsed
+as zero; the width survives the digits overflowing; issuing folds only the **un-invoiced**
+charges into one numbered `ISSUED` document, naming the visit's patient and the **clinic's**
+currency and stamping exactly those charge ids invoiced with the clock's instant and the
+generator's id; a charge already on a document is left alone so issuing twice cannot
+double-bill; a visit with nothing left to invoice — whether emptied or never billed — is
+`INVALID_INPUT` with **nothing written**; and a visit this clinic does not hold is
+`NOT_FOUND` before any row is), the always-on SQLite smoke block above, 2 new API route blocks
+(SQLite runs, PG skips), 5 component tests in
+`packages/app/src/features/patients/components/patient-invoices-section.test.tsx` (the
+stored totals and balances are the server's numbers, the issued day is the clinic's clock,
+an empty list and a failed read are different sentences, and the card does not claim "no
+invoices" while the read is in flight), and 3 browser specs in
+`e2e/web/patient-invoices.spec.ts` (newest-first with the stored money and the Lima day,
+the empty sentence, and the error box). The browser spec was committed against the
+_intended_ card (`patient-invoice-row-<id>`, `$12.00`, "No invoices yet") and failed 3/3;
+it was realigned to the card that exists — `data-testid="patient-invoice"`,
+`formatMinorUnits` + currency, "No invoices for this patient yet." — the fixture's
+`anaInvoices` was flipped to the newest-first order the repository produces, and the
+spec's setup now answers the profile's sibling sections (odontogram, treatment-plans) so
+their absence is not a 501 the console-error assertion trips on.
 
 **What session 39's work is verified by.** 5 new domain tests in the `the plan-item
 link` block of `visit-charges.test.ts` (the item id it was given is written, resolved on
