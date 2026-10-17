@@ -2867,3 +2867,41 @@ pnpm run test:e2e         124/124 passed — the 121 that existed before this sl
 - No schema changes — invoices/payments/paymentAllocations already modelled. Links are provenance only; issuing invoice does not complete plan items.
 - PG integration suites skipped locally (no Docker/Postgres) — SQLite smoke covers the full read-side path. Domain logic/unit tests cover numbering and rules.
 - Next: Milestone 9 continues (invoice-scoped payments/installments, patient balance/statements, or UI to issue invoice from visit) per user direction.
+
+## Session 41 — dev-desktop starts the backend; next task saved
+
+**Changes**
+
+- `scripts/dev-desktop.sh`: now starts the backend beside the desktop window. It runs
+  `pnpm run dev:api` in the background, waits (up to 30s, 0.5s steps) for port 3010 to
+  accept a connection, then runs `pnpm run dev:desktop` in the foreground, with a
+  `trap ... EXIT INT TERM` that stops the API when the window closes. The readiness probe
+  is bash's `/dev/tcp` rather than `curl`, because `curl` is not installed on this machine
+  (AGENTS.md §8). Port `3010` is hardcoded with a comment to keep it in step with
+  `API_PORT` / `VITE_API_URL_DESKTOP` in `.env`.
+- `docs/progress/NEXT_TASK.md` (new): the queued dashboard UI/UX improvement prompt, saved
+  verbatim, with a note that the visual mockup was an image the agent could not read and
+  must be re-supplied.
+- `docs/progress/STATE.md`: NEXT TASK banner; session-40 completion + session-41 summary;
+  verification log relabelled to session 41.
+
+**Why.** The user reported that `./scripts/dev-desktop.sh` "does not load backend": the
+desktop shell renders the shared app, which fetches `VITE_API_URL_DESKTOP`
+(`http://localhost:3010/api/v1`), and with no API running the window drew "The patient
+list could not be loaded".
+
+**Verification**
+
+```
+bash -n scripts/dev-desktop.sh          syntax OK
+/dev/tcp probe                          closed port fails, open port succeeds
+pnpm run dev:api (manual)               listening on 3010 in ~4.5s;
+                                        GET /health -> 200, GET /api/v1/patients -> 200
+pnpm run format:check                   clean
+```
+
+`scripts/dev-desktop.sh` is shell and is not part of the pnpm suites; the desktop window
+itself was not launched (it compiles Rust / opens a Tauri window). The session-40 invoice
+fixes and their full suite run are recorded under session 40.
+
+**Next.** The dashboard UI/UX improvement task in `docs/progress/NEXT_TASK.md`.

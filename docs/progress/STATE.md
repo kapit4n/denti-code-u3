@@ -1,7 +1,13 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 40 (Milestone 9 slice 1 — issue invoice + read side)
+> Last updated: session 41 (invoice tests + e2e spec fix; dev-desktop backend)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
+
+> **NEXT TASK — Dashboard UI/UX improvement.** The queued task is a dashboard
+> redesign (shell, metric cards, calendar, panels, quick actions), preserving all
+> logic. The full prompt is saved at **`docs/progress/NEXT_TASK.md`**. The user's
+> visual mockup was an image this agent could not read — **ask for the mockup
+> again at the start** of that session. No dashboard work has begun.
 
 ## Phase
 
@@ -19,6 +25,25 @@ browser spec, which had been committed against the intended card rather than the
 that exists — see the LOG. The other Milestone 9 bullets (invoice-scoped
 payments/installments, patient balances and statements, invoice controls in the visit
 workspace) remain.
+
+**Session 40's slice was completed as a follow-up (committed `61bde80`).** Its invoices
+browser spec had been committed against the _intended_ card
+(`patient-invoice-row-<id>`, `$12.00`, "No invoices yet") rather than the card that
+exists, and failed **3/3**; it was realigned (`data-testid="patient-invoice"`,
+`formatMinorUnits` + currency, "No invoices for this patient yet.") and its setup now
+answers the profile's sibling sections so their absence is not a 501. The `anaInvoices`
+fixture was flipped to newest-first, the order the repository produces. The new
+`visit-invoices.ts` had **no domain tests**; 10 were added in `visit-invoices.test.ts`
+(series start/highest-plus-one/foreign-number ignored/overflow; issue folds only
+un-invoiced charges, inherits patient + clinic currency + clock + id, `INVALID_INPUT` with
+nothing written when nothing to invoice, `NOT_FOUND` for a foreign visit). Domain 308 →
+318, e2e 121 → 124.
+
+**Session 41** then did a tooling fix and saved the next task. `scripts/dev-desktop.sh`
+now starts **the backend** (`pnpm run dev:api`, waits for port 3010 via bash `/dev/tcp`,
+cleanup trap on exit) — the desktop window previously opened against no API and drew "The
+patient list could not be loaded". The dashboard task prompt was saved to
+`docs/progress/NEXT_TASK.md` (see the NEXT TASK banner above).
 
 **Status: Milestones 5–8 complete; Milestone 9 in progress (slice 1, session 40).
 Milestone 8 (treatments) now has its catalogue, its
@@ -344,18 +369,25 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 40 — Milestone 9 slice 1: issue invoice + read side)
+## Verification log (last run, session 41 — invoice tests + e2e spec fix; dev-desktop backend)
 
 | Command                     | Result                                                                              |
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                                                    |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)                    |
-| `pnpm run format:check`     | clean (LOG.md reformatted with `prettier --write` before the check)                 |
+| `pnpm run format:check`     | clean (LOG.md/STATE.md reformatted with `prettier --write` before the check)        |
 | `pnpm run test`             | 12/12 tasks pass — domain 318, validation 142, app 313, API 83 passed / 262 skipped |
 | `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                              |
 | `pnpm run build`            | 5/5 tasks pass                                                                      |
 | `pnpm run guard:boundaries` | OK                                                                                  |
 | `pnpm run test:e2e`         | 124/124 pass — 121 pre-existing plus 3 new invoices specs                           |
+
+**`scripts/dev-desktop.sh` is shell, so it is not covered by the pnpm suites.** It was
+verified by `bash -n` (syntax), by a closed-port/open-port probe test of the `/dev/tcp`
+readiness check, and by booting the API for real: `pnpm run dev:api` was listening on
+port 3010 in ~4.5s and answered `GET /health` → 200 and `GET /api/v1/patients` → 200, so
+the 30-second probe window is ample. The desktop window itself was not launched (it opens
+a Tauri window and takes minutes to compile).
 
 **The PostgreSQL integration suite still could not be executed this session: Docker and
 every PostgreSQL client are absent from this environment** (no `docker`, no `podman`, no
