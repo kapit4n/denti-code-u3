@@ -920,17 +920,16 @@ export async function registerVisitsRoutes(
    * a bill raised with nothing marking it paid (ADR 0021).
    *
    * 422 for an unlawful amount — not a positive integer, or more than the visit's
-   * un-invoiced charges are worth — a method this product does not know, or a
-   * reference past its ceiling.
+   * un-invoiced charges are worth, or more than the visit's open documents still
+   * hold.
    *
    * 404 for a visit this clinic does not hold.
    *
-   * **A payment settles the un-invoiced bill.** Charges already folded into an
-   * invoice are another document's business; collecting the rest of that invoice
-   * is the Milestone 9 ledger's, and until it exists a second payment on the same
-   * visit answers the same "nothing left" the empty bill does. That boundary is
-   * an open question recorded in `docs/open-questions.md`, not a gap this route
-   * is meant to hide.
+   * **A payment settles what the visit still owes.** If there are un-invoiced
+   * charges, the settlement folds them into a new document and allocates the payment
+   * to it; if all charges are already on documents, the payment collects the
+   * remainder across those documents oldest first (Milestone 9). Either way the
+   * door closes when nothing is left to collect here.
    */
   app.post('/api/v1/visits/:visitId/payments', async (request, reply) => {
     const path = readVisitId(request.params, request.clinicId as ClinicId);

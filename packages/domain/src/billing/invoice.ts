@@ -271,16 +271,31 @@ export function calculatePatientBalance(
   };
 }
 
-export function deriveInvoiceStatus(invoice: Invoice, allocatedMinor: number): InvoiceStatus {
-  const { total } = calculateInvoiceTotals(invoice);
-  if (invoice.status === 'VOID' || invoice.status === 'DRAFT') {
-    return invoice.status;
-  }
-  if (invoice.status === 'PAID') {
-    return 'PAID';
+/**
+ * The status an invoice moves to once `allocatedMinor` sits against a total that is
+ * already written down.
+ *
+ * The same rule `deriveInvoiceStatus` has always applied, but it takes the total as
+ * a number instead of recomputing it from the charges — which is what an issuing
+ * settlement has, and what reading an already-issued document answers with. Two
+ * entry points, one rule: the recomputing form below only exists because a draft
+ * being raised has no stored total yet.
+ */
+export function deriveInvoiceStatusFromTotals(
+  status: InvoiceStatus,
+  totalMinor: number,
+  allocatedMinor: number,
+): InvoiceStatus {
+  if (status === 'VOID' || status === 'DRAFT' || status === 'PAID') {
+    return status;
   }
   if (allocatedMinor <= 0) {
     return 'ISSUED';
   }
-  return allocatedMinor >= total.amountMinor ? 'PAID' : 'PARTIALLY_PAID';
+  return allocatedMinor >= totalMinor ? 'PAID' : 'PARTIALLY_PAID';
+}
+
+export function deriveInvoiceStatus(invoice: Invoice, allocatedMinor: number): InvoiceStatus {
+  const { total } = calculateInvoiceTotals(invoice);
+  return deriveInvoiceStatusFromTotals(invoice.status, total.amountMinor, allocatedMinor);
 }

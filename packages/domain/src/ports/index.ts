@@ -888,9 +888,12 @@ export interface InvoiceDetail extends InvoiceSummary {
  * `(clinic_id, number)` unique index) and inserts the row. An invoice is a legal
  * document whose totals are written down, not derived on read (the `invoices` table
  * persists `subtotal_minor` and `total_minor` on purpose), and nothing in this
- * milestone edits or retires one. The implementation computes the totals through the
- * domain's own `calculateInvoiceTotals`, so a number stored twice cannot disagree
- * with a number derived once.
+ * milestone edits a written number or retires a document. The one field that does
+ * move is `status` — `updateStatus` — because a payment arriving against an issued
+ * document has to say so on it; the totals and the allocations that justify it stay
+ * where they are. The implementation computes the totals through the domain's own
+ * `calculateInvoiceTotals`, so a number stored twice cannot disagree with a number
+ * derived once.
  *
  * `issue` takes no clinic, because the use case has already resolved the visit and
  * the clinic inside its transaction. The translated refusal is the foreign key — the
@@ -913,6 +916,18 @@ export interface InvoiceRepository {
   ): Promise<readonly InvoiceSummary[] | undefined>;
   /** One invoice in this clinic with the charges it folded in, or undefined if it is not found. */
   findById(clinicId: ClinicId, invoiceId: InvoiceId): Promise<InvoiceDetail | undefined>;
+  /**
+   * Move a document to the status its allocations now justify.
+   *
+   * The whole operation is one `status` — and `updated_at` with it — scoped by the
+   * clinic for the same reason `markInvoiced` is: the use case read the invoice
+   * inside its transaction in this clinic, and an update has no use case in front of
+   * it to scope with. Totals are written at issue and allocations are their own rows,
+   * so the only thing a payment changes on the document is the line `status` draws
+   * between `ISSUED`, `PARTIALLY_PAID` and `PAID`. No row count is checked, as
+   * elsewhere: the read a moment earlier proved the row is here.
+   */
+  updateStatus(clinicId: ClinicId, invoiceId: InvoiceId, status: InvoiceStatus): Promise<void>;
 }
 
 /**

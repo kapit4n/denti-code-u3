@@ -996,10 +996,9 @@ test.describe('Visit workspace', () => {
     await expect(page.getByTestId('payments-paid')).toHaveText('55.00');
     await expect(page.getByTestId('payments-still-to-pay')).toHaveText('30.00');
 
-    // The settlement folded the whole bill into an invoice, so the door closed with
-    // the sentence that says where the remainder lives — the milestone's boundary,
-    // told to the front desk instead of answered as a 422.
-    await expect(page.getByText(/The remaining 30\.00 is held on this visit/)).toBeVisible();
+    // The settlement folded the whole bill into an invoice, so the door closes
+    // once the remainder is collected elsewhere, and here it is fully settled.
+    await expect(page.getByText(/fully settled/)).toBeVisible();
     await expect(page.getByTestId('record-payment')).toHaveCount(0);
 
     const post = api.recorded.find(

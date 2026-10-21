@@ -3067,3 +3067,57 @@ pnpm run test:e2e         128/128 passed (+4 balance specs)
   had just fetched would be a second, quieter answer to the same question.
 - Remaining in Milestone 9: invoice-scoped payments/installments (open question 20)
   and the invoice controls in the visit workspace.
+
+## Session 44 — Milestone 9 slice 3 (invoice-scoped follow-up payments) — 2026-10-21
+
+**Goal**
+
+Close open question **20**: a follow-up payment against a visit whose charges are
+already on invoices. Collect the remainder across the visit's open documents
+(oldest first) in one transaction, update each document's status as allocations
+land, and open the Payments door in the workspace for that case.
+
+**Changes**
+
+- **Domain — billing**
+  - `packages/domain/src/billing/invoice.ts`: added `deriveInvoiceStatusFromTotals(status, totalMinor, allocatedMinor)` (one rule, two entry points); existing `deriveInvoiceStatus` now calls it.
+  - `packages/domain/src/billing/visit-payments.ts`: `payVisitCharges` now collects via two doors. When there are un-invoiced charges it does the original settlement (issue + allocate + stamp charges). When none remain, it reads the visit's charges, resolves each referenced document via `InvoiceRepository.findById`, filters to open (not VOID/DRAFT) with `balanceMinor > 0`, sorts oldest first by `createdAt` then `id`, sums to `outstandingMinor`, allocates the payment across them in order, saves allocations, calls `invoices.updateStatus` when the status changes (via `deriveInvoiceStatusFromTotals`), and refuses with the same `INVALID_INPUT` only when nothing is owed here. Added `collectibleInvoices` (private). `PayVisitChargesDependencies` unchanged shape; the transaction must now see `invoices` with `findById` and `updateStatus`.
+  - `packages/domain/src/billing/index.ts`: barrel unchanged.
+  - Tests: `visit-payments.test.ts` expanded with `aDocument`, `statusUpdates`, `storedInvoices`; new tests for collecting remainder on a `PARTIALLY_PAID` document (advances to `PAID`, no re-issue/no charge stamp), refusal over remainder, filling oldest first across two documents (moves each, splits allocation), ignoring VOID. Updated the "nothing left" test to cover a fully settled document case. `visit-invoices.test.ts` and `patient-balance.test.ts` fakes gain `updateStatus`.
+
+- **Ports**
+  - `packages/domain/src/ports/index.ts`: `InvoiceRepository` gains `updateStatus(clinicId, invoiceId, status)` (documented; updates `status` and `updated_at`, scoped by clinic). Expanded the `InvoiceRepository` doc block to note `updateStatus` exists for allocations.
+
+- **API**
+  - `apps/api/src/http/routes/visits.ts`: route doc updated to describe both doors; domain already enforces amounts/rules.
+  - DB engines: `apps/api/src/infrastructure/persistence/repositories/invoice-repository.ts` and `.../sqlite/repositories/invoice-repository.ts` implement `updateStatus` (`status`, `updatedAt`, scoped by clinic id; SQLite uses `.returning` like siblings).
+
+- **App**
+  - `packages/app/src/features/visits/components/visit-workspace.tsx`: `canSettle` now true if un-invoiced charges exist or `outstandingMinor > 0` with charges present (allows follow-up on open documents). Removed the "held on this visit’s invoice" sentence; when nothing to settle shows "fully settled" (or "nothing charged") — form opens when money remains.
+  - `packages/app/src/features/visits/components/visit-workspace.test.tsx`: updated "records a payment..." to expect remainder still collectable after partial settlement invoice (no "fully settled", form remains, `payments-still-to-pay` updated).
+  - `packages/app/src/features/visits/mutations/use-create-payment.ts`: doc comment updated to cover both doors.
+
+- **Tests (integration/app/e2e)**
+  - `apps/api/test/visits-route.integration.test.ts`: adjusted the "refuses a second payment once the bill is fully or partially settled" test comment (fully paid visit still refused; partially paid now collectable by domain — covered in domain tests).
+  - `apps/api/test/sqlite-smoke.integration.test.ts`: unchanged expectations (still covers issue/list/balance on SQLite).
+
+- **Docs**
+  - `docs/open-questions.md` question 20 marked **Answered** with the rule and behavior; question 19 unchanged.
+  - `docs/progress/STATE.md` updated to session 44, slice 3 done, only invoice controls in the visit workspace remain in Milestone 9.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             12/12 tasks — domain 331, validation 142, app 318, api-client 15, database 6, desktop 3; API SQLite smoke 25, PG suite skipped
+```
+
+**Notes**
+
+- Follow-up payments only collect money against the **visit's own open documents** (looked up via the charges on that visit); the patient's broader ledger is handled by the balance read already shipped.
+- Void/draft documents are never collected; fully settled documents are skipped.
+- The workspace now opens the payment form when a remainder remains on existing documents (so front desk can collect instalments).
+- Remaining in Milestone 9: invoice controls in the visit workspace.

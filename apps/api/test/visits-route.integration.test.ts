@@ -2178,9 +2178,9 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
 
       const refused = await pay(visitId, { method: 'CASH', amountMinor: 1 });
 
-      // The invoice's remaining balance is the Milestone 9 ledger's business, and
-      // until it exists a visit with a settled bill has nothing left for this route
-      // to collect — same 422, same domain answer, as an empty bill (docs/open-questions.md).
+      // Now the ledger can collect the remainder, so a partially paid document is a
+      // different case — this visit was fully paid. With nothing left on its
+      // documents, the route still refuses with the same domain answer.
       expect(refused.statusCode).toBe(422);
       expect(refused.json()).toMatchObject({
         error: {

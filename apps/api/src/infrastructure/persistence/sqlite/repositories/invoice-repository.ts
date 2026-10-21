@@ -127,6 +127,18 @@ export class SQLiteInvoiceRepository implements InvoiceRepository {
     }
   }
 
+  async updateStatus(
+    clinicId: ClinicId,
+    invoiceId: InvoiceId,
+    status: InvoiceStatus,
+  ): Promise<void> {
+    await this.db
+      .update(invoices)
+      .set({ status, updatedAt: new Date() })
+      .where(and(eq(invoices.id, invoiceId), eq(invoices.clinicId, clinicId)))
+      .returning({ id: invoices.id });
+  }
+
   async findForPatient(
     clinicId: ClinicId,
     patientId: PatientId,

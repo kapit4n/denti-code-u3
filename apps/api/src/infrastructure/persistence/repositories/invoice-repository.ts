@@ -144,6 +144,17 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
     }
   }
 
+  async updateStatus(
+    clinicId: ClinicId,
+    invoiceId: InvoiceId,
+    status: InvoiceStatus,
+  ): Promise<void> {
+    await this.db
+      .update(invoices)
+      .set({ status, updatedAt: new Date() })
+      .where(and(eq(invoices.id, invoiceId), eq(invoices.clinicId, clinicId)));
+  }
+
   async findForPatient(
     clinicId: ClinicId,
     patientId: PatientId,

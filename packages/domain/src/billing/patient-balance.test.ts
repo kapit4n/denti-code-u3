@@ -94,6 +94,7 @@ function harness(options: HarnessOptions = {}) {
     },
     findById: async () => undefined,
     issue: async () => 'F001-00001',
+    updateStatus: async () => {},
   };
 
   const payments: PaymentRepository = {

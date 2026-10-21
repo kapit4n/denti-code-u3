@@ -43,7 +43,8 @@
 
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, FileText, Loader2 } from 'lucide-react';
+import { useCreateVisitInvoice } from '../mutations/use-create-visit-invoice.js';
 import type {
   Charge,
   MedicationRoute,
@@ -1309,6 +1310,7 @@ function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitCharge
   const chargesQuery = useVisitCharges(visitId);
   const plansQuery = usePatientTreatmentPlans(patientId);
   const createCharge = useCreateCharge();
+  const createInvoice = useCreateVisitInvoice();
   const [description, setDescription] = useState('');
   const [priceMajor, setPriceMajor] = useState('');
   const [quantity, setQuantity] = useState('');
@@ -1327,6 +1329,12 @@ function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitCharge
 
   const list = chargesQuery.data?.charges ?? [];
   const totalMinor = list.length > 0 ? chargesTotal(list, list[0]!.currency) : undefined;
+  const hasUninvoiced = list.some((charge) => charge.invoiceId === null);
+  const invoiceFailure = createInvoice.error
+    ? createInvoice.error instanceof Error
+      ? createInvoice.error.message
+      : 'The invoice could not be issued.'
+    : null;
 
   // The still-open lines on this patient's plans: billing is provenance, so a line
   // already done is not offered again — the same rule the treatment recorder holds.
@@ -1508,6 +1516,42 @@ function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitCharge
           </div>
         </form>
 
+        {list.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              data-testid="issue-invoice"
+              variant="outline"
+              disabled={!hasUninvoiced || createInvoice.isPending}
+              onClick={() => createInvoice.mutate(visitId)}
+            >
+              <FileText aria-hidden className="mr-1 size-4" />
+              Issue invoice
+            </Button>
+            {createInvoice.isPending ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
+                Issuing…
+              </p>
+            ) : null}
+            {!hasUninvoiced ? (
+              <p className="text-sm text-muted-foreground">
+                All charges on this visit are invoiced.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {invoiceFailure ? (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
+            <span>{invoiceFailure}</span>
+          </div>
+        ) : null}
+
         {failure ? (
           <div
             role="alert"
@@ -1639,10 +1683,12 @@ function VisitPaymentsSection({ visitId, clinicTimeZone }: VisitPaymentsSectionP
   const billedMinor = currency ? chargesTotal(charges, currency) : 0;
   const paidMinor = currency ? paymentsTotal(payments, currency) : 0;
   const outstandingMinor = stillToPayMinor(billedMinor, paidMinor);
-  // Whether the settlement door is open: at least one charge the record has not yet
-  // folded into an invoice. The domain refused the empty bill with "There is nothing
-  // left to pay on this visit", and this is the same rule drawn before the click.
-  const canSettle = charges.some((charge) => charge.invoiceId === null);
+  // Whether the settlement door is open: charges still to bill, or the visit still
+  // carries an open invoice. The domain refuses when nothing remains, but drawing
+  // the door before the click matches the rule and keeps the form out of the way.
+  const canSettle =
+    charges.some((charge) => charge.invoiceId === null) ||
+    (charges.length > 0 && paymentsQuery.data.payments.length >= 0 && outstandingMinor > 0);
 
   const parsedAmount = parseMajorUnitsToMinor(amountMajor);
   const ready = method.length > 0 && parsedAmount !== undefined && parsedAmount > 0;
@@ -1689,15 +1735,9 @@ function VisitPaymentsSection({ visitId, clinicTimeZone }: VisitPaymentsSectionP
 
         {!canSettle ? (
           <p className="text-sm text-muted-foreground">
-            {/* Three different facts, deliberately not one fallback: a visit nothing
-                was charged on, a bill the milestone cannot yet finish collecting, and
-                one the money has fully settled. Collapsing them into a sentence about
-                "settled" would make the second read as the third. */}
             {charges.length === 0
               ? 'Nothing has been charged on this visit yet, so there is nothing to pay.'
-              : outstandingMinor > 0
-                ? `The remaining ${formatMinorUnits(outstandingMinor)} is held on this visit’s invoice; collecting it lands with the invoice ledger.`
-                : 'This visit’s bill is fully settled.'}
+              : 'This visit’s bill is fully settled.'}
           </p>
         ) : (
           <form

@@ -1,13 +1,9 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 43 (Milestone 9, slice 2 — patient balance)
+> Last updated: session 44 (Milestone 9, slice 3 — invoice-scoped follow-up payments)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
-> **Milestone 9's second slice landed in session 43: the patient balance.** Open
-> question T6 — "what is the authoritative balance rule?" — is now answered and
-> closed in `docs/open-questions.md`. The remaining Milestone 9 bullets are
-> invoice-scoped payments/installments (open question 20) and the invoice controls
-> in the visit workspace.
+> **Milestone 9's third slice landed in session 44: follow-up payments against a visit's open documents.** Open question 20 is now answered and closed in `docs/open-questions.md`; T6 was closed in session 43. Remaining Milestone 9 bullet: invoice controls in the visit workspace.
 
 ## Phase
 

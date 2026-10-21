@@ -171,6 +171,7 @@ function harness(
     },
     findForPatient: async () => undefined,
     findById: async () => undefined,
+    updateStatus: async () => {},
   };
 
   // The use case only sees the set through a transaction, so the harness fakes the

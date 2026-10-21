@@ -1547,11 +1547,11 @@ describe('VisitWorkspace', () => {
     expect(screen.getByTestId('payments-paid')).toHaveTextContent('50.00');
     expect(screen.getByTestId('payments-still-to-pay')).toHaveTextContent('35.00');
 
-    // The settlement stamped the whole bill invoiced, so the door closes with a
-    // sentence that says where the remainder lives — the milestone's boundary, told
-    // to the front desk instead of answered as a 422.
-    expect(await screen.findByText(/The remaining 35\.00 is held on this visit/)).toBeTruthy();
-    expect(screen.queryByTestId('record-payment')).toBeNull();
+    // The settlement stamped the whole bill invoiced, and the remainder stays on the
+    // document for the follow-up payment the ledger now allows.
+    expect(screen.getByTestId('payments-still-to-pay')).toHaveTextContent('35.00');
+    expect(screen.queryByText(/fully settled/)).toBeNull();
+    expect(screen.getByTestId('record-payment')).toBeTruthy();
 
     // Recording a payment changes nothing about the visit itself, so neither the
     // visit nor the patient's profile was refetched — invalidating `['visits']`

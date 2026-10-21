@@ -7,11 +7,10 @@
  * the visit and the patient's profile for pixels that cannot differ — exactly what
  * the charges mutation argues, for the same reason.
  *
- * **The charges list is invalidated beside the payments list.** A settlement does
- * not stop at the money: the server stamps the bill it settles *invoiced*, and both
- * the charges section's rows and this section's "what is left to settle" read from
- * that same list — so a payment arriving must refetch it, or the Charges section
- * would still draw a bill the record says was already folded into an invoice. The
+ * **The charges list is invalidated beside the payments list.** A payment may fold
+ * un-invoiced charges into a new document, or it may collect the remainder of
+ * documents already on this visit — either way the charges/ledger that determine
+ * whether anything is left to settle have changed, so both registers refetch. The
  * key invalidated is the one each read used, and the server's own answer is what
  * becomes the row in the register: money shown on screen before the server accepted
  * it is a receipt the record does not contain.
