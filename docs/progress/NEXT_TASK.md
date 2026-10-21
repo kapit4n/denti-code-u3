@@ -7,6 +7,29 @@
 > design direction below — the prompt is self-contained enough to proceed without
 > it, but the mockup is the primary visual reference.
 
+> **STATUS — DELIVERED, session 42.** Implemented from the written brief below, not
+> the mockup. See "Session 42" in `docs/progress/LOG.md` for what changed and how it
+> was verified (typecheck / lint / format / build / unit / 124 e2e, all green and all
+> counts unchanged). Four deliberate deviations from the text, recorded here rather
+> than silently:
+>
+> 1. **§7 Calendar Preview stays a 14-day booking-density chart**, not a month grid
+>    with navigation. The Agenda owns the editable month calendar; a second calendar
+>    on the dashboard is two calendars that can disagree about what is booked, and the
+>    brief itself says not to introduce one that conflicts with the Agenda. Bar count
+>    and bar `title` are pinned by the browser suite and were kept exactly.
+> 2. **§4 The greeting does not append a user name.** There is no authentication in
+>    this product, so there is no person whose name the page may claim. The subtitle
+>    now names the **clinic** (real data from `GET /api/v1/clinic/settings`).
+> 3. **§8 Quick Actions offers three actions — Open agenda, Patient records, Treatment
+>    catalogue** — not the suggested five. `/payments` and `/reports` have no routes
+>    yet, so "Add Payment" and "View Reports" would be dead links; and a second "New
+>    Patient" / "New Visit" control on this page would collide with the one the
+>    browser suite targets by name and by `data-testid="new-visit"`.
+> 4. **§3 Header keeps only the patient search and the theme toggle.** The bell and
+>    avatar had no implementation behind them and the brief says not to add controls
+>    that look functional but are not.
+
 ---
 
 ## Objective

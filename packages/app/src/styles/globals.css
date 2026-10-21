@@ -65,14 +65,14 @@
   --color-danger-text: #b91c1c;
 
   /* ---- Surfaces and text ------------------------------------------------- */
-  --color-background: #f8fafc;
+  --color-background: #f5f8fc;
   --color-foreground: #172b4d;
   --color-card: #ffffff;
   --color-card-foreground: #172b4d;
-  --color-muted: #f1f5f9;
+  --color-muted: #eef2f7;
   --color-muted-foreground: #64748b;
-  --color-border: #e2e8f0;
-  --color-input: #cbd5e1;
+  --color-border: #dfe7f1;
+  --color-input: #d3dce8;
   --color-ring: #60a5fa;
 
   /* ---- Primary (shadcn semantic) ----------------------------------------- */
@@ -88,14 +88,37 @@
   --color-popover-foreground: #172b4d;
 
   /* ---- Sidebar palette --------------------------------------------------- */
-  --color-sidebar-background: #0f1f3d;
-  --color-sidebar-foreground: #e2e8f0;
+  --color-sidebar-background: #102344;
+  --color-sidebar-foreground: #cbd5e1;
+  --color-sidebar-secondary: #172e52;
   --color-sidebar-primary: #2563eb;
   --color-sidebar-primary-foreground: #ffffff;
-  --color-sidebar-accent: #19345f;
+  --color-sidebar-accent: #172e52;
   --color-sidebar-accent-foreground: #ffffff;
-  --color-sidebar-border: #243b61;
+  --color-sidebar-border: #1d3357;
   --color-sidebar-muted: #94a3b8;
+
+  /* ---- Dashboard metric accents ----------------------------------------- *
+   * One soft chip per measurement. The `-soft` value is the icon chip's
+   * background; the base value is its foreground, chosen dark enough to keep
+   * AA contrast on that chip. Components never hard-code these hexes.
+   * ---------------------------------------------------------------------- */
+  --color-metric-blue: #2563eb;
+  --color-metric-blue-soft: #e8f1ff;
+  --color-metric-green: #0f9d76;
+  --color-metric-green-soft: #def5ec;
+  --color-metric-amber: #b45309;
+  --color-metric-amber-soft: #fef3c7;
+  --color-metric-violet: #7c3aed;
+  --color-metric-violet-soft: #ede9fe;
+  --color-metric-rose: #e11d48;
+  --color-metric-rose-soft: #ffe4e9;
+  --color-metric-slate: #475569;
+  --color-metric-slate-soft: #e9eef5;
+
+  /* ---- Elevation --------------------------------------------------------- */
+  --shadow-card: 0 1px 2px 0 rgb(16 35 68 / 0.04), 0 1px 3px 0 rgb(16 35 68 / 0.06);
+  --shadow-card-hover: 0 2px 4px -1px rgb(16 35 68 / 0.06), 0 6px 16px -4px rgb(16 35 68 / 0.1);
 
   /* ---- Chart colors ------------------------------------------------------ */
   --color-chart-primary: #2563eb;
@@ -153,11 +176,31 @@
     --color-popover-foreground: #e8eef2;
     --color-sidebar-background: #0a131a;
     --color-sidebar-foreground: #e8eef2;
+    --color-sidebar-secondary: #12233d;
     --color-sidebar-primary: #45a2df;
     --color-sidebar-primary-foreground: #ffffff;
     --color-sidebar-accent: #1a2d38;
     --color-sidebar-accent-foreground: #e8eef2;
     --color-sidebar-border: #24404e;
+
+    /* Metric chips invert with the surface: a light chip on a dark card would
+       glare, so each soft background becomes a deep tint and the foreground a
+       brighter version of the same hue. */
+    --color-metric-blue: #7cc2ed;
+    --color-metric-blue-soft: #14263f;
+    --color-metric-green: #34d399;
+    --color-metric-green-soft: #12312a;
+    --color-metric-amber: #fbbf24;
+    --color-metric-amber-soft: #33280f;
+    --color-metric-violet: #a78bfa;
+    --color-metric-violet-soft: #241b3a;
+    --color-metric-rose: #fb7185;
+    --color-metric-rose-soft: #3a1620;
+    --color-metric-slate: #cbd5e1;
+    --color-metric-slate-soft: #1c2a35;
+
+    --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+    --shadow-card-hover: 0 2px 4px -1px rgb(0 0 0 / 0.4), 0 6px 16px -4px rgb(0 0 0 / 0.5);
   }
 
   * {

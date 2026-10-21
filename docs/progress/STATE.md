@@ -1,13 +1,13 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 41 (invoice tests + e2e spec fix; dev-desktop backend)
+> Last updated: session 42 (dashboard UI/UX redesign)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
-> **NEXT TASK — Dashboard UI/UX improvement.** The queued task is a dashboard
-> redesign (shell, metric cards, calendar, panels, quick actions), preserving all
-> logic. The full prompt is saved at **`docs/progress/NEXT_TASK.md`**. The user's
-> visual mockup was an image this agent could not read — **ask for the mockup
-> again at the start** of that session. No dashboard work has begun.
+> **The dashboard redesign queued at session 41 is done** (committed separately).
+> The prompt lives at `docs/progress/NEXT_TASK.md`; the work itself is described
+> in "Session 42" below. **The user's visual mockup is an image this agent could
+> not read** — the design was taken from the written brief instead. If a further
+> visual pass is wanted, re-share the mockup with a model that can see it.
 
 ## Phase
 
@@ -45,7 +45,47 @@ cleanup trap on exit) — the desktop window previously opened against no API an
 patient list could not be loaded". The dashboard task prompt was saved to
 `docs/progress/NEXT_TASK.md` (see the NEXT TASK banner above).
 
-**Status: Milestones 5–8 complete; Milestone 9 in progress (slice 1, session 40).
+**Session 42** delivered the **dashboard UI/UX redesign** — presentation only, no
+logic changed. The metrics are the same eight figures from the same three query hooks
+and the same API read model; every number still comes from
+`packages/app/src/features/dashboard/hooks/use-dashboard-stats.ts` and the client
+still does no arithmetic. What changed, in `packages/app`: the `@theme` tokens in
+`globals.css` (cooler surfaces and a lighter navy sidebar, a six-hue `metric-*`
+accent palette with `-soft` chip tints for light _and_ dark, a
+`shadow-card`/`shadow-card-hover` elevation pair), `StatCard` gaining an `accent`
+prop that paints a soft icon chip through a **literal** class map (a computed
+`bg-metric-${accent}-soft` would be invisible to Tailwind's scanner and render
+uncoloured), a new **Quick Actions** panel (`/agenda`, `/patients`, `/treatments`),
+the subtitle naming the **clinic** rather than inventing a user (there is no
+authentication, so there is no person whose name the page has a right to claim),
+per-panel initials/date chips and empty states that offer a next step, and a sidebar
+with a brand mark, `Settings` on the right icon (it was `Clock`), an active pill and a
+separating rule. The header dropped two dead controls — a bell and an avatar with no
+implementation behind either — and the shell gained modest padding. **Calendar Preview
+deliberately stays a 14-day booking-density chart, not a month grid**: the Agenda owns
+the editable month calendar, and a second one on the dashboard would be two calendars
+that can disagree about what is booked, which is worse than one honest sparkline.
+
+**The two things that bit, and the rules they restate.**
+
+1. The dashboard spec locates a card by taking the _heading's grandparent_, on the
+   assumption `CardTitle` is a direct child of `CardHeader`. Wrapping the title and
+   its description in a layout `<div>` moved that grandparent up a level to the
+   header, so `cardTitled` no longer contained the rows and `lists today's
+appointments` failed while 123 other specs passed. The fix keeps `CardTitle` a
+   direct child and puts the header action beside it as an absolutely positioned
+   sibling — as the **first** child, so the default `space-y-1.5` does not add a
+   margin to an out-of-flow element. The same shape was applied to Recent Patients.
+2. A stale harness can look like a real failure: `e2e` runs `vite preview` (a
+   **production build**) with `reuseExistingServer`, so an e2e run after a component
+   edit rebuilds nothing and keeps serving the previous bundle. `pnpm run build` must
+   be run before `pnpm run test:e2e` when the tree has changed.
+
+No new unit tests were added: the dashboard has no component tests to extend, and
+the redesign is constrained by the browser suite (`e2e/web/dashboard.spec.ts`).
+
+**Status: Milestones 5–8 complete; Milestone 9 in progress (slice 1, session 40);
+dashboard UI/UX redesign delivered (session 42, presentation only).
 Milestone 8 (treatments) now has its catalogue, its
 treatment-plan read _and_ write sides, and both halves of the plan-item link — the
 plan-item → visit link (session 38) and the plan-item → charge link (session 39) — so
@@ -369,18 +409,25 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 41 — invoice tests + e2e spec fix; dev-desktop backend)
+## Verification log (last run, session 42 — dashboard UI/UX redesign)
 
 | Command                     | Result                                                                              |
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                                                    |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)                    |
-| `pnpm run format:check`     | clean (LOG.md/STATE.md reformatted with `prettier --write` before the check)        |
+| `pnpm run format:check`     | clean                                                                               |
 | `pnpm run test`             | 12/12 tasks pass — domain 318, validation 142, app 313, API 83 passed / 262 skipped |
 | `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                              |
 | `pnpm run build`            | 5/5 tasks pass                                                                      |
 | `pnpm run guard:boundaries` | OK                                                                                  |
-| `pnpm run test:e2e`         | 124/124 pass — 121 pre-existing plus 3 new invoices specs                           |
+| `pnpm run test:e2e`         | 124/124 pass (unchanged — the redesign added no specs and broke none)               |
+
+Counts are identical to session 41 on purpose: a redesign that changed a count would
+mean a behaviour change. The dashboard's own 9 specs in `e2e/web/dashboard.spec.ts`
+are the redesign's real constraint — they pin the metric test ids, the exact `—` for
+an unknown occupancy, the two appointment rows with the payload's own `CONFIRMED`
+status text, the two calendar bars with their `bookings` titles, the empty sentence
+and a console-error-free load.
 
 **`scripts/dev-desktop.sh` is shell, so it is not covered by the pnpm suites.** It was
 verified by `bash -n` (syntax), by a closed-port/open-port probe test of the `/dev/tcp`

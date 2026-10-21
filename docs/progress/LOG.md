@@ -2905,3 +2905,88 @@ itself was not launched (it compiles Rust / opens a Tauri window). The session-4
 fixes and their full suite run are recorded under session 40.
 
 **Next.** The dashboard UI/UX improvement task in `docs/progress/NEXT_TASK.md`.
+
+## Session 42 — dashboard UI/UX redesign (presentation only)
+
+**Changes** — all inside `packages/app`, plus the shell it renders in. No logic, no
+API, no domain, no schema. 11 files edited, 1 added.
+
+- `src/styles/globals.css`: surfaces/border/input tuned cooler; sidebar navy lightened;
+  a six-hue `metric-{blue,green,amber,violet,rose,slate}` accent palette with a
+  `-soft` chip tint each, redeclared for dark mode (chips invert rather than glare);
+  `--shadow-card` / `--shadow-card-hover`; `--color-sidebar-secondary` is now used by
+  the sidebar's brand band. Dropped the `--radius-2xl` token I had added and then
+  left unused.
+- `src/features/dashboard/components/stat-card.tsx`: gained `accent`, drawn as a soft
+  icon chip through a **literal** class map (Tailwind v4 cannot see a computed
+  `bg-metric-${accent}-soft`). Added `stat-card-skeleton-<title>`; the value and
+  error test ids are untouched.
+- `src/routes/dashboard.tsx`: per-metric accents, a 6-across / 4-across responsive
+  grid, a two-column Schedule section, and a subtitle that names the clinic. The
+  greeting is still a time-of-day `h1` with no invented user — there is no auth, so
+  there is no person whose name the page may claim.
+- `today-appointments.tsx`, `recent-patients.tsx`, `upcoming-visits.tsx`,
+  `calendar-preview.tsx`: time/date chips, initials avatars, per-status badges that
+  still print the payload's **raw** status string (`CONFIRMED`), and empty states
+  that offer a next step. `recent-patients` gained a "View all" link.
+- `src/features/dashboard/components/quick-actions-panel.tsx` (new): three tiles to
+  `/agenda`, `/patients`, `/treatments`. It deliberately contains **no** "New
+  Patient" or "New Visit" label — the browser suite already targets exactly one of
+  each on this page, and a second would make both a strict-mode error.
+- `src/components/shell/sidebar.tsx`: brand mark + subtitle, a brand band,
+  `Settings` on the Settings icon (it was `Clock`), an active pill with
+  `aria-current`, a separating rule above Settings. Nav entries and hrefs unchanged.
+- `src/components/shell/header.tsx`: removed the bell and the avatar — neither had
+  anything behind it (no notifications, no authentication) and a control that looks
+  live but does nothing is worse than one that is absent.
+- `src/components/shell/shell.tsx`: content padding and a max-width.
+
+**Deliberate deviations from the written brief.** Calendar Preview stays a 14-day
+booking-density chart, not a month grid — the Agenda owns the editable calendar and
+two calendars that can disagree are worse than one honest sparkline, and an empty day
+is still not drawn as a zero-height bar. No Add treatment / payment / View reports
+tiles, because the routes behind them (`/payments`, `/reports`) do not exist yet;
+the three that do are the three the sidebar already links to.
+
+**Two things went wrong and both were cheap.**
+
+1. `cardTitled` takes the _heading's grandparent_, so `CardTitle` must stay a direct
+   child of `CardHeader`. I had wrapped title+description in a layout `<div>`, which
+   moved the grandparent to the header and made `lists today's appointments` fail
+   while 123 specs passed. Fixed by putting the header action beside the title as an
+   absolutely positioned sibling, and first in the DOM so `space-y-1.5` does not
+   margin an out-of-flow element. The spec's own comment already warned that this
+   locator "stops resolving" if the card layout changes; it did.
+2. The re-run failed identically, which looked like the fix had not taken. It had
+   not _been served_: `e2e/playwright.config.ts` runs `vite preview` — a production
+   **build** — with `reuseExistingServer`, so an e2e run after a component edit
+   keeps serving the previous bundle. `pnpm run build` first. (The error-context
+   snapshot gave it away: the old child order was still on screen.)
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run guard:boundaries OK (one pre-existing warning)
+pnpm run build            5/5 successful
+pnpm run test             12/12 tasks — domain 318, validation 142, app 313, api-client 15, database 6, desktop 3; API 83 passed / 262 skipped
+pnpm run test:e2e         124/124 passed (unchanged count on purpose)
+```
+
+**Notes**
+
+- Every count is identical to session 41: a redesign that moved a number would mean
+  a behaviour change. The dashboard's 9 specs are the redesign's real constraint.
+- No new tests. The dashboard has no component tests to extend, and the browser
+  suite already pins the metric test ids, the exact `—` for an unknown occupancy,
+  the two appointment rows with their raw `CONFIRMED` text, the two calendar bars
+  with their `bookings` titles, the empty sentence and a console-error-free load.
+- The redesign was built from the written brief, not the mockup: the image the user
+  attached is unreadable to this model. A screenshot was taken to a scratch path for
+  a human to eyeball; it is not a verification.
+- Next: Milestone 9's remaining bullets (invoice-scoped payments/installments,
+  patient balances and statements, invoice controls in the visit workspace), or a
+  further visual pass on the dashboard if the user supplies the mockup to a model
+  that can see it.

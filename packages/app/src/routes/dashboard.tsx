@@ -12,6 +12,10 @@
  * and no patient. Holding the open/closed state here rather than in the button keeps
  * the dashboard's list of actions free of state, and puts the dialog where the person
  * who opened it is standing.
+ *
+ * The accents are the only thing that changed about the metrics in the redesign:
+ * the titles, values and data sources are exactly as they were, because the e2e specs
+ * assert them by test id and a recolour must not be able to move a number.
  */
 
 import { useState } from 'react';
@@ -22,8 +26,10 @@ import {
   CheckCircle2,
   CircleDashed,
   CircleSlash,
+  ClipboardList,
   Clock,
   DollarSign,
+  Gauge,
   Stethoscope,
   Users,
 } from 'lucide-react';
@@ -32,6 +38,7 @@ import { AppointmentBookingDialog } from '../features/agenda/components/appointm
 import { useClinicSettings } from '../features/clinic/queries/clinic-settings-query.js';
 import { CalendarPreview } from '../features/dashboard/components/calendar-preview.js';
 import { QuickActions } from '../features/dashboard/components/quick-actions.js';
+import { QuickActionsPanel } from '../features/dashboard/components/quick-actions-panel.js';
 import { RecentPatients } from '../features/dashboard/components/recent-patients.js';
 import { StatCard } from '../features/dashboard/components/stat-card.js';
 import { TodayAppointments } from '../features/dashboard/components/today-appointments.js';
@@ -56,25 +63,34 @@ function Dashboard() {
   const loading = isPending;
   const failed = error ?? null;
 
+  // The greeting names the clinic, not a user: authentication does not exist, so
+  // there is no person whose name this page has any right to claim. The clinic's
+  // own name is real data and reads as a welcome rather than an assertion about
+  // who is logged in.
+  const subtitle = clinicRecord?.name
+    ? `Here’s what’s happening at ${clinicRecord.name} today.`
+    : 'Here’s what’s happening at your clinic today.';
+
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">{greeting()}</h1>
-          <p className="text-muted-foreground">What is happening today?</p>
+          <p className="mt-1 text-muted-foreground">{subtitle}</p>
         </div>
         <QuickActions onNewVisit={() => setIsBooking(true)} />
       </header>
 
       <section
         aria-label="Today's appointments"
-        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6"
       >
         <StatCard
           title="Appointments"
           value={today?.appointments ?? 0}
           description="Booked today"
           icon={CalendarDays}
+          accent="blue"
           isLoading={loading}
           error={failed}
         />
@@ -83,6 +99,7 @@ function Dashboard() {
           value={today?.completed ?? 0}
           description="Finished today"
           icon={CheckCircle2}
+          accent="green"
           isLoading={loading}
           error={failed}
         />
@@ -91,6 +108,7 @@ function Dashboard() {
           value={today?.pending ?? 0}
           description="Awaiting the patient"
           icon={Clock}
+          accent="amber"
           isLoading={loading}
           error={failed}
         />
@@ -99,6 +117,7 @@ function Dashboard() {
           value={today?.inTreatment ?? 0}
           description="Currently in the chair"
           icon={Stethoscope}
+          accent="violet"
           isLoading={loading}
           error={failed}
         />
@@ -107,6 +126,7 @@ function Dashboard() {
           value={today?.cancelled ?? 0}
           description="Today"
           icon={CircleSlash}
+          accent="rose"
           isLoading={loading}
           error={failed}
         />
@@ -115,6 +135,7 @@ function Dashboard() {
           value={today?.noShow ?? 0}
           description="Today"
           icon={CircleDashed}
+          accent="slate"
           isLoading={loading}
           error={failed}
         />
@@ -126,6 +147,7 @@ function Dashboard() {
           value={clinic?.activePatients ?? 0}
           description="Registered in this clinic"
           icon={Users}
+          accent="blue"
           isLoading={loading}
           error={failed}
         />
@@ -140,6 +162,7 @@ function Dashboard() {
           }
           description="Payments received"
           icon={DollarSign}
+          accent="green"
           isLoading={loading}
           error={failed}
         />
@@ -147,6 +170,8 @@ function Dashboard() {
           title="Pending treatments"
           value={clinic?.pendingTreatmentItems ?? 0}
           description="Items not yet completed"
+          icon={ClipboardList}
+          accent="amber"
           isLoading={loading}
           error={failed}
         />
@@ -160,18 +185,21 @@ function Dashboard() {
               : `${clinic.occupancyRate}%`
           }
           description="Booked share of today's capacity"
+          icon={Gauge}
+          accent="violet"
           isLoading={loading}
           error={failed}
           isUnknown={clinic?.occupancyRate === null}
         />
       </section>
 
-      <section aria-label="Schedule" className="grid gap-4 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-2">
+      <section aria-label="Schedule" className="grid gap-6 lg:grid-cols-3">
+        <div className="flex flex-col gap-6 lg:col-span-2">
           <TodayAppointments />
           <CalendarPreview />
+          <QuickActionsPanel />
         </div>
-        <div className="space-y-4">
+        <div className="flex flex-col gap-6">
           <RecentPatients />
           <UpcomingVisits />
         </div>

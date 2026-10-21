@@ -16,10 +16,35 @@
  *  - a `null` value renders as an em dash. The API returns `null` for figures it
  *    genuinely cannot know (today's occupancy with no recorded opening hours),
  *    and inventing a `0%` there would be a confident lie.
+ *
+ * **The accent is decoration, never information.** It tints the icon chip so a
+ * wall of six numbers can be read at a glance, but the value keeps the body text
+ * colour: a hue that has to stay legible on white must not also be the only thing
+ * distinguishing "appointments" from "completed", and a colour-blind operator
+ * would lose exactly the distinction the label already carries.
  */
 
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@denti-code-u3/ui';
+
+/** The six accents the dashboard metrics are drawn from. */
+export type StatAccent = 'blue' | 'green' | 'amber' | 'violet' | 'rose' | 'slate';
+
+/**
+ * Literal class strings, not a computed `bg-metric-${accent}-soft`.
+ *
+ * Tailwind v4 scans source text for class names; a template literal would leave
+ * `bg-metric-green-soft` and its siblings invisible to the compiler and silently
+ * drop them from the build. Every class a metric can ask for is spelled out.
+ */
+const ACCENT_CHIP: Record<StatAccent, string> = {
+  blue: 'bg-metric-blue-soft text-metric-blue',
+  green: 'bg-metric-green-soft text-metric-green',
+  amber: 'bg-metric-amber-soft text-metric-amber',
+  violet: 'bg-metric-violet-soft text-metric-violet',
+  rose: 'bg-metric-rose-soft text-metric-rose',
+  slate: 'bg-metric-slate-soft text-metric-slate',
+};
 
 export interface StatCardProps {
   readonly title: string;
@@ -27,6 +52,8 @@ export interface StatCardProps {
   readonly value: string | number;
   readonly description?: string;
   readonly icon?: LucideIcon;
+  /** Tints the icon chip. Purely visual; defaults to the neutral slate. */
+  readonly accent?: StatAccent;
   readonly isLoading?: boolean;
   readonly error?: Error | null;
   /** Rendered in a muted tone when the metric is unknown rather than zero. */
@@ -39,19 +66,34 @@ export function StatCard({
   value,
   description,
   icon: Icon,
+  accent = 'slate',
   isLoading = false,
   error = null,
   isUnknown = false,
   className,
 }: StatCardProps) {
   return (
-    <div className={cn('rounded-lg border bg-card p-4 shadow-sm', className)}>
-      <div className="flex items-center justify-between">
+    <div
+      className={cn(
+        'rounded-xl border bg-card p-5 shadow-card transition-shadow hover:shadow-card-hover',
+        className,
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-medium text-muted-foreground">{title}</p>
-        {Icon ? <Icon aria-hidden className="h-5 w-5 text-muted-foreground" /> : null}
+        {Icon ? (
+          <span
+            className={cn(
+              'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+              ACCENT_CHIP[accent],
+            )}
+          >
+            <Icon aria-hidden className="h-5 w-5" />
+          </span>
+        ) : null}
       </div>
 
-      <div className="mt-2">
+      <div className="mt-3">
         {error ? (
           <p className="text-sm text-destructive" data-testid={`stat-card-error-${title}`}>
             Unavailable
@@ -64,14 +106,17 @@ export function StatCard({
           />
         ) : (
           <p
-            className={cn('text-2xl font-bold', isUnknown && 'text-muted-foreground')}
+            className={cn(
+              'text-3xl font-bold tracking-tight',
+              isUnknown && 'text-muted-foreground',
+            )}
             data-testid={`stat-card-value-${title}`}
           >
             {isUnknown ? '—' : value}
           </p>
         )}
 
-        {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+        {description ? <p className="mt-1 text-xs text-muted-foreground">{description}</p> : null}
       </div>
     </div>
   );

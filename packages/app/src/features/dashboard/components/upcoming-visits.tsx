@@ -5,7 +5,17 @@
  * server-side, so this list never has to decide what counts as "upcoming".
  */
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@denti-code-u3/ui';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  cn,
+  STATUS_TONE_CLASS,
+  toneForStatus,
+} from '@denti-code-u3/ui';
+import { CalendarClock } from 'lucide-react';
 
 import { useUpcomingVisits } from '../hooks/use-dashboard-stats.js';
 
@@ -23,7 +33,7 @@ export function UpcomingVisits() {
         {isPending ? (
           <ul aria-hidden className="space-y-2">
             {[0, 1, 2].map((row) => (
-              <li key={row} className="h-12 animate-pulse rounded-lg bg-muted" />
+              <li key={row} className="h-14 animate-pulse rounded-lg bg-muted" />
             ))}
           </ul>
         ) : error ? (
@@ -31,16 +41,37 @@ export function UpcomingVisits() {
         ) : data && data.items.length > 0 ? (
           <ul className="space-y-2">
             {data.items.map((visit) => (
-              <li key={visit.id} className="rounded-lg border p-3">
-                <p className="truncate text-sm font-medium">
-                  {visit.firstName} {visit.lastName}
-                </p>
-                <p className="text-xs text-muted-foreground">{formatDateTime(visit.startsAt)}</p>
+              <li
+                key={visit.id}
+                className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/60"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-metric-violet-soft text-metric-violet">
+                  <CalendarClock aria-hidden className="h-5 w-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">
+                    {visit.firstName} {visit.lastName}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{formatDateTime(visit.startsAt)}</p>
+                </div>
+                <span
+                  className={cn(
+                    'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                    STATUS_TONE_CLASS[toneForStatus(visit.status)],
+                  )}
+                >
+                  {visit.status}
+                </span>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-muted-foreground">No upcoming visits.</p>
+          <div className="flex flex-col items-center gap-3 py-8 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-metric-violet-soft text-metric-violet">
+              <CalendarClock aria-hidden className="h-6 w-6" />
+            </span>
+            <p className="text-sm text-muted-foreground">No upcoming visits.</p>
+          </div>
         )}
       </CardContent>
     </Card>
