@@ -223,13 +223,15 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   });
 
   // The invoice read side — the documents a settlement or an explicit billing pass
-  // raises. Its own address, because an invoice is a resource with a life of its
-  // own: `GET /invoices/:id` opens one, and the patient's list hangs off the
-  // patient the way the plans and the profile do. Given the same repository
-  // instance the visit settlement writes through, so a document is raised and read
-  // through one door (ADR 0014).
+  // raises, and what the patient owes across them. Its own address, because an
+  // invoice is a resource with a life of its own: `GET /invoices/:id` opens one, and
+  // the patient's list and balance hang off the patient the way the plans and the
+  // profile do. Given the same repository instances the visit settlement writes
+  // through, so a document is raised and read through one door (ADR 0014).
   await registerInvoiceRoutes(app, {
     invoices: connection.repositories.invoices,
+    payments: connection.repositories.payments,
+    clinics: connection.repositories.clinics,
   });
 
   app.get('/', async () => ({

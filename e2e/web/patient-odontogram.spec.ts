@@ -18,6 +18,7 @@ import { expect, test } from './fixtures/frozen-clock.js';
 
 import {
   ANA_ID,
+  anaBalance,
   anaOdontogram,
   anaProfile,
   anaTreatmentPlans,
@@ -67,6 +68,7 @@ test.describe('Odontogram chart', () => {
       [CHART_PATH]: { body: anaOdontogram },
       [`${PROFILE_PATH}/treatment-plans`]: { body: anaTreatmentPlans },
       [`${PROFILE_PATH}/invoices`]: { body: noInvoices },
+      [`${PROFILE_PATH}/balance`]: { body: anaBalance },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -108,6 +110,7 @@ test.describe('Odontogram chart', () => {
       [CHART_PATH]: { body: anaOdontogram },
       [`${PROFILE_PATH}/treatment-plans`]: { body: anaTreatmentPlans },
       [`${PROFILE_PATH}/invoices`]: { body: noInvoices },
+      [`${PROFILE_PATH}/balance`]: { body: anaBalance },
       [`POST ${CHART_PATH}/entries`]: { status: 201, body: recordedOdontogramEntry },
     });
 
@@ -168,6 +171,7 @@ test.describe('Odontogram chart', () => {
       [CHART_PATH]: { body: anaOdontogram },
       [`${PROFILE_PATH}/treatment-plans`]: { body: anaTreatmentPlans },
       [`${PROFILE_PATH}/invoices`]: { body: noInvoices },
+      [`${PROFILE_PATH}/balance`]: { body: anaBalance },
       [`POST ${CHART_PATH}/entries`]: {
         status: 422,
         body: {

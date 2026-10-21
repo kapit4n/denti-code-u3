@@ -16,6 +16,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import type {
   InvoiceSummary,
+  PatientBalance,
   PatientListEntry,
   PatientOdontogram,
   PatientProfile,
@@ -120,6 +121,28 @@ export function usePatientInvoices(patientId: string) {
   return useQuery({
     queryKey: ['patients', 'invoices', patientId],
     queryFn: () => client.get<PatientInvoicesResponse>(`/patients/${patientId}/invoices`),
+    enabled: patientId.length > 0,
+  });
+}
+
+/**
+ * What the patient owes this clinic, as the ledger's one summary line.
+ *
+ * A separate read from the document list, because the five figures are added up by
+ * the domain across every document and every payment — a section that totalled the
+ * list it had just fetched would be a second, quieter answer to the same question,
+ * and the two would drift the moment a payment landed on a page the section was not
+ * showing.
+ *
+ * A patient this clinic does not hold answers 404 rather than zeros, for the same
+ * reason the list does.
+ */
+export function usePatientBalance(patientId: string) {
+  const client = useApiClient();
+
+  return useQuery({
+    queryKey: ['patients', 'balance', patientId],
+    queryFn: () => client.get<PatientBalance>(`/patients/${patientId}/balance`),
     enabled: patientId.length > 0,
   });
 }

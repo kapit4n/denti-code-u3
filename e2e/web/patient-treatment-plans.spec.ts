@@ -18,6 +18,7 @@ import { expect, test } from './fixtures/frozen-clock.js';
 
 import {
   ANA_ID,
+  anaBalance,
   anaOdontogram,
   anaProfile,
   anaTreatmentPlans,
@@ -34,6 +35,7 @@ import { installApi, type InstalledApi, type RecordedRequest } from './fixtures/
 const PROFILE_PATH = `/api/v1/patients/${ANA_ID}`;
 const PLANS_PATH = `${PROFILE_PATH}/treatment-plans`;
 const INVOICES_PATH = `${PROFILE_PATH}/invoices`;
+const BALANCE_PATH = `${PROFILE_PATH}/balance`;
 
 const PLAN_ID = anaTreatmentPlans.items[0].id;
 const PENDING_ITEM_ID = anaTreatmentPlans.items[0].items[1].id;
@@ -94,6 +96,7 @@ test.describe('Treatment plans on the profile', () => {
       [`${PROFILE_PATH}/odontogram`]: { body: anaOdontogram },
       [PLANS_PATH]: { body: anaTreatmentPlans },
       [INVOICES_PATH]: { body: noInvoices },
+      [BALANCE_PATH]: { body: anaBalance },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -127,6 +130,7 @@ test.describe('Treatment plans on the profile', () => {
       [`${PROFILE_PATH}/odontogram`]: { body: anaOdontogram },
       [PLANS_PATH]: { body: noTreatmentPlans },
       [INVOICES_PATH]: { body: noInvoices },
+      [BALANCE_PATH]: { body: anaBalance },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -169,6 +173,7 @@ test.describe('Treatment plans on the profile', () => {
       [`${PROFILE_PATH}/odontogram`]: { body: anaOdontogram },
       [PLANS_PATH]: { body: noTreatmentPlans },
       [INVOICES_PATH]: { body: noInvoices },
+      [BALANCE_PATH]: { body: anaBalance },
       [`POST ${PLANS_PATH}`]: { status: 201, body: createdTreatmentPlan },
     });
 
@@ -218,6 +223,7 @@ test.describe('Treatment plans on the profile', () => {
       [`${PROFILE_PATH}/odontogram`]: { body: anaOdontogram },
       [PLANS_PATH]: { body: noTreatmentPlans },
       [INVOICES_PATH]: { body: noInvoices },
+      [BALANCE_PATH]: { body: anaBalance },
       [`POST ${PLANS_PATH}`]: {
         status: 422,
         body: {
@@ -261,6 +267,7 @@ test.describe('Treatment plans on the profile', () => {
       [`${PROFILE_PATH}/odontogram`]: { body: anaOdontogram },
       [PLANS_PATH]: { body: anaTreatmentPlans },
       [INVOICES_PATH]: { body: noInvoices },
+      [BALANCE_PATH]: { body: anaBalance },
       [`POST ${PLANS_PATH}/${PLAN_ID}/items/${PENDING_ITEM_ID}/complete`]: {
         status: 204,
         body: null,

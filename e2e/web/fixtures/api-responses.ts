@@ -881,6 +881,33 @@ export const anaInvoices = {
 export const noInvoices = { items: [] } as const;
 
 /**
+ * The balance the API answers for `anaInvoices`, added up by the domain.
+ *
+ * One settled document (12_000 billed and collected) and one open (23_000 billed,
+ * nothing allocated), so 35_000 billed, 12_000 already paid, 23_000 still to
+ * collect. Nothing unapplied: the money that paid the settled document reached a
+ * document, so there is no credit row to draw.
+ */
+export const anaBalance = {
+  currency: 'USD',
+  billedMinor: 35000,
+  allocatedMinor: 12000,
+  outstandingMinor: 23000,
+  unallocatedPaymentsMinor: 0,
+  balanceMinor: 23000,
+} as const;
+
+/** The balance of a patient this clinic holds and has never billed: nothing owed. */
+export const settledBalance = {
+  currency: 'USD',
+  billedMinor: 0,
+  allocatedMinor: 0,
+  outstandingMinor: 0,
+  unallocatedPaymentsMinor: 0,
+  balanceMinor: 0,
+} as const;
+
+/**
  * The plan the API answers `POST .../treatment-plans` with.
  *
  * The `id` is the server's, which is what makes it useful: a spec asserting the
@@ -1232,6 +1259,7 @@ export function visitWorkspaceFixtures(overrides: MockedResponses = {}): MockedR
     [`/api/v1/patients/${ANA_ID}/odontogram`]: { body: anaOdontogram },
     [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
     [`/api/v1/patients/${ANA_ID}/invoices`]: { body: noInvoices },
+    [`/api/v1/patients/${ANA_ID}/balance`]: { body: settledBalance },
     '/api/v1/clinic': { body: clinicSettings },
     '/api/v1/dentists': { body: everyDentistList },
     '/api/v1/chairs': { body: everyChairList },

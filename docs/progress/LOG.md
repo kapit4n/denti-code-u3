@@ -2990,3 +2990,80 @@ pnpm run test:e2e         124/124 passed (unchanged count on purpose)
   patient balances and statements, invoice controls in the visit workspace), or a
   further visual pass on the dashboard if the user supplies the mockup to a model
   that can see it.
+
+## Session 43 — Milestone 9 slice 2: the patient balance (closes open question T6)
+
+**Delivered** — a read over the ports slice 1 already had. Nothing new is stored:
+a balance written down and a balance derived are two figures that drift apart, and
+the invoices already carry everything needed to add one up.
+
+- `packages/domain/src/billing/invoice.ts` — `calculatePatientBalance` reworked. It
+  now takes the patient's **raw money received** and subtracts the allocations
+  itself, instead of being handed a pre-subtracted figure. `DRAFT` and `VOID`
+  documents **and their allocations** are excluded, so the balance collapses to
+  `billed − received`. That is the point: how the money was allocated is
+  bookkeeping, and a payment must not change the answer by which document it was
+  pointed at. A new input type `PatientInvoiceTotals { id, status, totalMinor,
+allocatedMinor }` keeps the rule visible — the totals are the document's own
+  **stored** numbers, tax included as printed, never a re-derivation from charges.
+  `Allocation` was left dead by the rework and was **removed** rather than kept as
+  an export nothing reads.
+- `packages/domain/src/billing/patient-balance.ts` (new) — `getPatientBalance`.
+  Decides the patient **first**: a foreign id throws `NOT_FOUND` before the clinic
+  or the payments are read, so a stranger's id cannot buy a lookup, and "nothing
+  owed" and "not our patient" cannot look the same on a statement. The **currency is
+  the clinic's**, read the way `issueVisitInvoice` reads it, because a patient with
+  no documents at all still has a currency to be shown in.
+- `PaymentRepository.findForPatient` — both engines (ADR 0025), and deliberately
+  **not** an existence check: `[]` is a real answer, and the invoice read already
+  decides whether the patient is here.
+- `GET /api/v1/patients/:patientId/balance` in `routes/invoices.ts` (the ledger's
+  read side), wired in `app.ts` with `invoices`, `payments` and `clinics` on the
+  same doors the settlement writes through.
+- `usePatientBalance` + a **Balance** card mounted above the invoices card on the
+  profile, drawing all five figures and naming the three states a column of digits
+  cannot tell apart: outstanding, nothing owed, credit on account. `unallocated` is
+  shown only when non-zero — money received with nothing to spend it on is the one
+  figure a settled ledger would hide.
+
+**One bug, caught by a fixture.** The first `calculatePatientBalance` accepted a
+pre-subtracted credit figure, so a `VOID` document's allocation was subtracted from
+the money as well: 10_000 received against a live invoice that had 10_000 allocated,
+plus a voided one that had 40_000, answered **−50_000** credit. Moving the
+subtraction into the domain and filtering the voids first fixed it, and the domain
+test that caught it now names the rule ("ignores draft and void invoices and the
+allocations pointed at them").
+
+**Tests** — 9 new domain tests (`invoice.test.ts` 7, `patient-balance.test.ts` 5
+covering the use case's read order, clinic currency and credit). A SQLite smoke
+block that settles a visit, reads the five numbers back and 404s a foreign and an
+unknown patient; the PostgreSQL suite got the mirrored block and still skips here
+(no Docker). A component test for the three states plus the error and in-flight
+cases. A new `e2e/web/patient-balance.spec.ts` (4 specs). The profile's **other**
+browser specs each gained the balance fixture: the profile now makes one more
+request, an unregistered path is a 501, and several of those specs assert an empty
+console-error list.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             12/12 tasks — domain 327, validation 142, app 318, api-client 15, database 6, desktop 3; API SQLite smoke 25, PG suite skipped
+pnpm run test:e2e         128/128 passed (+4 balance specs)
+```
+
+**Notes**
+
+- Open question **T6 is closed** in `docs/open-questions.md`: the balance is the sum
+  of the issued documents' stored totals, minus every payment against the patient.
+  `charges.tax_rate_percent` staying `0` is therefore harmless — tax lands on the
+  invoice, and the invoice is what the balance adds up.
+- The balance is a **separate query** from the document list, not a total of it. The
+  figures come from the domain across every document and every payment, including a
+  payment that has not reached a document yet; a section that totalled the page it
+  had just fetched would be a second, quieter answer to the same question.
+- Remaining in Milestone 9: invoice-scoped payments/installments (open question 20)
+  and the invoice controls in the visit workspace.

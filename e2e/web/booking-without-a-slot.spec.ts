@@ -24,6 +24,7 @@ import type { Page } from '@playwright/test';
 
 import {
   ANA_ID,
+  anaBalance,
   anaOdontogram,
   anaTreatmentPlans,
   anaProfile,
@@ -87,6 +88,7 @@ test.describe('Booking from a patient profile', () => {
       [`/api/v1/patients/${ANA_ID}/odontogram`]: { body: anaOdontogram },
       [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
       [`/api/v1/patients/${ANA_ID}/invoices`]: { body: noInvoices },
+      [`/api/v1/patients/${ANA_ID}/balance`]: { body: anaBalance },
       [CREATE_PATH]: { status: 201, body: bookedAppointment() },
     });
 
@@ -122,6 +124,7 @@ test.describe('Booking from a patient profile', () => {
       [`/api/v1/patients/${ANA_ID}/odontogram`]: { body: anaOdontogram },
       [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
       [`/api/v1/patients/${ANA_ID}/invoices`]: { body: noInvoices },
+      [`/api/v1/patients/${ANA_ID}/balance`]: { body: anaBalance },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -140,6 +143,7 @@ test.describe('Booking from a patient profile', () => {
       [`/api/v1/patients/${ANA_ID}/odontogram`]: { body: anaOdontogram },
       [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
       [`/api/v1/patients/${ANA_ID}/invoices`]: { body: noInvoices },
+      [`/api/v1/patients/${ANA_ID}/balance`]: { body: anaBalance },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -160,6 +164,7 @@ test.describe('Booking from a patient profile', () => {
       [`/api/v1/patients/${ANA_ID}/odontogram`]: { body: anaOdontogram },
       [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
       [`/api/v1/patients/${ANA_ID}/invoices`]: { body: noInvoices },
+      [`/api/v1/patients/${ANA_ID}/balance`]: { body: anaBalance },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -183,6 +188,7 @@ test.describe('Booking from a patient profile', () => {
       [`/api/v1/patients/${ANA_ID}/odontogram`]: { body: anaOdontogram },
       [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
       [`/api/v1/patients/${ANA_ID}/invoices`]: { body: noInvoices },
+      [`/api/v1/patients/${ANA_ID}/balance`]: { body: anaBalance },
     });
 
     await page.goto(`/patients/${ANA_ID}`);

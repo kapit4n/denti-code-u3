@@ -1078,6 +1078,40 @@ describe('API on SQLite', () => {
       url: '/api/v1/invoices/00000000-0000-4000-8000-000000000000',
     });
     expect(missing.statusCode).toBe(404);
+
+    // The ledger's summary line, added up across both documents and the money: one
+    // is settled, one is open, so 23_000 + 22_000 billed, 23_000 of it already
+    // collected, and nothing credit — the payment reached a document rather than
+    // arriving loose. On this engine the same three ports add up to the same five
+    // numbers (ADR 0025).
+    const balance = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/balance`,
+    });
+    expect(balance.statusCode).toBe(200);
+    expect(balance.json()).toEqual({
+      currency: 'USD',
+      billedMinor: 45_000,
+      allocatedMinor: 23_000,
+      outstandingMinor: 22_000,
+      unallocatedPaymentsMinor: 0,
+      balanceMinor: 22_000,
+    });
+
+    // A patient another clinic holds is unknown here, not owed nothing — the same
+    // answer as an id that was never a patient at all.
+    const foreign = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${foreignPatientId}/balance`,
+    });
+    expect(foreign.statusCode).toBe(404);
+    expect(foreign.json().error.code).toBe('NOT_FOUND');
+
+    const unknownId = await app.inject({
+      method: 'GET',
+      url: '/api/v1/patients/00000000-0000-4000-8000-000000000001/balance',
+    });
+    expect(unknownId.statusCode).toBe(404);
   });
 
   it('summarises the day on the dashboard, occupancy included', async () => {

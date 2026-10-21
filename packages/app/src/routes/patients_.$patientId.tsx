@@ -54,6 +54,7 @@ import { useClinicSettings } from '../features/clinic/queries/clinic-settings-qu
 import { usePatient } from '../features/patients/hooks/use-patients.js';
 import { PatientTreatmentPlansSection } from '../features/patients/components/patient-treatment-plans-section.js';
 import { PatientInvoicesSection } from '../features/patients/components/patient-invoices-section.js';
+import { PatientBalanceSection } from '../features/patients/components/patient-balance-section.js';
 import { PatientOdontogramSection } from '../features/patients/components/patient-odontogram-section.js';
 
 export const Route = createFileRoute('/patients_/$patientId')({
@@ -305,10 +306,14 @@ function PatientProfile() {
       <PatientTreatmentPlansSection patientId={patient.id} clinicTimeZone={timeZone} />
 
       {/*
-        The documents the clinic has issued: a sibling of the plans, because an
-        invoice is a financial document with its own address, not a fact folded into
-        a clinical card.
+        The documents the clinic has issued, and what they come to: siblings of the
+        plans and of each other, because a financial document has its own address.
+        The balance is not printed inside the list — it is added up by the domain
+        across every document and every payment, so a figure computed here would be
+        a second answer to the same question, and a payment that has not reached a
+        document yet would have nowhere to appear.
       */}
+      <PatientBalanceSection patientId={patient.id} />
       <PatientInvoicesSection patientId={patient.id} clinicTimeZone={timeZone} />
 
       {/*

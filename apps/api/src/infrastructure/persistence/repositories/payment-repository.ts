@@ -26,6 +26,7 @@ import {
   asPaymentId,
   type ClinicId,
   type IsoDateTime,
+  type PatientId,
   type VisitId,
 } from '@denti-code-u3/types';
 import { and, desc, eq } from 'drizzle-orm';
@@ -57,6 +58,24 @@ export class DrizzlePaymentRepository implements PaymentRepository {
       .innerJoin(invoices, eq(invoices.id, paymentAllocations.invoiceId))
       .innerJoin(charges, eq(charges.invoiceId, invoices.id))
       .where(and(eq(charges.clinicId, clinicId), eq(charges.visitId, visitId)))
+      .orderBy(desc(payments.receivedAt), desc(payments.id));
+
+    return rows.map(toEntity);
+  }
+
+  /**
+   * Every payment this patient made to this clinic — the balance read's other half.
+   *
+   * Deliberately not a join and deliberately not an existence check (see the port):
+   * scope is the payment's own two columns, and `[]` is the answer for a patient
+   * with nothing to show. The invoice read is what tells the route whether the
+   * patient is here at all, so querying the patient twice would buy no second answer.
+   */
+  async findForPatient(clinicId: ClinicId, patientId: PatientId): Promise<readonly Payment[]> {
+    const rows = await this.db
+      .select(PAYMENT_COLUMNS)
+      .from(payments)
+      .where(and(eq(payments.clinicId, clinicId), eq(payments.patientId, patientId)))
       .orderBy(desc(payments.receivedAt), desc(payments.id));
 
     return rows.map(toEntity);

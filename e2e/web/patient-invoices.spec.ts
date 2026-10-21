@@ -15,31 +15,35 @@ import { expect, test } from './fixtures/frozen-clock.js';
 
 import {
   ANA_ID,
+  anaBalance,
   anaInvoices,
   anaOdontogram,
   anaProfile,
   clinicFixture,
   noInvoices,
   noTreatmentPlans,
+  settledBalance,
 } from './fixtures/api-responses.js';
 import { watchForConsoleErrors } from './fixtures/console-errors.js';
 import { installApi } from './fixtures/mock-api.js';
 
 const PROFILE_PATH = `/api/v1/patients/${ANA_ID}`;
 const INVOICES_PATH = `${PROFILE_PATH}/invoices`;
+const BALANCE_PATH = `${PROFILE_PATH}/balance`;
 const ROWS = '[data-testid="patient-invoice"]';
 
 /**
  * The profile mounts every section at once, so a spec about one of them must still
- * answer the others — an unregistered path is a 501 the browser logs. These three
+ * answer the others — an unregistered path is a 501 the browser logs. These four
  * are the sections beside the ledger; the card under test is the one asserted.
  */
-function profileSections(invoices: unknown) {
+function profileSections(invoices: unknown, balance: unknown = anaBalance) {
   return {
     [PROFILE_PATH]: { body: anaProfile },
     [`${PROFILE_PATH}/odontogram`]: { body: anaOdontogram },
     [`${PROFILE_PATH}/treatment-plans`]: { body: noTreatmentPlans },
     [INVOICES_PATH]: { body: invoices },
+    [BALANCE_PATH]: { body: balance },
   };
 }
 
@@ -91,7 +95,7 @@ test.describe('Patient invoices', () => {
 
     await installApi(page, {
       ...clinicFixture(),
-      ...profileSections(noInvoices),
+      ...profileSections(noInvoices, settledBalance),
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -113,6 +117,7 @@ test.describe('Patient invoices', () => {
       [`${PROFILE_PATH}/odontogram`]: { body: anaOdontogram },
       [`${PROFILE_PATH}/treatment-plans`]: { body: noTreatmentPlans },
       [INVOICES_PATH]: { status: 500, body: { message: 'boom' } },
+      [BALANCE_PATH]: { body: anaBalance },
     });
 
     await page.goto(`/patients/${ANA_ID}`);

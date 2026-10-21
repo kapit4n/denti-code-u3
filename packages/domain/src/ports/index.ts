@@ -927,9 +927,18 @@ export interface InvoiceRepository {
  * through its allocations, its invoice, and the charges that invoice folded in. A
  * payment recorded for a patient who never paid this visit's bill cannot appear here.
  * Newest received first, then by id — the order a payment register is read in.
+ *
+ * `findForPatient` is the balance read's other half, and unlike every sibling it is
+ * **not** an existence check: it answers `[]` for a patient this clinic holds with
+ * no payments, and for one it does not hold. The invoice read decides whether the
+ * patient is here (it distinguishes the two, because the route has to), so doing it
+ * twice would buy a second patient query for no second answer. Scope is the payment's
+ * own `clinic_id` and `patient_id` — no join, because nothing is being reached for.
  */
 export interface PaymentRepository {
   findForVisit(clinicId: ClinicId, visitId: VisitId): Promise<readonly Payment[]>;
+  /** Every payment this patient made to this clinic, newest first; `[]` when there are none. */
+  findForPatient(clinicId: ClinicId, patientId: PatientId): Promise<readonly Payment[]>;
   save(payment: Payment): Promise<void>;
 }
 

@@ -16,6 +16,7 @@ import {
   asPaymentId,
   type ClinicId,
   type IsoDateTime,
+  type PatientId,
   type VisitId,
 } from '@denti-code-u3/types';
 import { and, desc, eq } from 'drizzle-orm';
@@ -52,6 +53,17 @@ export class SQLitePaymentRepository implements PaymentRepository {
       .innerJoin(invoices, eq(invoices.id, paymentAllocations.invoiceId))
       .innerJoin(charges, eq(charges.invoiceId, invoices.id))
       .where(and(eq(charges.clinicId, clinicId), eq(charges.visitId, visitId)))
+      .orderBy(desc(payments.receivedAt), desc(payments.id));
+
+    return rows.map(toEntity);
+  }
+
+  /** The balance read's other half; see the port for why it is neither a join nor an existence check. */
+  async findForPatient(clinicId: ClinicId, patientId: PatientId): Promise<readonly Payment[]> {
+    const rows = await this.db
+      .select(PAYMENT_COLUMNS)
+      .from(payments)
+      .where(and(eq(payments.clinicId, clinicId), eq(payments.patientId, patientId)))
       .orderBy(desc(payments.receivedAt), desc(payments.id));
 
     return rows.map(toEntity);

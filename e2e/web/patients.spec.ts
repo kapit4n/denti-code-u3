@@ -18,6 +18,7 @@ import {
   ANA_ID,
   LUIS_ID,
   PATIENT_LIST_RESPONSE,
+  anaBalance,
   anaOdontogram,
   anaProfile,
   anaTreatmentPlans,
@@ -117,6 +118,7 @@ test.describe('Patient profile', () => {
       [`${LIST_PATH}/${ANA_ID}/odontogram`]: { body: anaOdontogram },
       [`${LIST_PATH}/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
       [`${LIST_PATH}/${ANA_ID}/invoices`]: { body: noInvoices },
+      [`${LIST_PATH}/${ANA_ID}/balance`]: { body: anaBalance },
       [LIST_PATH]: { body: PATIENT_LIST_RESPONSE },
     });
 
@@ -147,6 +149,7 @@ test.describe('Patient profile', () => {
       [`${LIST_PATH}/${LUIS_ID}/odontogram`]: { body: luisOdontogram },
       [`${LIST_PATH}/${LUIS_ID}/treatment-plans`]: { body: noTreatmentPlans },
       [`${LIST_PATH}/${LUIS_ID}/invoices`]: { body: noInvoices },
+      [`${LIST_PATH}/${LUIS_ID}/balance`]: { body: anaBalance },
     });
 
     await page.goto(`/patients/${LUIS_ID}`);
@@ -167,6 +170,7 @@ test.describe('Patient profile', () => {
       [`${LIST_PATH}/${LUIS_ID}/odontogram`]: { body: luisOdontogram },
       [`${LIST_PATH}/${LUIS_ID}/treatment-plans`]: { body: noTreatmentPlans },
       [`${LIST_PATH}/${LUIS_ID}/invoices`]: { body: noInvoices },
+      [`${LIST_PATH}/${LUIS_ID}/balance`]: { body: anaBalance },
     });
 
     await page.goto(`/patients/${LUIS_ID}`);
@@ -202,6 +206,7 @@ test.describe('Global patient search', () => {
       [`${LIST_PATH}/${ANA_ID}/odontogram`]: { body: anaOdontogram },
       [`${LIST_PATH}/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
       [`${LIST_PATH}/${ANA_ID}/invoices`]: { body: noInvoices },
+      [`${LIST_PATH}/${ANA_ID}/balance`]: { body: anaBalance },
     });
 
     await page.goto('/');

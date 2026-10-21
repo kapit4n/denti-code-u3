@@ -184,41 +184,90 @@ export function calculateInvoiceTotals(invoice: Invoice): InvoiceTotals {
   };
 }
 
-export interface Allocation {
-  readonly invoiceId: string;
-  readonly amountMinor: number;
+/**
+ * One invoice's written-down figures, as the patient balance adds them up.
+ *
+ * The totals are the **document's own stored numbers**, never a recompute from its
+ * charges. An invoice is a legal document and its printed total must not move when
+ * a price is edited later, so the balance sums what was printed rather than
+ * re-deriving it — the same line the invoice routes already hold. The read side's
+ * `InvoiceSummary` satisfies this shape.
+ */
+export interface PatientInvoiceTotals {
+  readonly id: InvoiceId;
+  readonly status: InvoiceStatus;
+  readonly totalMinor: number;
+  readonly allocatedMinor: number;
 }
 
+/**
+ * What a patient owes, as the ledger's one summary line.
+ *
+ * Five figures rather than one, because a clinic asking "what does this patient
+ * owe" is asking three different questions that a single number hides: what has
+ * been billed, how much of that has already been paid, and whether there is
+ * credit sitting unallocated. A screen may draw only `balanceMinor`; a statement
+ * needs all five, and they are derived once here so two screens cannot disagree.
+ */
 export interface PatientBalance {
   readonly currency: CurrencyCode;
-  /** Total of issued invoices that are not yet settled. */
+  /** Issued documents' totals — what has been billed. Drafts and voids are not bills. */
+  readonly billedMinor: number;
+  /** Of that, how much payments have already been allocated to. */
+  readonly allocatedMinor: number;
+  /** `billed - allocated`: money still to collect on the documents themselves. */
   readonly outstandingMinor: number;
-  /** Money received but not yet allocated to an invoice. */
+  /** Money received but not yet allocated to a document. */
   readonly unallocatedPaymentsMinor: number;
-  /** `outstanding - unallocated`: what the patient still owes. */
+  /** `outstanding - unallocated`: what the patient still owes, credit included. */
   readonly balanceMinor: number;
 }
 
+/**
+ * Sum a patient's invoices into what they owe.
+ *
+ * The authoritative balance rule (open question T6): **over invoice totals, not
+ * over charges**, so the figure agrees with the document the patient was handed —
+ * a tax-inclusive invoice and a charge-level balance would otherwise disagree, and
+ * the printed page is what the clinic is held to.
+ *
+ * `DRAFT` and `VOID` are excluded: neither is a bill. A `DRAFT` has not been
+ * issued and a `VOID` has been retired, and counting either would make the
+ * patient's debt depend on a document the clinic would not show them. Only the
+ * allocations on those counted documents are subtracted from the money received —
+ * an allocation against a voided document leaves the money unallocated again.
+ *
+ * `receivedPaymentsMinor` is the raw total of the patient's payments, so the caller
+ * need not pre-subtract anything. What is left after the live allocations is
+ * `unallocatedPaymentsMinor`, and it is **signed rather than clamped**: money
+ * received with nothing to allocate it against is a credit, and hiding it as zero
+ * would keep a patient in credit from being told so.
+ *
+ * The balance collapses to `billed - received`, which is the point: how the money
+ * was allocated is bookkeeping, and a payment must not change the answer by which
+ * document it was pointed at.
+ */
 export function calculatePatientBalance(
-  invoices: readonly Invoice[],
-  allocations: readonly Allocation[],
-  unallocatedPaymentsMinor: number,
+  invoices: readonly PatientInvoiceTotals[],
+  receivedPaymentsMinor: number,
   currency: CurrencyCode,
 ): PatientBalance {
-  const outstandingMinor = invoices
-    .filter((invoice) => invoice.status !== 'VOID' && invoice.status !== 'DRAFT')
-    .reduce((total, invoice) => total + calculateInvoiceTotals(invoice).total.amountMinor, 0);
-
-  const allocatedMinor = allocations.reduce(
-    (total, allocation) => total + allocation.amountMinor,
-    0,
+  const billed = invoices.filter(
+    (invoice) => invoice.status !== 'VOID' && invoice.status !== 'DRAFT',
   );
+
+  const billedMinor = billed.reduce((total, invoice) => total + invoice.totalMinor, 0);
+  const allocatedMinor = billed.reduce((total, invoice) => total + invoice.allocatedMinor, 0);
+  const outstandingMinor = billedMinor - allocatedMinor;
+  const unallocatedPaymentsMinor = receivedPaymentsMinor - allocatedMinor;
 
   return {
     currency,
+    billedMinor,
+    allocatedMinor,
     outstandingMinor,
     unallocatedPaymentsMinor,
-    balanceMinor: outstandingMinor - allocatedMinor - unallocatedPaymentsMinor,
+    balanceMinor: outstandingMinor - unallocatedPaymentsMinor,
   };
 }
 

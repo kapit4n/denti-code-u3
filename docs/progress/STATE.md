@@ -1,13 +1,13 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 42 (dashboard UI/UX redesign)
+> Last updated: session 43 (Milestone 9, slice 2 — patient balance)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
-> **The dashboard redesign queued at session 41 is done** (committed separately).
-> The prompt lives at `docs/progress/NEXT_TASK.md`; the work itself is described
-> in "Session 42" below. **The user's visual mockup is an image this agent could
-> not read** — the design was taken from the written brief instead. If a further
-> visual pass is wanted, re-share the mockup with a model that can see it.
+> **Milestone 9's second slice landed in session 43: the patient balance.** Open
+> question T6 — "what is the authoritative balance rule?" — is now answered and
+> closed in `docs/open-questions.md`. The remaining Milestone 9 bullets are
+> invoice-scoped payments/installments (open question 20) and the invoice controls
+> in the visit workspace.
 
 ## Phase
 
@@ -84,7 +84,54 @@ appointments` failed while 123 other specs passed. The fix keeps `CardTitle` a
 No new unit tests were added: the dashboard has no component tests to extend, and
 the redesign is constrained by the browser suite (`e2e/web/dashboard.spec.ts`).
 
-**Status: Milestones 5–8 complete; Milestone 9 in progress (slice 1, session 40);
+**Session 43** delivered Milestone 9's **second slice — the patient balance**, the
+read that closes open question T6. Nothing new was stored: the balance is derived
+over the ports the first slice already had, because a number written down twice is a
+number that drifts, and the invoices already carry everything needed to add one up.
+
+- **The rule** (`packages/domain/src/billing/invoice.ts`). `calculatePatientBalance`
+  now takes the patient's **raw money received** and subtracts the allocations itself,
+  rather than being handed a pre-subtracted figure. `DRAFT` and `VOID` documents and
+  their allocations are excluded, so the balance collapses to `billed − received` —
+  which is the point: how the money was allocated is bookkeeping, and a payment must
+  not change the answer by which document it was pointed at. Each figure is the
+  document's own **stored** total, tax included as printed, never a re-derivation from
+  charges; that is T6, and it is why `charges.tax_rate_percent` staying `0` is
+  harmless. `unallocatedPaymentsMinor` is **signed, not clamped**: money received with
+  nothing to spend it on is a credit, and a patient in credit is a fact, not a zero.
+  (`Allocation` became dead once the arithmetic moved into the domain, and was removed
+  rather than left as an export nothing reads.)
+- **The use case** (`packages/domain/src/billing/patient-balance.ts`).
+  `getPatientBalance` decides the patient first — a foreign id throws `NOT_FOUND`
+  before the clinic or the payments are read, so a stranger's id cannot buy a lookup,
+  and "nothing owed" and "not our patient" cannot look the same on a statement. The
+  **currency is the clinic's**, read the way `issueVisitInvoice` reads it: a patient
+  with no documents at all still has a currency to be shown in.
+- **Ports.** `PaymentRepository.findForPatient` on both engines (ADR 0025), and
+  deliberately **not** an existence check — `[]` is a real answer, and the invoice
+  read decides whether the patient is here, so querying the patient twice would buy
+  no second answer.
+- **API** — `GET /api/v1/patients/:patientId/balance` in `routes/invoices.ts` (the
+  ledger's read side), wired through `app.ts` with `invoices`, `payments` and
+  `clinics` on the same doors the settlement writes through.
+- **App** — `usePatientBalance` (a separate query from the document list: the five
+  figures are added across every document and every payment, so a section that
+  totalled the page it had would be a second, quieter answer) and a
+  **Balance** card mounted **above** the invoices card, drawing all five figures and
+  naming the three states a column of digits cannot tell apart — outstanding, nothing
+  owed, credit on account.
+- **Tests.** 9 new domain tests (including one that pins "the answer does not move
+  when a payment is repointed between documents"); a SQLite smoke block that settles
+  a visit, reads the five numbers, and 404s a foreign and an unknown patient; a
+  component test for the three states plus the error and in-flight cases; a new
+  `e2e/web/patient-balance.spec.ts`. The profile's other browser specs each gained the
+  balance fixture, because an unregistered path is a 501 and several of them assert
+  an empty console-error list.
+- **Counts.** Domain 318 → 327, app 313 → 318, API smoke 24 → 25, e2e 124 → 128.
+  Typecheck 12/12, lint 12/12 + `BOUNDARY GUARD OK`, format clean, build 5/5.
+
+**Status: Milestones 5–8 complete; Milestone 9 in progress (slices 1–2, sessions 40
+and 43);
 dashboard UI/UX redesign delivered (session 42, presentation only).
 Milestone 8 (treatments) now has its catalogue, its
 treatment-plan read _and_ write sides, and both halves of the plan-item link — the
@@ -409,18 +456,18 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 42 — dashboard UI/UX redesign)
+## Verification log (last run, session 43 — Milestone 9, patient balance)
 
-| Command                     | Result                                                                              |
-| --------------------------- | ----------------------------------------------------------------------------------- |
-| `pnpm run typecheck`        | 12/12 tasks pass                                                                    |
-| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)                    |
-| `pnpm run format:check`     | clean                                                                               |
-| `pnpm run test`             | 12/12 tasks pass — domain 318, validation 142, app 313, API 83 passed / 262 skipped |
-| `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                              |
-| `pnpm run build`            | 5/5 tasks pass                                                                      |
-| `pnpm run guard:boundaries` | OK                                                                                  |
-| `pnpm run test:e2e`         | 124/124 pass (unchanged — the redesign added no specs and broke none)               |
+| Command                     | Result                                                                                                            |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `pnpm run typecheck`        | 12/12 tasks pass                                                                                                  |
+| `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)                                                  |
+| `pnpm run format:check`     | clean                                                                                                             |
+| `pnpm run test`             | 12/12 tasks pass — domain 327, validation 142, app 318, api-client 15, database 6, desktop 3; API SQLite smoke 25 |
+| `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                                                            |
+| `pnpm run build`            | 5/5 tasks pass                                                                                                    |
+| `pnpm run guard:boundaries` | OK                                                                                                                |
+| `pnpm run test:e2e`         | 128/128 pass (+4 — the new `e2e/web/patient-balance.spec.ts`)                                                     |
 
 Counts are identical to session 41 on purpose: a redesign that changed a count would
 mean a behaviour change. The dashboard's own 9 specs in `e2e/web/dashboard.spec.ts`
@@ -445,6 +492,27 @@ but it **skips** here for the reason above; the always-on SQLite smoke suite —
 gained the same "raises a visit's bill as a numbered document, and reads the ledger back"
 block — still runs. Where the slice's domain logic lives, `packages/domain`'s own tests
 cover the numbering and the "nothing left to invoice" refusal.
+
+**What session 43's work is verified by.** 9 new domain tests: 7 in the
+`calculatePatientBalance` block of `invoice.test.ts` (the document's **stored** total is
+what bills, never a recompute of its charges; a settled document is nothing outstanding
+rather than a debt; **the answer does not move when a payment is repointed** between
+documents; draft and void documents **and the allocations pointed at them** are ignored;
+a patient with no documents is zero **in the given currency**) and 5 in the new
+`patient-balance.test.ts` (the patient is decided **first** — a foreign id throws before
+the clinic or the payments are read, asserted by the read log; the currency comes from the
+clinic even with nothing owed; a missing clinic names itself; credit is the money that
+never reached a document). The always-on SQLite smoke block settles a visit and reads all
+five figures back, then 404s a foreign and an unknown patient; the mirrored PostgreSQL
+block typechecks and skips. 1 new component test file, `patient-balance-section.test.tsx`
+(owed/named with the five figures, "Nothing owed" for a zero with no credit row, "Credit
+on account" with the unapplied row, the error box rather than a zero, and no zero claim
+while in flight), and 4 new browser specs in `e2e/web/patient-balance.spec.ts`. The
+profile's **five other** browser specs each gained the balance fixture, because the card
+is now mounted on every profile and an unregistered path is a 501 that several of them
+assert never appears. The one defect this slice had — subtracting a **voided** document's
+allocation too, answering −50_000 credit — was caught by the fixture and is now pinned by
+a named test.
 
 **What session 40's work is verified by.** 10 domain tests in the new
 `packages/domain/src/billing/visit-invoices.test.ts` (the series starts at `F001-00001`
@@ -2844,3 +2912,27 @@ API 82 passed / 258 skipped (the PG link block typechecks but **skips — no Doc
 PostgreSQL client in this environment**; the SQLite smoke suite covers the same path; two
 write-path assertions checked by reintroducing the defect) · db:migrate + db:seed
 re-verified against the SQLite file · e2e: **121/121** — 1 new billing spec.
+
+Session 43: Milestone 9 slice 2 — the **patient balance**, closing open question T6.
+Nothing is stored new; the balance is derived over the ports slice 1 already had.
+`calculatePatientBalance` now takes the patient's **raw money received** and
+subtracts the allocations itself, excluding `DRAFT`/`VOID` **and their allocations**,
+so it collapses to `billed − received` — a payment must not change the answer by
+which document it was pointed at. Each figure is the document's stored total, tax
+included as printed. `getPatientBalance` decides the patient first (`NOT_FOUND`
+before the clinic or payments are read) and takes the currency from the clinic, so a
+patient with nothing still has one. `PaymentRepository.findForPatient` landed on both
+engines and is deliberately not an existence check. The wire is
+`GET /api/v1/patients/:patientId/balance`; the profile gained a Balance card above
+the invoices card that names the three states a column of digits cannot tell apart.
+`Allocation` was left dead by the rework and was removed. 9 new domain tests, a
+SQLite smoke block, a component test and 4 new e2e specs; the profile's other
+browser specs each gained the balance fixture (an unregistered path is a 501 and
+several assert an empty console-error list). The first implementation subtracted a
+voided document's allocation too and answered −50_000 credit; caught by a fixture,
+fixed by filtering the voids in the domain.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
+warning) · format clean · build 5/5 · domain 327, validation 142, app 318,
+api-client 15, database 6, desktop 3; API SQLite smoke 25 (PG suite typechecks but
+**skips — no Docker or PostgreSQL client in this environment**) · e2e: **128/128**.

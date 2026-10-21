@@ -359,6 +359,13 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       headers: { 'x-clinic-id': clinic },
     });
 
+  const getBalance = (patientId: string, clinic = clinicId) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${patientId}/balance`,
+      headers: { 'x-clinic-id': clinic },
+    });
+
   /**
    * The row as stored, with the timestamp read as an instant.
    *
@@ -428,6 +435,18 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
         typeof named === 'string' ? named : clinicId;
     });
 
+    // Money received against the bill, exercised by the payment tests below. The
+    // write is a plain repository *plus* the unit of work already wired above: a
+    // settlement raises an invoice, records the payment, allocates it and stamps
+    // the charges — four rows that must become one (ADR 0021). Named here rather
+    // than constructed twice, because the balance read must see the same door the
+    // settlement writes through (ADR 0014).
+    const payments = new DrizzlePaymentRepository(db);
+    // The clinic's own record, whose currency a charge is priced in — and whose
+    // currency the patient balance is stated in. Required the way the dentists and
+    // chairs are: a door wired without it cannot complete a price (ADR 0020).
+    const clinics = new DrizzleClinicRepository(db);
+
     await registerVisitsRoutes(app, {
       unitOfWork: new DrizzleUnitOfWork(db),
       // The same handle the transaction builds per-transaction repositories from, and
@@ -459,15 +478,8 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       // visit read still runs first, so a foreign visit 404s before any charge is
       // listed or written (ADR 0014).
       charges: new DrizzleChargeRepository(db),
-      // Money received against the bill, exercised by the payment tests below. The
-      // write is a plain repository *plus* the unit of work already wired above: a
-      // settlement raises an invoice, records the payment, allocates it and stamps
-      // the charges — four rows that must become one (ADR 0021).
-      payments: new DrizzlePaymentRepository(db),
-      // The clinic's own record, whose currency a charge is priced in. Required the
-      // way the dentists and chairs are: a door wired without it cannot complete a
-      // price (ADR 0020).
-      clinics: new DrizzleClinicRepository(db),
+      payments,
+      clinics,
       // The two resources a walk-in names, for the same "who may be named" rule the
       // booking uses. The appointment door reads its names from the booking and never
       // calls these (ADR 0024).
@@ -479,11 +491,14 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       ids: { nextId: () => crypto.randomUUID() },
     });
 
-    // The invoice read side, on the same handle the visit settlement writes through.
-    // The issuing route itself lives with the visit routes above; these are the
-    // ledger's two reads, exercised by the invoice tests below.
+    // The invoice read side — the ledger's documents and its summary line — on the
+    // same handles the visit settlement writes through. The issuing route itself
+    // lives with the visit routes above; these are the reads, exercised by the
+    // invoice tests below.
     await registerInvoiceRoutes(app, {
       invoices: new DrizzleInvoiceRepository(db),
+      payments,
+      clinics,
     });
 
     await sql`
@@ -2307,6 +2322,57 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
 
       const [invoices] = await sql`select count(*)::int as total from invoices`;
       expect((invoices as { total: number }).total).toBe(0);
+    });
+
+    it('states what the patient owes across the raised documents and the money received', async () => {
+      // A partial settlement: the visit's 12_000 charge is raised as one document and
+      // 5_000 of it allocated, in the same transaction.
+      const settled = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+      await raiseCharge(settled, bill);
+      expect((await pay(settled, { method: 'CASH', amountMinor: 5_000 })).statusCode).toBe(201);
+
+      // A second document, raised explicitly and paid nothing, so the ledger holds two
+      // documents and one payment.
+      const open = await seedVisit({ startedAt: `${day}T10:00:00.000Z` });
+      await raiseCharge(open, bill);
+      expect((await issueInvoice(open)).statusCode).toBe(201);
+
+      const balance = await getBalance(patient);
+      expect(balance.statusCode).toBe(200);
+      // 24_000 billed, 5_000 of it allocated, 19_000 still to collect. The 5_000
+      // received is not credit — it reached a document — so the credit line is zero
+      // and the balance is the outstanding.
+      expect(balance.json()).toEqual({
+        currency: 'USD',
+        billedMinor: 24_000,
+        allocatedMinor: 5_000,
+        outstandingMinor: 19_000,
+        unallocatedPaymentsMinor: 0,
+        balanceMinor: 19_000,
+      });
+    });
+
+    it('states a patient who has never been billed as nothing owed, not as a stranger', async () => {
+      const balance = await getBalance(untouchedPatient);
+
+      expect(balance.statusCode).toBe(200);
+      expect(balance.json()).toEqual({
+        currency: 'USD',
+        billedMinor: 0,
+        allocatedMinor: 0,
+        outstandingMinor: 0,
+        unallocatedPaymentsMinor: 0,
+        balanceMinor: 0,
+      });
+    });
+
+    it('answers 404 for a patient this clinic does not hold, not a zero balance', async () => {
+      expect((await getBalance(missingId)).statusCode).toBe(404);
+      // Another clinic's patient is the same answer as a stranger's id: the row is
+      // not this clinic's to know about.
+      const foreign = await getBalance(otherPatient);
+      expect(foreign.statusCode).toBe(404);
+      expect(foreign.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
     });
   });
 

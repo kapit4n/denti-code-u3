@@ -23,6 +23,7 @@ import type { Page } from '@playwright/test';
 
 import {
   ANA_ID,
+  anaBalance,
   anaOdontogram,
   anaProfile,
   anaTreatmentPlans,
@@ -50,6 +51,7 @@ async function installPatientApi(page: Page) {
     [`${PROFILE_PATH}/treatment-plans`]: { body: anaTreatmentPlans },
     // The document card is the profile's other own read, for the same reason.
     [`${PROFILE_PATH}/invoices`]: { body: noInvoices },
+    [`${PROFILE_PATH}/balance`]: { body: anaBalance },
     [LIST_PATH]: { body: { data: [], meta: { page: 1, pageSize: 25, total: 0 } } },
     // The edit endpoint answers 204 with nothing in it.
     [EDIT_PATH]: { status: 204, body: null },

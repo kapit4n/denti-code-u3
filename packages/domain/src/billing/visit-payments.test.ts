@@ -36,6 +36,7 @@ import {
   type ClinicId,
   type InvoiceId,
   type IsoDateTime,
+  type PatientId,
   type PaymentId,
   type VisitId,
 } from '@denti-code-u3/types';
@@ -120,6 +121,7 @@ interface Recorded {
   }[];
   visitsRead: { clinicId: ClinicId; visitId: VisitId }[];
   paymentsRead: { clinicId: ClinicId; visitId: VisitId }[];
+  paymentsForPatientRead: { clinicId: ClinicId; patientId: PatientId }[];
 }
 
 function harness(
@@ -139,6 +141,7 @@ function harness(
     markedInvoiced: [],
     visitsRead: [],
     paymentsRead: [],
+    paymentsForPatientRead: [],
   };
 
   const storedVisit: Visit | undefined = 'visit' in options ? options.visit : openVisit();
@@ -184,6 +187,10 @@ function harness(
   const payments: PaymentRepository = {
     findForVisit: async (clinicId, visitId) => {
       recorded.paymentsRead.push({ clinicId, visitId });
+      return options.storedPayments ?? [];
+    },
+    findForPatient: async (clinicId, patientId) => {
+      recorded.paymentsForPatientRead.push({ clinicId, patientId });
       return options.storedPayments ?? [];
     },
     save: async (payment) => {
