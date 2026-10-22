@@ -3121,3 +3121,88 @@ pnpm run test             12/12 tasks — domain 331, validation 142, app 318, a
 - Void/draft documents are never collected; fully settled documents are skipped.
 - The workspace now opens the payment form when a remainder remains on existing documents (so front desk can collect instalments).
 - Remaining in Milestone 9: invoice controls in the visit workspace.
+
+## Session 45 — Milestone 9 slice 4 (patient statement) — 2026-10-22
+
+**Goal**
+
+Close the last Milestone 9 bullet: a patient **statement** — the history behind the
+balance, oldest first, with a running figure. Milestone 9 is then complete and the
+roadmap moves to Milestone 10 (inventory).
+
+**Changes**
+
+- **Domain — billing**
+  - `packages/domain/src/billing/patient-statement.ts` (new): `getPatientStatement`
+    merges documents and payments from the existing ports into `PatientStatement`
+    (`billedMinor`, `paidMinor`, `balanceMinor`, `currency`, `entries[]`). Entries are
+    `INVOICE` (issued documents only) or `PAYMENT`; `DRAFT`/`VOID` documents are not
+    lines but their payments still count. Order is oldest first (`issuedAt ?? createdAt`
+    / `receivedAt`), ties `INVOICE` before `PAYMENT` then id. The running balance is
+    signed, and `balanceMinor = billedMinor − paidMinor`, matching `/balance`. The
+    patient is decided first (`NOT_FOUND` before clinic/payments reads); currency is
+    the clinic's even with no entries.
+  - `packages/domain/src/billing/index.ts`: barrel export.
+  - `packages/domain/src/billing/patient-statement.test.ts` (new, 7 tests):
+    order/running balance, DRAFT/VOID exclusion, shared-instant tie-break, negative
+    prepayment, read order on a foreign patient, clinic currency on empty, missing
+    clinic.
+
+- **API**
+  - `apps/api/src/http/routes/invoices.ts`: `GET /api/v1/patients/:patientId/statement`
+    through `getPatientStatement` (no new repository methods); error text
+    "Failed to read the statement".
+  - `apps/api/test/sqlite-smoke.integration.test.ts`: statement block — billed 45 000,
+    paid 23 000, closing 22 000; three entries in order with the payment in the middle;
+    foreign and unknown patients 404.
+  - `apps/api/test/visits-route.integration.test.ts`: mirrored PG block (billed 24 000,
+    paid 5 000, closing 19 000, three lines, last balance 19 000) plus 404s. Typechecks;
+    skips without `TEST_DATABASE_URL`.
+
+- **App**
+  - `packages/app/src/features/patients/hooks/use-patients.ts`: `usePatientStatement`,
+    `enabled`-gated.
+  - `packages/app/src/features/patients/components/patient-statement-section.tsx` (new):
+    on-demand card ("Show statement") with loading, error ("The statement could not be
+    loaded."), empty ("Nothing has been billed or paid yet."), rows, running balances
+    and billed/paid/closing figures; clinic days via `formatClinicDay`.
+  - `packages/app/src/features/patients/components/patient-statement-section.test.tsx`
+    (new, 4 tests).
+  - `packages/app/src/routes/patients_.$patientId.tsx`: mounted after the invoices card.
+
+- **Browser**
+  - `e2e/web/fixtures/api-responses.ts`: `anaStatement` and `noStatement`.
+  - `e2e/web/patient-statement.spec.ts` (new, 3 tests): no `/statement` request or rows
+    before opening; on open, three rows in API order with amounts, server running
+    balances, the 02:00Z line on the Lima 4th, totals, and closing agreeing with the
+    Balance card; empty and error states.
+  - `e2e/web/visit-workspace.spec.ts`: repaired the stale post-payment assertion —
+    session 44 made a 55/85 payment leave the follow-up form open, but the spec still
+    expected "fully settled". It now expects the form and no settled text.
+
+- **Docs**
+  - `docs/progress/STATE.md`: Milestone 9 complete, session 45 section, verification
+    log refreshed; corrected the stale "invoice controls remain" note (they landed in
+    session 44).
+  - `docs/roadmap.md`: Milestone 9 marked complete.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             domain 338, validation 142, app 322, api-client 15, database 6,
+                          desktop 3; API SQLite smoke 25; PG suite skipped
+pnpm run test:e2e         131/131 passed
+```
+
+**Notes**
+
+- The statement is derived, not stored: no new table, migration, or repository method.
+- The card is on demand by design — a report nobody asked for must not spend a request
+  or paint a failure on every profile visit.
+- `DRAFT`/`VOID` documents are never history, but money against them is still money.
+- Refunds are out of scope, so no open question was opened for their statement line;
+  record the shape when the feature is scheduled.

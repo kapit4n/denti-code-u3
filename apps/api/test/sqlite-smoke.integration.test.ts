@@ -1112,6 +1112,47 @@ describe('API on SQLite', () => {
       url: '/api/v1/patients/00000000-0000-4000-8000-000000000001/balance',
     });
     expect(unknownId.statusCode).toBe(404);
+
+    // The statement is the same ledger read as a history: the settled document, the
+    // payment that settled it, then the open document — oldest first, with the
+    // balance after each line. Its closing figure is the balance's own `balanceMinor`,
+    // so the summary and the history cannot disagree.
+    const statement = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/statement`,
+    });
+    expect(statement.statusCode).toBe(200);
+    expect(statement.json()).toMatchObject({
+      currency: 'USD',
+      billedMinor: 45_000,
+      paidMinor: 23_000,
+      closingBalanceMinor: 22_000,
+    });
+    expect(
+      (statement.json() as { entries: { kind: string; reference: string | null }[] }).entries,
+    ).toEqual([
+      expect.objectContaining({ kind: 'INVOICE', reference: 'F001-00001', balanceMinor: 23_000 }),
+      expect.objectContaining({
+        kind: 'PAYMENT',
+        reference: '*** 4242',
+        balanceMinor: 0,
+      }),
+      expect.objectContaining({ kind: 'INVOICE', reference: 'F001-00002', balanceMinor: 22_000 }),
+    ]);
+
+    // A stranger's statement is the same 404 as a stranger's balance.
+    const foreignStatement = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${foreignPatientId}/statement`,
+    });
+    expect(foreignStatement.statusCode).toBe(404);
+    expect(foreignStatement.json().error.code).toBe('NOT_FOUND');
+
+    const unknownStatement = await app.inject({
+      method: 'GET',
+      url: '/api/v1/patients/00000000-0000-4000-8000-000000000001/statement',
+    });
+    expect(unknownStatement.statusCode).toBe(404);
   });
 
   it('summarises the day on the dashboard, occupancy included', async () => {

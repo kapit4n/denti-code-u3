@@ -366,6 +366,13 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       headers: { 'x-clinic-id': clinic },
     });
 
+  const getStatement = (patientId: string, clinic = clinicId) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${patientId}/statement`,
+      headers: { 'x-clinic-id': clinic },
+    });
+
   /**
    * The row as stored, with the timestamp read as an instant.
    *
@@ -2350,6 +2357,36 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
         unallocatedPaymentsMinor: 0,
         balanceMinor: 19_000,
       });
+
+      // The statement is the same ledger as a history: both issued documents and the
+      // payment, oldest first, closing on the balance's own figure. The fixture's
+      // fixed clock stamps every line with the same instant, so the order is the
+      // documented tie-break — documents by id, then payments — and only the totals
+      // and closing figure are asserted here.
+      const statement = await getStatement(patient);
+      expect(statement.statusCode).toBe(200);
+      expect(statement.json()).toMatchObject({
+        currency: 'USD',
+        billedMinor: 24_000,
+        paidMinor: 5_000,
+        closingBalanceMinor: 19_000,
+      });
+      const lines = (
+        statement.json() as {
+          entries: {
+            kind: string;
+            debitMinor: number;
+            creditMinor: number;
+            balanceMinor: number;
+          }[];
+        }
+      ).entries;
+      expect(lines.map((line) => line.kind).sort()).toEqual(['INVOICE', 'INVOICE', 'PAYMENT']);
+      expect(lines.reduce((total, line) => total + line.debitMinor, 0)).toBe(24_000);
+      expect(lines.reduce((total, line) => total + line.creditMinor, 0)).toBe(5_000);
+      // The running balance starts at zero and ends on the closing figure.
+      expect(lines[0]?.balanceMinor).toBe(lines[0]!.debitMinor - lines[0]!.creditMinor);
+      expect(lines.at(-1)?.balanceMinor).toBe(19_000);
     });
 
     it('states a patient who has never been billed as nothing owed, not as a stranger', async () => {
@@ -2373,6 +2410,11 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       const foreign = await getBalance(otherPatient);
       expect(foreign.statusCode).toBe(404);
       expect(foreign.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+
+      // The statement decides the same subject first, so it answers the same 404 —
+      // never an empty history that reads as "nothing billed".
+      expect((await getStatement(missingId)).statusCode).toBe(404);
+      expect((await getStatement(otherPatient)).statusCode).toBe(404);
     });
   });
 

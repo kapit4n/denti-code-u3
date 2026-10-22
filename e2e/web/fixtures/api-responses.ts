@@ -908,6 +908,65 @@ export const settledBalance = {
 } as const;
 
 /**
+ * The statement behind `anaInvoices` and `anaBalance`, oldest first.
+ *
+ * Three lines and three running balances: the open document bills 23 000, a card
+ * payment takes 12 000 off it, then the settled document bills 12 000. The closing
+ * figure is `anaBalance.balanceMinor` (23 000), which is the point — the history and
+ * the summary must agree. The first document is issued at 02:00Z on the 5th, which
+ * Lima (UTC−5) reads as the 4th, so a spec can tell the clinic's clock from UTC's.
+ * The numbers are written down here rather than recomputed, exactly as the card
+ * draws them without recomputing.
+ */
+export const anaStatement = {
+  currency: 'USD',
+  billedMinor: 35000,
+  paidMinor: 12000,
+  closingBalanceMinor: 23000,
+  entries: [
+    {
+      kind: 'INVOICE',
+      id: '11111111-cccc-4a11-9ccc-000000000001',
+      reference: 'F001-00001',
+      method: null,
+      occurredAt: '2026-10-05T02:00:00.000Z',
+      debitMinor: 23000,
+      creditMinor: 0,
+      balanceMinor: 23000,
+    },
+    {
+      kind: 'PAYMENT',
+      id: '11111111-cccc-4a11-9ccc-000000000004',
+      reference: '*** 4242',
+      method: 'CARD',
+      occurredAt: '2026-10-06T15:00:00.000Z',
+      debitMinor: 0,
+      creditMinor: 12000,
+      balanceMinor: 11000,
+    },
+    {
+      kind: 'INVOICE',
+      id: '11111111-cccc-4a11-9ccc-000000000002',
+      reference: 'F001-00002',
+      method: null,
+      occurredAt: '2026-10-07T15:00:00.000Z',
+      debitMinor: 12000,
+      creditMinor: 0,
+      balanceMinor: 23000,
+    },
+  ],
+} as const;
+
+/** A patient with nothing billed or paid — the statement's empty sentence. */
+export const noStatement = {
+  currency: 'USD',
+  billedMinor: 0,
+  paidMinor: 0,
+  closingBalanceMinor: 0,
+  entries: [],
+} as const;
+
+/**
  * The plan the API answers `POST .../treatment-plans` with.
  *
  * The `id` is the server's, which is what makes it useful: a spec asserting the

@@ -54,6 +54,7 @@ import { useClinicSettings } from '../features/clinic/queries/clinic-settings-qu
 import { usePatient } from '../features/patients/hooks/use-patients.js';
 import { PatientTreatmentPlansSection } from '../features/patients/components/patient-treatment-plans-section.js';
 import { PatientInvoicesSection } from '../features/patients/components/patient-invoices-section.js';
+import { PatientStatementSection } from '../features/patients/components/patient-statement-section.js';
 import { PatientBalanceSection } from '../features/patients/components/patient-balance-section.js';
 import { PatientOdontogramSection } from '../features/patients/components/patient-odontogram-section.js';
 
@@ -315,6 +316,12 @@ function PatientProfile() {
       */}
       <PatientBalanceSection patientId={patient.id} />
       <PatientInvoicesSection patientId={patient.id} clinicTimeZone={timeZone} />
+      {/*
+        The history behind the two cards above, opened on demand: the same documents
+        and money in order, with the balance after each line. It is deliberately not
+        mounted as an always-on request — a statement is read when it is asked for.
+      */}
+      <PatientStatementSection patientId={patient.id} clinicTimeZone={timeZone} />
 
       {/*
         The clinical map: its own request and its own write, mounted as a sibling of

@@ -996,10 +996,11 @@ test.describe('Visit workspace', () => {
     await expect(page.getByTestId('payments-paid')).toHaveText('55.00');
     await expect(page.getByTestId('payments-still-to-pay')).toHaveText('30.00');
 
-    // The settlement folded the whole bill into an invoice, so the door closes
-    // once the remainder is collected elsewhere, and here it is fully settled.
-    await expect(page.getByText(/fully settled/)).toBeVisible();
-    await expect(page.getByTestId('record-payment')).toHaveCount(0);
+    // The settlement folded the whole bill into an invoice, but 30.00 is still owed,
+    // so the follow-up door stays open (open question 20) — the form remains for the
+    // instalment that collects the remainder.
+    await expect(page.getByTestId('record-payment')).toBeVisible();
+    await expect(page.getByText(/fully settled/)).toHaveCount(0);
 
     const post = api.recorded.find(
       (entry) => entry.method === 'POST' && entry.url.includes(`/visits/${VISIT_ID}/payments`),

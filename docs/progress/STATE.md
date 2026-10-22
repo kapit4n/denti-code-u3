@@ -1,15 +1,15 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 44 (Milestone 9, slice 3 — invoice-scoped follow-up payments)
+> Last updated: session 45 (Milestone 9, slice 4 — patient statement)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
-> **Milestone 9's third slice landed in session 44: follow-up payments against a visit's open documents.** Open question 20 is now answered and closed in `docs/open-questions.md`; T6 was closed in session 43. Remaining Milestone 9 bullet: invoice controls in the visit workspace.
+> **Milestone 9 is complete.** Session 44 landed invoice-scoped follow-up payments and the visit workspace's invoice controls; session 45 landed the **patient statement**, the last roadmap bullet. The ledger now answers both questions: what is owed (`/balance`) and how it got that way (`/statement`). The next milestone is **Milestone 10 — INVENTORY** (roadmap order); no product decision is blocking it.
 
 ## Phase
 
 **PHASE 4 — CLINICAL WORKFLOWS** (Milestone 5 of `docs/roadmap.md`)
 
-**Milestone 9 — PAYMENTS / BILLING has begun (session 40).** The first slice issued an
+**Milestone 9 — PAYMENTS / BILLING is complete (sessions 40–45).** The first slice issued an
 invoice and read it back: a visit's un-invoiced charges are raised as one numbered
 `ISSUED` document (`POST /api/v1/visits/:visitId/invoices`, bodyless, 201), and the
 ledger is read through `GET /api/v1/patients/:patientId/invoices` (newest-first) and
@@ -18,9 +18,9 @@ serializes the read-then-write under `pg_advisory_xact_lock(hashtext(clinic_id))
 relies on its single synchronous writer. The patient profile gained a read-only
 **Invoices** card. Issuing is deliberately independent of payment; settlement (session 32) now routes through the same `issueInvoice`. The session also finished the slice's
 browser spec, which had been committed against the intended card rather than the card
-that exists — see the LOG. The other Milestone 9 bullets (invoice-scoped
-payments/installments, patient balances and statements, invoice controls in the visit
-workspace) remain.
+that exists — see the LOG. Session 43 added the **balance**, session 44 the
+**invoice-scoped follow-up payments** plus the visit workspace's invoice controls, and
+session 45 the **statement**. Every bullet is closed.
 
 **Session 40's slice was completed as a follow-up (committed `61bde80`).** Its invoices
 browser spec had been committed against the _intended_ card
@@ -126,8 +126,38 @@ number that drifts, and the invoices already carry everything needed to add one 
 - **Counts.** Domain 318 → 327, app 313 → 318, API smoke 24 → 25, e2e 124 → 128.
   Typecheck 12/12, lint 12/12 + `BOUNDARY GUARD OK`, format clean, build 5/5.
 
-**Status: Milestones 5–8 complete; Milestone 9 in progress (slices 1–2, sessions 40
-and 43);
+**Session 45 — the statement (Milestone 9's last bullet).**
+
+- **The use case** (`packages/domain/src/billing/patient-statement.ts`).
+  `getPatientStatement` merges the documents and payments already readable through
+  existing ports — **no new repository methods** — into one oldest-first ledger with
+  a running balance. `DRAFT` and `VOID` documents are not lines (they were never
+  owed), but their payments still count, so a stray credit cannot vanish. Ties break
+  `INVOICE` before `PAYMENT` then by id, so the order is stable across reads. The
+  running balance is signed, not clamped: a prepayment reads negative. Closing
+  `balanceMinor` equals billed − paid and therefore equals the Balance card's own
+  server figure.
+- **API** — `GET /api/v1/patients/:patientId/statement` in `routes/invoices.ts`,
+  through the same ledger repositories. The patient is decided first, so a foreign id
+  is `NOT_FOUND` before any read, exactly like `/balance`.
+- **App** — `usePatientStatement` is gated behind an on-demand **Statement** card
+  ("Show statement"): the report costs no request until asked for, which also keeps
+  every existing profile browser spec from needing another fixture. The card draws
+  the API's order and balances, the clinic's days, and its own error/empty states.
+- **Tests.** 7 new domain tests (ordering/running balance, DRAFT/VOID exclusion,
+  shared-instant tie-break, negative prepayment, `NOT_FOUND`-first read order, clinic
+  currency on an empty history, missing clinic); SQLite smoke and PG integration
+  assertions (the PG ones require `TEST_DATABASE_URL`); 4 component tests; a new
+  `e2e/web/patient-statement.spec.ts` (3 tests) including "no request before open".
+  Session 44's change left one stale browser assertion in `visit-workspace.spec.ts`
+  (it still expected "fully settled" after a 55/85 payment); it was realigned to the
+  follow-up door staying open for the 30.00 remainder.
+- **Counts.** Domain 331 → 338, app 318 → 322, API SQLite smoke 25 (unchanged total,
+  new assertions), e2e 128 → 131. Typecheck 12/12, lint 12/12 + `BOUNDARY GUARD OK`,
+  format clean, build 5/5, e2e 131/131.
+
+**Status: Milestones 5–9 complete; next is Milestone 10 — INVENTORY
+(`docs/roadmap.md`).
 dashboard UI/UX redesign delivered (session 42, presentation only).
 Milestone 8 (treatments) now has its catalogue, its
 treatment-plan read _and_ write sides, and both halves of the plan-item link — the
@@ -452,25 +482,24 @@ Single source of truth for the original brief: `docs/progress/BRIEF.md`
 - [x] Vitest + RTL + Playwright foundations present
 - [x] `docs/progress/REPORT.md` with the 13-section final report
 
-## Verification log (last run, session 43 — Milestone 9, patient balance)
+## Verification log (last run, session 45 — Milestone 9, patient statement)
 
 | Command                     | Result                                                                                                            |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `pnpm run typecheck`        | 12/12 tasks pass                                                                                                  |
 | `pnpm run lint`             | 12/12 tasks pass, `BOUNDARY GUARD OK` (one pre-existing warning)                                                  |
 | `pnpm run format:check`     | clean                                                                                                             |
-| `pnpm run test`             | 12/12 tasks pass — domain 327, validation 142, app 318, api-client 15, database 6, desktop 3; API SQLite smoke 25 |
+| `pnpm run test`             | 12/12 tasks pass — domain 338, validation 142, app 322, api-client 15, database 6, desktop 3; API SQLite smoke 25 |
 | `pnpm run test:integration` | **not run — no Docker/PostgreSQL in this environment**                                                            |
 | `pnpm run build`            | 5/5 tasks pass                                                                                                    |
 | `pnpm run guard:boundaries` | OK                                                                                                                |
-| `pnpm run test:e2e`         | 128/128 pass (+4 — the new `e2e/web/patient-balance.spec.ts`)                                                     |
+| `pnpm run test:e2e`         | 131/131 pass (+3 — the new `e2e/web/patient-statement.spec.ts`)                                                   |
 
-Counts are identical to session 41 on purpose: a redesign that changed a count would
-mean a behaviour change. The dashboard's own 9 specs in `e2e/web/dashboard.spec.ts`
-are the redesign's real constraint — they pin the metric test ids, the exact `—` for
-an unknown occupancy, the two appointment rows with the payload's own `CONFIRMED`
-status text, the two calendar bars with their `bookings` titles, the empty sentence
-and a console-error-free load.
+The e2e total also includes the repaired assertion in `visit-workspace.spec.ts`: its
+55/85 payment test still expected "fully settled" after session 44 opened the
+follow-up door, so it now expects the form to stay for the 30.00 remainder. The
+full suite was red until that was realigned, which is why session 44 could not have
+run it green.
 
 **`scripts/dev-desktop.sh` is shell, so it is not covered by the pnpm suites.** It was
 verified by `bash -n` (syntax), by a closed-port/open-port probe test of the `/dev/tcp`

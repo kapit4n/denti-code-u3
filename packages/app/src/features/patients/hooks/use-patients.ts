@@ -20,6 +20,7 @@ import type {
   PatientListEntry,
   PatientOdontogram,
   PatientProfile,
+  PatientStatement,
   TreatmentPlanSummary,
 } from '@denti-code-u3/domain';
 
@@ -144,5 +145,28 @@ export function usePatientBalance(patientId: string) {
     queryKey: ['patients', 'balance', patientId],
     queryFn: () => client.get<PatientBalance>(`/patients/${patientId}/balance`),
     enabled: patientId.length > 0,
+  });
+}
+
+/**
+ * The patient's ledger as a history: every issued document and payment, oldest
+ * first, with the balance after each line.
+ *
+ * `enabled` is the section's own switch. A statement is a report the desk asks for
+ * rather than a card that is always on screen, so the profile does not fetch it
+ * until the person opens it — and a profile whose statement read failed does not
+ * paint a red box nobody asked to see.
+ *
+ * The figures are the server's, including the running balance and the closing
+ * figure. A patient this clinic does not hold answers 404 rather than an empty
+ * history, for the same reason the balance does.
+ */
+export function usePatientStatement(patientId: string, enabled = true) {
+  const client = useApiClient();
+
+  return useQuery({
+    queryKey: ['patients', 'statement', patientId],
+    queryFn: () => client.get<PatientStatement>(`/patients/${patientId}/statement`),
+    enabled: enabled && patientId.length > 0,
   });
 }

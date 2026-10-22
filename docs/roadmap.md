@@ -374,6 +374,11 @@ validity rules, not a drawing hack.
 
 ## Milestone 9 — PAYMENTS / BILLING
 
+**Complete (session 45).** Every bullet is closed: charges → invoices (session 40),
+numbering and status (session 40, refined session 44), payments/methods/allocation
+(sessions 31–32, invoice-scoped follow-up in session 44), patient balances (session 43) and statements (session 45), and the visit workspace's invoice controls (session
+44). See `docs/progress/LOG.md`.
+
 - Charges → invoices
 - Invoice numbering and status
 - Payments, methods, allocation

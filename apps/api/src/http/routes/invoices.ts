@@ -1,18 +1,18 @@
 /**
- * The invoice read side: one patient's documents, one document whole, and what the
- * patient owes across both.
+ * The invoice read side: one patient's documents, one document whole, what the
+ * patient owes across both, and the statement that puts them in order.
  *
  * Milestone 9's look at the ledger from the outside. An invoice is raised by
  * `POST /api/v1/visits/:visitId/invoices` (and, as a side effect, by a settlement);
- * these reads are where a document is then found and quoted, and where the money is
- * totalled up. All three are scoped to the clinic on the request (ADR 0014) — the
- * clinic is never in the path, the patient is the subject, and a document another
- * clinic holds is not this clinic's to read.
+ * these reads are where a document is then found and quoted, where the money is
+ * totalled up, and where the history is read oldest first. All of them are scoped to
+ * the clinic on the request (ADR 0014) — the clinic is never in the path, the patient
+ * is the subject, and a document another clinic holds is not this clinic's to read.
  *
  * A patient this clinic does not hold is a 404 on every one of them, not an empty
  * page: "no such patient" and "a patient with no bills yet" are different answers,
  * and a statement that cannot tell them apart would tell a stranger their balance is
- * zero. The document and balance reads decide that from the store's own
+ * zero. The document, balance and statement reads decide that from the store's own
  * `undefined`-versus-`[]`, so the HTTP layer never has to.
  */
 
@@ -20,6 +20,7 @@ import type { FastifyInstance } from 'fastify';
 
 import {
   getPatientBalance,
+  getPatientStatement,
   type ClinicRepository,
   type InvoiceRepository,
   type PaymentRepository,
@@ -126,6 +127,34 @@ export async function registerInvoiceRoutes(
       });
     } catch (error) {
       return sendProblem(reply, request, error, 'Failed to read the balance');
+    }
+  });
+
+  /**
+   * The patient's statement: every issued document and every payment, oldest first,
+   * with the balance after each line.
+   *
+   * The history behind the balance, not a second balance. The same two reads and the
+   * same currency the summary uses, ordered by when each line happened; the closing
+   * figure therefore equals `GET …/balance`'s `balanceMinor`. Drafts and voids are
+   * not lines, but the payments that once pointed at them are — money received does
+   * not stop existing because the document was retired.
+   *
+   * A patient this clinic does not hold is a 404, thrown by the use case before the
+   * clinic or the payments are read.
+   */
+  app.get('/api/v1/patients/:patientId/statement', async (request, reply) => {
+    const clinicId = request.clinicId as ClinicId;
+    const { patientId } = request.params as { patientId: string };
+
+    try {
+      return await getPatientStatement(clinicId, asPatientId(patientId), {
+        invoices,
+        payments,
+        clinics,
+      });
+    } catch (error) {
+      return sendProblem(reply, request, error, 'Failed to read the statement');
     }
   });
 }
