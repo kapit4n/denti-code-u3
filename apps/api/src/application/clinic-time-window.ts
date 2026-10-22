@@ -195,3 +195,88 @@ export const CAPACITY_OCCUPYING_STATUSES = [
   'ARRIVED',
   'IN_TREATMENT',
 ] as const;
+
+/** One clinic-local calendar day in a report period. */
+export interface ClinicCalendarDay {
+  /** The inclusive local date, `YYYY-MM-DD`. */
+  readonly date: string;
+  /** 0 = Sunday … 6 = Saturday, matching `clinic_operating_hours`. */
+  readonly dayOfWeek: number;
+}
+
+/** A closed clinic-local date range resolved to a half-open UTC instant window. */
+export interface ClinicDateRange {
+  /** Inclusive first local date, `YYYY-MM-DD`. */
+  readonly from: string;
+  /** Inclusive last local date, `YYYY-MM-DD`. */
+  readonly to: string;
+  /** Clinic-local midnight on `from`, as a UTC instant. */
+  readonly start: Date;
+  /** Clinic-local midnight on the day after `to`, as a UTC instant. */
+  readonly end: Date;
+  /** Every local day in the period, in calendar order. */
+  readonly days: ReadonlyArray<ClinicCalendarDay>;
+}
+
+function calendarDateFromIso(date: string): { year: number; month: number; day: number } {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) {
+    throw new RangeError(`Expected a clinic date as YYYY-MM-DD, received "${date}"`);
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const check = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    check.getUTCFullYear() !== year ||
+    check.getUTCMonth() !== month - 1 ||
+    check.getUTCDate() !== day
+  ) {
+    throw new RangeError(`"${date}" is not a calendar date`);
+  }
+
+  return { year, month, day };
+}
+
+/**
+ * Turns an inclusive pair of clinic-local dates into the instant window a query needs.
+ *
+ * `to` is inclusive, which is how a person reads a date filter. The resulting `end` is
+ * therefore local midnight on the **following** day, so the database query stays
+ * half-open `[start, end)` and an appointment at 23:59 is still inside the period.
+ */
+export function resolveClinicDateRange(
+  from: string,
+  to: string,
+  timeZone: string,
+): ClinicDateRange {
+  const first = calendarDateFromIso(from);
+  const last = calendarDateFromIso(to);
+
+  const start = clinicMidnightUtc(first.year, first.month, first.day, timeZone);
+  const afterLast = new Date(Date.UTC(last.year, last.month - 1, last.day + 1));
+  const end = clinicMidnightUtc(
+    afterLast.getUTCFullYear(),
+    afterLast.getUTCMonth() + 1,
+    afterLast.getUTCDate(),
+    timeZone,
+  );
+
+  if (end <= start) {
+    throw new RangeError('The end date cannot be before the start date');
+  }
+
+  const days: ClinicCalendarDay[] = [];
+  const cursor = new Date(Date.UTC(first.year, first.month - 1, first.day));
+  const lastDay = Date.UTC(last.year, last.month - 1, last.day);
+
+  while (cursor.getTime() <= lastDay) {
+    const date = cursor.toISOString().slice(0, 10);
+    days.push({ date, dayOfWeek: cursor.getUTCDay() });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return { from, to, start, end, days };
+}

@@ -3,7 +3,7 @@
  * pixels: one `AppRoot`, mountable in both environments, with no shell-specific
  * code path inside it.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { AppRoot } from './app-root.js';
 import { defaultWebCapabilities, type PlatformCapabilities } from './platform/index.js';
@@ -63,10 +63,22 @@ describe('platform contract', () => {
     expect(webKeys).toEqual(desktopKeys);
   });
 
-  it('rejects saveFile on web instead of pretending it worked', async () => {
-    await expect(defaultWebCapabilities.saveFile('x.csv', 'a,b')).rejects.toThrow(
-      /not available on the current platform: saveFile/,
-    );
+  it('downloads an export on web and names the file it saved', async () => {
+    const createObjectURL = vi.fn(() => 'blob:report');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
+
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const saved = await defaultWebCapabilities.saveFile('report.csv', 'a,b');
+
+    expect(saved).toBe('report.csv');
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    expect(click).toHaveBeenCalledOnce();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:report');
+
+    click.mockRestore();
+    vi.unstubAllGlobals();
   });
 
   it('keeps the exported contract and the internal contract identical', () => {

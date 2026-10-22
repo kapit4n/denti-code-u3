@@ -1427,3 +1427,78 @@ export const recordedStockMovement = {
     performedAt: '2026-10-05T15:00:00.000Z',
   },
 } as const;
+
+/**
+ * `GET /api/v1/reports/summary`, as the reporting page reads it.
+ *
+ * The figures are distinguishable rather than internally derived: production reads
+ * 1,234.56, collections 900.00, outstanding 334.56. A spec that re-added these would
+ * be testing its own arithmetic; the API's is covered by the SQLite smoke and the
+ * PostgreSQL integration spec.
+ *
+ * The period is the frozen suite week — Monday 5 October 2026 in Lima — so the
+ * export's file name is stable. The second row has no clinician id, because a charge
+ * filed without a visit must stay visible under "Unassigned" rather than disappear.
+ */
+export const reportSummary = {
+  period: {
+    from: '2026-10-01',
+    to: '2026-10-05',
+    timeZone: 'America/Lima',
+    dentistId: null,
+  },
+  currencyCode: 'PEN',
+  appointments: {
+    total: 9,
+    completed: 4,
+    cancelled: 1,
+    noShow: 1,
+    pending: 2,
+    inTreatment: 1,
+    bookedMinutes: 270,
+  },
+  production: { totalMinor: 123_456 },
+  collections: { totalMinor: 90_000 },
+  outstanding: { totalMinor: 33_456 },
+  occupancy: { bookedMinutes: 270, capacityMinutes: 1_500, rate: 18 },
+  dentists: [
+    {
+      dentistId: DENTIST_ID,
+      dentistName: 'Dra. Rivera',
+      appointments: 7,
+      completed: 3,
+      cancelled: 1,
+      noShow: 1,
+      pending: 2,
+      inTreatment: 0,
+      bookedMinutes: 210,
+      productionMinor: 100_000,
+      capacityMinutes: 1_500,
+      occupancyRate: 14,
+    },
+    {
+      dentistId: null,
+      dentistName: 'Unassigned',
+      appointments: 2,
+      completed: 1,
+      cancelled: 0,
+      noShow: 0,
+      pending: 0,
+      inTreatment: 1,
+      bookedMinutes: 60,
+      productionMinor: 23_456,
+      capacityMinutes: 1_500,
+      occupancyRate: 4,
+    },
+  ],
+  generatedAt: '2026-10-05T13:00:00.000Z',
+} as const;
+
+/** Everything the reports page asks for: the clinic, its clinicians, and the summary. */
+export function reportsFixtures(): MockedResponses {
+  return {
+    ...clinicFixture(),
+    '/api/v1/dentists': { body: everyDentistList },
+    '/api/v1/reports/summary': { body: reportSummary },
+  };
+}

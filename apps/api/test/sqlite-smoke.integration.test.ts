@@ -1321,6 +1321,85 @@ describe('API on SQLite', () => {
     expect(body.clinic.currencyCode).toBe('USD');
   });
 
+  it('summarises a report period, and keeps unattributable money clinic-wide', async () => {
+    // The suite has booked two 30-minute appointments today (one now in treatment)
+    // and raised 45_000 of charges, 23_000 of which has been collected. The clinic
+    // opens 08:00–17:00 for one active dentist: 540 minutes of capacity.
+    const day = today.start.toISOString().slice(0, 10);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/reports/summary?from=${day}&to=${day}`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.period).toMatchObject({ from: day, to: day, timeZone: 'UTC', dentistId: null });
+    expect(body.currencyCode).toBe('USD');
+    expect(body.appointments).toMatchObject({
+      total: 2,
+      completed: 0,
+      cancelled: 0,
+      noShow: 0,
+      pending: 1,
+      inTreatment: 1,
+      bookedMinutes: 60,
+    });
+    expect(body.production.totalMinor).toBe(45_000);
+    // Payments have no dentist, so the clinic-period figure is the only honest one.
+    expect(body.collections.totalMinor).toBe(23_000);
+    expect(body.outstanding.totalMinor).toBe(22_000);
+    expect(body.occupancy).toMatchObject({
+      bookedMinutes: 60,
+      capacityMinutes: 540,
+      rate: 11,
+    });
+    expect(body.dentists).toEqual([
+      expect.objectContaining({
+        dentistId,
+        dentistName: 'Dr Book',
+        appointments: 2,
+        pending: 1,
+        inTreatment: 1,
+        bookedMinutes: 60,
+        productionMinor: 45_000,
+        capacityMinutes: 540,
+        occupancyRate: 11,
+      }),
+    ]);
+
+    // Filtering to the one clinician narrows the appointment and production figures
+    // but not collections, and leaves the denominator at one clinician's hours.
+    const filtered = await app.inject({
+      method: 'GET',
+      url: `/api/v1/reports/summary?from=${day}&to=${day}&dentistId=${dentistId}`,
+    });
+    expect(filtered.statusCode).toBe(200);
+    expect(filtered.json().collections.totalMinor).toBe(23_000);
+    expect(filtered.json().period.dentistId).toBe(dentistId);
+
+    // A reversed range is refused at the boundary, and a period wider than the
+    // report's own limit is refused by the route before any table is read.
+    const reversed = await app.inject({
+      method: 'GET',
+      url: '/api/v1/reports/summary?from=2026-10-10&to=2026-10-01',
+    });
+    expect(reversed.statusCode).toBe(422);
+
+    const tooWide = await app.inject({
+      method: 'GET',
+      url: '/api/v1/reports/summary?from=2025-01-01&to=2026-12-31',
+    });
+    expect(tooWide.statusCode).toBe(422);
+
+    // A clinician from another clinic is unknown here, not an empty report.
+    const foreign = await app.inject({
+      method: 'GET',
+      url: `/api/v1/reports/summary?from=${day}&to=${day}&dentistId=${otherDentistId}`,
+    });
+    expect(foreign.statusCode).toBe(404);
+    expect(foreign.json().error.code).toBe('NOT_FOUND');
+  });
+
   it('reports the booked day in the calendar preview', async () => {
     const response = await app.inject({
       method: 'GET',

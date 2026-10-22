@@ -404,6 +404,15 @@ and both engines behind one port. See `docs/progress/LOG.md`.
 - Appointments, production, collections, occupancy, dentist performance
 - Date/clinic/dentist filters; export
 
+**Status: complete.** `GET /api/v1/reports/summary` assembles a clinic-local period
+from the rows the clinic already keeps — appointments, net charge value, payments,
+open invoice balance and recorded opening hours — through a `ReportsReadStore`
+implemented once per engine. `/reports` draws the figures, the clinician table and a
+CSV export (`PlatformCapabilities.saveFile`, a download in both shells). ADR 0027
+records the definitions and the attribution rule: payments carry no clinician, so
+collections are clinic-wide, and work with no visit is shown as "Unassigned". See
+`docs/progress/STATE.md`.
+
 ---
 
 ## Milestone 12 — PRODUCTION HARDENING

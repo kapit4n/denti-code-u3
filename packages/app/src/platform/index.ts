@@ -5,18 +5,14 @@
  * Tauri API directly (architecture rule 5). Instead it declares the capabilities
  * it needs, and the deployment shell provides an implementation.
  *
- * This module holds the contract and the browser-only defaults. It is NOT the
- * implementation split: no per-shell `platform.ts` file exists yet, because the only
- * capability that genuinely needs a per-shell implementation — a native save
- * dialog — has no consumer until a feature needs to export a file.
+ * This module holds the contract and the browser defaults. `saveFile` is a download
+ * in both targets: a webview is a browser, and a CSV export that lands in the
+ * download folder works without a new Tauri capability or a native dialog. If the
+ * desktop shell later wants a real "save as" dialog, it provides its own
+ * capabilities through `mountApp({ capabilities })`; the app does not need to know.
  *
- * Until then `capabilitiesForTarget` answers for both targets, and the desktop
- * shell's native operations reject with `UNSUPPORTED` rather than pretending to
- * work. That keeps architecture rule 5 satisfied (no Tauri import in the app,
- * no `window` assumption in a native window) without inventing an abstraction
- * nothing calls yet. When a feature does need a native dialog, this is the file
- * that changes: add a desktop `platform.ts` implementation, and have the desktop shell
- * pass its capabilities through `mountApp({ capabilities })`.
+ * The web implementation creates an object URL and clicks a temporary anchor, then
+ * revokes the URL. It never imports Tauri, so architecture rule 5 stays satisfied.
  */
 
 /** How the app is being presented. Useful for layout decisions, not branching logic. */
@@ -31,7 +27,12 @@ export interface PlatformCapabilities {
    * Web: `window.open`. Desktop: the OS browser.
    */
   openExternal(url: string): Promise<void>;
-  /** Show a native "save as" dialog. Rejects with `UNSUPPORTED` on web. */
+  /**
+   * Save a text file under `suggestedName`, resolving with the name used.
+   *
+   * The web build downloads it. A native shell may later show a "save as" dialog,
+   * but the caller only needs to know the export left the page.
+   */
   saveFile(suggestedName: string, contents: string): Promise<string>;
   /** Read the operator's locale, e.g. `es-PE`. */
   readonly locale: string;
@@ -54,9 +55,8 @@ export class PlatformUnsupportedError extends Error {
  *
  * `target` is reported honestly from the argument rather than hardcoded to
  * `web`, so a desktop build renders "Desktop" in the runtime badge instead of
- * lying about where it is running. Everything that needs the OS still rejects:
- * a missing native call must be visible in development, not discovered when a
- * clinician exports a report.
+ * lying about where it is running. `openExternal` still uses the browser for both
+ * targets, and a missing DOM makes the operations reject rather than pretend.
  */
 export function capabilitiesForTarget(target: RuntimeTarget): PlatformCapabilities {
   const locale = typeof navigator === 'undefined' ? 'es' : navigator.language;
@@ -77,8 +77,34 @@ export function capabilitiesForTarget(target: RuntimeTarget): PlatformCapabiliti
       }
       window.open(url, '_blank', 'noopener,noreferrer');
     },
-    async saveFile() {
-      throw new PlatformUnsupportedError('saveFile');
+    async saveFile(suggestedName, contents) {
+      // A native window with no DOM (or a test environment without it) cannot
+      // download. Say so, rather than silently returning a name for a file that was
+      // never written.
+      if (
+        typeof document === 'undefined' ||
+        typeof URL === 'undefined' ||
+        typeof URL.createObjectURL !== 'function'
+      ) {
+        throw new PlatformUnsupportedError('saveFile');
+      }
+
+      const blob = new Blob([contents], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = suggestedName;
+      anchor.rel = 'noopener';
+      anchor.style.display = 'none';
+
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      // Revoking immediately can race the download in some browsers; one turn of
+      // the event loop is enough for the browser to take the blob.
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+
+      return suggestedName;
     },
   };
 }

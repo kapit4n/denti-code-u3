@@ -17,11 +17,14 @@ import type { Repositories, UnitOfWork } from '@denti-code-u3/domain';
 
 import { isSqliteUrl } from '@denti-code-u3/database/db-url';
 import type { DashboardReadStore } from '../../application/dashboard-read-store.js';
+import type { ReportsReadStore } from '../../application/reports-read-store.js';
 import { createPostgresConnection } from './postgres/connection.js';
 import { PostgresDashboardReadStore } from './postgres/dashboard-store.js';
+import { PostgresReportsReadStore } from './postgres/reports-store.js';
 import { DrizzleUnitOfWork } from './postgres/unit-of-work.js';
 import { createSqliteConnection, type SqliteDatabase } from './sqlite/connection.js';
 import { SQLiteDashboardReadStore } from './sqlite/dashboard-store.js';
+import { SQLiteReportsReadStore } from './sqlite/reports-store.js';
 import { SQLiteUnitOfWork } from './sqlite/unit-of-work.js';
 import { sqliteRepositoriesFor } from './sqlite/repositories.js';
 import { repositoriesFor } from './postgres/unit-of-work.js';
@@ -40,6 +43,7 @@ export interface DatabaseConnection {
   readonly repositories: Repositories;
   readonly unitOfWork: UnitOfWork;
   readonly dashboard: DashboardReadStore;
+  readonly reports: ReportsReadStore;
   /** `true` when the database answers — used by the readiness probe. */
   isReachable(): Promise<boolean>;
   close(): Promise<void> | void;
@@ -63,6 +67,7 @@ function openPostgres(databaseUrl: string, fallbackTimeZone: string): DatabaseCo
     repositories: repositoriesFor(db),
     unitOfWork: new DrizzleUnitOfWork(db),
     dashboard: new PostgresDashboardReadStore(db, fallbackTimeZone),
+    reports: new PostgresReportsReadStore(db, fallbackTimeZone),
     isReachable: async () => {
       try {
         await sql`select 1`;
@@ -83,6 +88,7 @@ function openSqlite(databaseUrl: string, fallbackTimeZone: string): DatabaseConn
     repositories: sqliteRepositoriesFor(db),
     unitOfWork: new SQLiteUnitOfWork(client, db, sqliteRepositoriesFor),
     dashboard: new SQLiteDashboardReadStore(db, fallbackTimeZone),
+    reports: new SQLiteReportsReadStore(db, fallbackTimeZone),
     isReachable: () => {
       try {
         client.prepare('select 1').get();

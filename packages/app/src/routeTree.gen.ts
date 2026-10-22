@@ -14,6 +14,7 @@ import { Route as AgendaRouteImport } from './routes/agenda'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as PatientsRouteImport } from './routes/patients'
+import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as TreatmentsRouteImport } from './routes/treatments'
 import { Route as PatientsPatientIdRouteImport } from './routes/patients_.$patientId'
 import { Route as PatientsNewRouteImport } from './routes/patients_.new'
@@ -43,6 +44,11 @@ const InventoryRoute = InventoryRouteImport.update({
 const PatientsRoute = PatientsRouteImport.update({
   id: '/patients',
   path: '/patients',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TreatmentsRoute = TreatmentsRouteImport.update({
@@ -77,6 +83,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/inventory': typeof InventoryRoute
   '/patients': typeof PatientsRoute
+  '/reports': typeof ReportsRoute
   '/treatments': typeof TreatmentsRoute
   '/patients/$patientId': typeof PatientsPatientIdRoute
   '/patients/new': typeof PatientsNewRoute
@@ -89,6 +96,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/inventory': typeof InventoryRoute
   '/patients': typeof PatientsRoute
+  '/reports': typeof ReportsRoute
   '/treatments': typeof TreatmentsRoute
   '/patients/$patientId': typeof PatientsPatientIdRoute
   '/patients/new': typeof PatientsNewRoute
@@ -102,6 +110,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/inventory': typeof InventoryRoute
   '/patients': typeof PatientsRoute
+  '/reports': typeof ReportsRoute
   '/treatments': typeof TreatmentsRoute
   '/patients_/$patientId': typeof PatientsPatientIdRoute
   '/patients_/new': typeof PatientsNewRoute
@@ -116,6 +125,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/inventory'
     | '/patients'
+    | '/reports'
     | '/treatments'
     | '/patients/$patientId'
     | '/patients/new'
@@ -128,6 +138,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/inventory'
     | '/patients'
+    | '/reports'
     | '/treatments'
     | '/patients/$patientId'
     | '/patients/new'
@@ -140,6 +151,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/inventory'
     | '/patients'
+    | '/reports'
     | '/treatments'
     | '/patients_/$patientId'
     | '/patients_/new'
@@ -153,6 +165,7 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   InventoryRoute: typeof InventoryRoute
   PatientsRoute: typeof PatientsRoute
+  ReportsRoute: typeof ReportsRoute
   TreatmentsRoute: typeof TreatmentsRoute
   PatientsPatientIdRoute: typeof PatientsPatientIdRoute
   PatientsNewRoute: typeof PatientsNewRoute
@@ -195,6 +208,13 @@ declare module '@tanstack/react-router' {
       path: '/patients'
       fullPath: '/patients'
       preLoaderRoute: typeof PatientsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/treatments': {
@@ -241,6 +261,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   InventoryRoute: InventoryRoute,
   PatientsRoute: PatientsRoute,
+  ReportsRoute: ReportsRoute,
   TreatmentsRoute: TreatmentsRoute,
   PatientsPatientIdRoute: PatientsPatientIdRoute,
   PatientsNewRoute: PatientsNewRoute,

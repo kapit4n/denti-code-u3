@@ -1,9 +1,9 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 46 (Milestone 10 — inventory)
+> Last updated: session 47 (Milestone 11 — reports)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
-> **Milestone 10 is complete.** Session 46 delivered the clinic's inventory: items with units, stock levels and minimums, an append-only movement ledger updated in the same transaction as the cached level, usage that refuses to overdraw, and low-stock visibility on `/inventory`. The next milestone is **Milestone 11 — REPORTS** (roadmap order); no product decision is blocking it.
+> **Milestone 11 is complete.** Session 47 delivered reporting: `GET /api/v1/reports/summary` assembles a clinic-local period from the rows the clinic already keeps, and `/reports` draws appointments, production, collections, outstanding, occupancy and a per-clinician table with a CSV export. The next milestone is **Milestone 12 — PRODUCTION HARDENING** (roadmap order); no product decision is blocking it.
 
 ## Phase
 
@@ -196,7 +196,54 @@ number that drifts, and the invoices already carry everything needed to add one 
   25 → 26, e2e 131 → 135. Typecheck 12/12, lint 12/12 + `BOUNDARY GUARD OK`, format
   clean, build 5/5, e2e 135/135.
 
-**Status: Milestones 5–10 complete; next is Milestone 11 — REPORTS
+**Session 47 — reports (Milestone 11, both bullets).**
+
+- **Definitions (ADR 0027).** A report is a read model over the rows the clinic already
+  keeps; there is no aggregate table and no second source of truth for money. The route
+  owns the calendar and the meaning of each figure, and `ReportsReadStore` owns every
+  table access, implemented once per engine (ADR 0025).
+- **The period.** `resolveClinicDateRange` (`apps/api/src/application/clinic-time-window.ts`)
+  turns an inclusive pair of clinic-local dates into a half-open UTC window
+  (`[from 00:00, day-after-to 00:00)`), so `to` is inclusive the way a person reads a
+  date filter and a 23:59 appointment is still inside the period. The route caps a
+  period at 366 days. `report-capacity.ts` counts each local day's open minutes less its
+  break, times the clinician count, and returns `null` for empty or fully-closed periods
+  so occupancy can render an em dash rather than a confident `0%`.
+- **The figures.** Appointments begin-in-window with the whole duration counted;
+  production is net charge value (`unit price × quantity − discount`, pre-tax); collections
+  are payments received in the window; outstanding is the clinic's open invoice balance
+  **now**, independent of the window; occupancy is booked over recorded capacity; the
+  clinician table repeats appointments and production per row.
+- **Attribution.** Appointments and production carry a clinician because the rows do.
+  **Payments do not, so collections are clinic-wide and are never split by dentist**, even
+  under a filter — the page's copy says so. A charge with no visit is reported as
+  `dentistId: null` and labelled "Unassigned", sorted last.
+- **Persistence.** `PostgresReportsReadStore` and `SQLiteReportsReadStore`, wired onto
+  `DatabaseConnection` beside `DashboardReadStore`. Outstanding is two sums — billed
+  minus allocated over non-`VOID` invoices — never one join that would multiply an
+  invoice's total by its number of payments.
+- **API** — `GET /api/v1/reports/summary?from=YYYY-MM-DD&to=YYYY-MM-DD[&dentistId=…]`
+  in `routes/reports.ts`, wired in `app.ts` with the connection's report store, the
+  dentist repository and the clock.
+- **Validation** — `reportRangeQuerySchema` (two `iso.date`s + optional dentist uuid; a
+  reversed range is refused at the boundary).
+- **App** — `/reports` (a dangling sidebar link since the shell was built): period and
+  clinician filters defaulting to the clinic's current month **in the clinic's calendar**
+  (derived, not seeded in an effect — the effect version wrote state on the tick the
+  clinic arrived and lit React's cascading-render rule), the eight summary cards, the
+  clinician table, and a CSV export. `PlatformCapabilities.saveFile` now downloads a
+  Blob in both shells instead of rejecting on web, so export works in the desktop
+  webview with no Tauri change (rule 5 still holds: no Tauri import in the app). A
+  platform with no DOM still rejects with `PlatformUnsupportedError`.
+- **Tests.** 5 validation tests; 9 API application tests (date-range resolution + capacity);
+  an API SQLite smoke block; a PostgreSQL route spec (typechecks, skips without
+  `TEST_DATABASE_URL`); 6 app tests (clinic-period defaults, CSV, page behaviour,
+  `saveFile`); 4 new browser specs (`e2e/web/reports.spec.ts`).
+- **Counts.** Validation 148 → 153, app 327 → 337, API SQLite smoke 26 → 96 (the file's
+  own total, plus the new reports block), e2e 135 → 139. Typecheck 12/12, lint 12/12 +
+  `BOUNDARY GUARD OK` (one pre-existing warning), format clean, build 5/5, e2e 139/139.
+
+**Status: Milestones 5–11 complete; next is Milestone 12 — PRODUCTION HARDENING
 (`docs/roadmap.md`).
 dashboard UI/UX redesign delivered (session 42, presentation only).
 Milestone 8 (treatments) now has its catalogue, its

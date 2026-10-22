@@ -5,7 +5,11 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { minutesBookedWithin, resolveClinicTimeWindow } from './clinic-time-window.js';
+import {
+  minutesBookedWithin,
+  resolveClinicDateRange,
+  resolveClinicTimeWindow,
+} from './clinic-time-window.js';
 
 /** Renders an instant in the zone the same way a client would. */
 function localTime(instant: Date, timeZone: string): string {
@@ -196,5 +200,48 @@ describe('minutesBookedWithin', () => {
 
   it('counts nothing when the day has no appointments', () => {
     expect(minutesBookedWithin([], window)).toBe(0);
+  });
+});
+
+describe('resolveClinicDateRange', () => {
+  it('turns an inclusive range into a half-open clinic-local window', () => {
+    const range = resolveClinicDateRange('2026-10-01', '2026-10-31', 'America/Lima');
+
+    expect(range.start.toISOString()).toBe('2026-10-01T05:00:00.000Z');
+    // November 1st local midnight, so October 31st is fully included.
+    expect(range.end.toISOString()).toBe('2026-11-01T05:00:00.000Z');
+    expect(range.days).toHaveLength(31);
+    expect(range.days[0]).toEqual({ date: '2026-10-01', dayOfWeek: 4 });
+    expect(range.days.at(-1)).toEqual({ date: '2026-10-31', dayOfWeek: 6 });
+  });
+
+  it('accepts a single-day report', () => {
+    const range = resolveClinicDateRange('2026-10-05', '2026-10-05', 'Asia/Tokyo');
+
+    expect(range.start.toISOString()).toBe('2026-10-04T15:00:00.000Z');
+    expect(range.end.toISOString()).toBe('2026-10-05T15:00:00.000Z');
+    expect(range.days).toEqual([{ date: '2026-10-05', dayOfWeek: 1 }]);
+  });
+
+  it('spans a leap day and a year boundary without losing a day', () => {
+    const range = resolveClinicDateRange('2028-02-28', '2028-03-01', 'UTC');
+
+    expect(range.days.map((day) => day.date)).toEqual(['2028-02-28', '2028-02-29', '2028-03-01']);
+  });
+
+  it('uses clinic-local boundaries across a daylight-saving transition', () => {
+    const range = resolveClinicDateRange('2026-03-08', '2026-03-08', 'America/New_York');
+
+    expect(range.start.toISOString()).toBe('2026-03-08T05:00:00.000Z');
+    expect(range.end.toISOString()).toBe('2026-03-09T04:00:00.000Z');
+  });
+
+  it('refuses an impossible or inverted date', () => {
+    expect(() => resolveClinicDateRange('2026-02-30', '2026-03-01', 'UTC')).toThrow(
+      /not a calendar date/,
+    );
+    expect(() => resolveClinicDateRange('2026-10-31', '2026-10-01', 'UTC')).toThrow(
+      /cannot be before/,
+    );
   });
 });

@@ -18,6 +18,7 @@ import { registerCors } from './http/plugins/cors.js';
 import { registerClinicScope } from './http/plugins/clinic-scope.js';
 import { registerHealthRoutes } from './http/routes/health.js';
 import { registerDashboardRoutes } from './http/routes/dashboard.js';
+import { registerReportsRoutes } from './http/routes/reports.js';
 import { registerAppointmentsRoutes } from './http/routes/appointments.js';
 import { registerClinicRoutes } from './http/routes/clinic.js';
 import { registerDentistsRoutes } from './http/routes/dentists.js';
@@ -111,6 +112,15 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     // "today's book" is still the agenda query the calendar uses.
     dashboard: connection.dashboard,
     appointments,
+  });
+
+  // Management reporting. Its tables are read through the connection's report read
+  // store; the route still needs the dentist list to name the performance rows and
+  // to know how many chairs the clinic's hours are shared by.
+  await registerReportsRoutes(app, {
+    reports: connection.reports,
+    dentists,
+    clock: systemClock,
   });
   // One repository for the whole patient feature: the handlers get a port, so a
   // route cannot forget the clinic filter, and adding a read does not require

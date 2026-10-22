@@ -3251,3 +3251,64 @@ pnpm run test:e2e         135/135 passed
 - Low stock is deliberately client-side: one list, one definition, no second endpoint.
 - Batches, lots, expiry depletion and transfers are out of scope; ADR 0026 records the
   boundary.
+
+---
+
+## Session 47 — Milestone 11: reports
+
+**Started from:** `9de46ec` (Milestone 10 committed). `docs/progress/STATE.md` named
+Milestone 11 as next.
+
+**Delivered:** the reporting screen, end to end.
+
+- **Definitions (ADR 0027).** Reports are a read model over the rows the clinic already
+  keeps — no aggregate table. The route owns the calendar and the meaning of each
+  figure; a `ReportsReadStore` owns every table access, implemented once per engine
+  (ADR 0025). `resolveClinicDateRange` turns inclusive clinic-local dates into a
+  half-open UTC window; a period is capped at 366 days.
+- **API.** `GET /api/v1/reports/summary?from&to[&dentistId]` returns appointments
+  (total/split/booked minutes), production (net charge value), collections (payments in
+  the window), outstanding (open invoice balance now), occupancy (booked vs recorded
+  capacity, `null` when unknown) and a per-clinician table. Payments carry no clinician,
+  so collections stay clinic-wide even under a dentist filter; a charge with no visit is
+  reported as `dentistId: null` / "Unassigned" rather than dropped.
+- **Persistence.** `PostgresReportsReadStore` and `SQLiteReportsReadStore`, wired onto
+  `DatabaseConnection` beside the dashboard store. Outstanding is two sums (billed minus
+  allocated), never one join that would multiply the invoice total.
+- **Application.** `report-capacity.ts` counts each local day's open minutes less its
+  break, times the clinician count, and returns `null` for an empty or fully-closed
+  period so the UI can render "—"; `resolveClinicDateRange` and its tests live in
+  `clinic-time-window.ts`.
+- **Validation.** `reportRangeQuerySchema` (two `iso.date`s + optional dentist uuid,
+  reverse range refused).
+- **App.** `/reports` was a dangling sidebar link since the shell was built. The page
+  has the period/clinician filters (defaulting to the clinic's current month in the
+  clinic's calendar, derived rather than seeded in an effect), the eight summary cards,
+  the clinician table and a CSV export. `PlatformCapabilities.saveFile` now downloads
+  a Blob in both shells instead of rejecting on web; the app still imports no Tauri API.
+- **Tests.** 5 validation tests; 9 API application tests (`resolveClinicDateRange` +
+  capacity/occupancy); a SQLite smoke block; a PostgreSQL route spec (typechecks, skips
+  without `TEST_DATABASE_URL`); 6 app tests (period defaults, CSV, page behaviour,
+  `saveFile`); 4 new browser specs.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             validation 153, domain 350, app 337, api-client 15, database 6,
+                          desktop 3; API SQLite smoke 96 passed / PG suite skipped
+pnpm run test:e2e         139/139 passed
+```
+
+**Notes**
+
+- PG integration for reports typechecks and skips here (no `TEST_DATABASE_URL`); the
+  SQLite smoke covers the same route.
+- `saveFile` changing from "rejects on web" to "downloads" is a behaviour change for
+  both shells. `app-root.test.tsx` was updated accordingly; it is still the platform
+  abstraction, not a Tauri import.
+- Collections are clinic-wide by design. Per-clinician collections need `payments` to
+  carry a clinician, which is a billing-model change out of scope here.
