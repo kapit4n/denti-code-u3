@@ -16,6 +16,7 @@ import type {
   ClinicId,
   CurrencyCode,
   DentistId,
+  InventoryItemId,
   InvoiceId,
   IsoDateTime,
   PatientId,
@@ -53,6 +54,7 @@ import type {
   PaymentAllocation,
 } from '../billing/index.js';
 import type { Prescription } from '../prescription/index.js';
+import type { InventoryItem, StockMovement } from '../inventory/index.js';
 
 /**
  * Transaction boundary. A use case that must write several rows atomically
@@ -112,7 +114,13 @@ export interface UnitOfWork {
  * Session 35 adds `treatmentPlans` for the patient's plan read: the plans table
  * carries its own `clinic_id`, so tenancy is scoped in the statement rather than
  * through a join, and both engines implement the one `listForPatient`. The set is
- * seventeen now, every one of its seventeen constructible in both engines.
+ * eighteen now, every one of its eighteen constructible in both engines.
+ *
+ * Session 46 adds `inventory` for Milestone 10: items carry their own `clinic_id`,
+ * so every read scopes in the statement, while a movement scopes through the item
+ * it belongs to. A movement and the item's cached level are written together, so
+ * the use case receives a `UnitOfWork`; both implementations exist in both engines
+ * before the name enters this set.
  */
 export interface Repositories {
   readonly patients: PatientRepository;
@@ -132,6 +140,7 @@ export interface Repositories {
   readonly paymentAllocations: PaymentAllocationRepository;
   readonly attachments: VisitAttachmentRepository;
   readonly odontogramEntries: OdontogramEntryRepository;
+  readonly inventory: InventoryRepository;
 }
 
 export interface Page<TItem> {
@@ -239,6 +248,41 @@ export interface PatientRepository extends PatientWriteRepository {
    * second is a patient whose teeth have never been charted.
    */
   findOdontogram(clinicId: ClinicId, patientId: PatientId): Promise<PatientOdontogram | undefined>;
+}
+
+/**
+ * The clinic's consumable stock.
+ *
+ * Every method takes a `ClinicId`. The item table carries its own `clinic_id`,
+ * so listing and finding scope in the statement; movements do not carry one, so
+ * their reads join the item. A movement is written through the same port because
+ * it is the item's ledger, not a separate resource a caller should be able to
+ * reach without the item in front of it.
+ */
+export interface InventoryRepository {
+  /** Every item the clinic keeps, active and retired, in name order. */
+  listByClinic(clinicId: ClinicId): Promise<readonly InventoryItem[]>;
+
+  /** One item in this clinic, or `undefined` — never another clinic's row. */
+  findById(clinicId: ClinicId, itemId: InventoryItemId): Promise<InventoryItem | undefined>;
+
+  /** Insert a new item. A duplicate SKU is translated by the implementation. */
+  add(clinicId: ClinicId, item: InventoryItem): Promise<void>;
+
+  /**
+   * Overwrite the cached stock level, scoped to the clinic.
+   *
+   * Called inside the transaction that writes the movement which justifies it;
+   * `stock` is the level the domain computed, never a delta the repository
+   * applies on its own.
+   */
+  updateStock(clinicId: ClinicId, itemId: InventoryItemId, stock: number): Promise<void>;
+
+  /** Append one movement to an item's ledger. */
+  addMovement(movement: StockMovement): Promise<void>;
+
+  /** One item's movements, newest first, scoped through the item's clinic. */
+  listMovements(clinicId: ClinicId, itemId: InventoryItemId): Promise<readonly StockMovement[]>;
 }
 
 /**

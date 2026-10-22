@@ -23,6 +23,7 @@ import { registerClinicRoutes } from './http/routes/clinic.js';
 import { registerDentistsRoutes } from './http/routes/dentists.js';
 import { registerChairsRoutes } from './http/routes/chairs.js';
 import { registerTreatmentsRoutes } from './http/routes/treatments.js';
+import { registerInventoryRoutes } from './http/routes/inventory.js';
 import { registerVisitsRoutes } from './http/routes/visits.js';
 import { registerInvoiceRoutes } from './http/routes/invoices.js';
 import { registerPatientsRoutes } from './http/routes/patients.js';
@@ -153,6 +154,17 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   await registerTreatmentsRoutes(app, {
     treatments,
     ids: uuidGenerator,
+  });
+
+  // The clinic's consumable stock. Items carry their own clinic_id, so the reads
+  // scope in the row; a movement and the item's cached level are written together,
+  // which is why this door receives the unit of work rather than the repository
+  // alone (the same seam the visit bridge uses, ADR 0021).
+  await registerInventoryRoutes(app, {
+    inventory: connection.repositories.inventory,
+    unitOfWork: connection.unitOfWork,
+    ids: uuidGenerator,
+    clock: systemClock,
   });
 
   // The treatment-plan write side: proposing a plan for a patient, moving it along,

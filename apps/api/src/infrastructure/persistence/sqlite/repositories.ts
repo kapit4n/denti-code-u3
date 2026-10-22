@@ -18,6 +18,7 @@ import { SQLiteClinicalNoteRepository } from './repositories/clinical-note-repos
 import { SQLiteClinicRepository } from './repositories/clinic-repository.js';
 import { SQLiteDentistRepository } from './repositories/dentist-repository.js';
 import { SQLiteInvoiceRepository } from './repositories/invoice-repository.js';
+import { SQLiteInventoryRepository } from './repositories/inventory-repository.js';
 import { SQLiteOdontogramEntryRepository } from './repositories/odontogram-entry-repository.js';
 import { SQLitePatientRepository } from './repositories/patient-repository.js';
 import { SQLitePaymentAllocationRepository } from './repositories/payment-allocation-repository.js';
@@ -48,5 +49,6 @@ export function sqliteRepositoriesFor(db: SqliteDatabase): Repositories {
     paymentAllocations: new SQLitePaymentAllocationRepository(db),
     attachments: new SQLiteVisitAttachmentRepository(db),
     odontogramEntries: new SQLiteOdontogramEntryRepository(db),
+    inventory: new SQLiteInventoryRepository(db),
   };
 }

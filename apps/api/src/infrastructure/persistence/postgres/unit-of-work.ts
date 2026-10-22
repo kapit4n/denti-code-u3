@@ -17,7 +17,7 @@
  * **The set is built fresh rather than passed in,** because the alternative is a
  * `Repositories` object assembled once from the outer connection and then handed to
  * every callback, and that object would hold the wrong handles. The cost is that each
- * transaction constructs seventeen wrappers, which is nothing next to the round trip
+ * transaction constructs eighteen wrappers, which is nothing next to the round trip
  * it is about to make.
  */
 import type { Repositories, UnitOfWork } from '@denti-code-u3/domain';
@@ -29,6 +29,7 @@ import { DrizzleChargeRepository } from '../repositories/charge-repository.js';
 import { DrizzleClinicalNoteRepository } from '../repositories/clinical-note-repository.js';
 import { DrizzleClinicRepository } from '../repositories/clinic-repository.js';
 import { DrizzleDentistRepository } from '../repositories/dentist-repository.js';
+import { DrizzleInventoryRepository } from '../repositories/inventory-repository.js';
 import { DrizzleInvoiceRepository } from '../repositories/invoice-repository.js';
 import { DrizzleOdontogramEntryRepository } from '../repositories/odontogram-entry-repository.js';
 import { DrizzlePatientRepository } from '../repositories/patient-repository.js';
@@ -45,7 +46,7 @@ import { DrizzleVisitRepository } from '../repositories/visit-repository.js';
  * One repository per port, all on the same handle.
  *
  * Exported because the API wires routes with repositories built on the outer
- * connection, and a caller that needed both would otherwise construct seventeen
+ * connection, and a caller that needed both would otherwise construct eighteen
  * twice.
  */
 export function repositoriesFor(db: DentiDatabase): Repositories {
@@ -67,6 +68,7 @@ export function repositoriesFor(db: DentiDatabase): Repositories {
     paymentAllocations: new DrizzlePaymentAllocationRepository(db),
     attachments: new DrizzleVisitAttachmentRepository(db),
     odontogramEntries: new DrizzleOdontogramEntryRepository(db),
+    inventory: new DrizzleInventoryRepository(db),
   };
 }
 

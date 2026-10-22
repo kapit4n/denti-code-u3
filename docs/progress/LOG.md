@@ -3206,3 +3206,48 @@ pnpm run test:e2e         131/131 passed
 - `DRAFT`/`VOID` documents are never history, but money against them is still money.
 - Refunds are out of scope, so no open question was opened for their statement line;
   record the shape when the feature is scheduled.
+
+---
+
+## Session 46 — Milestone 10: inventory
+
+**Delivered:** the clinic's consumable stock, end to end.
+
+- **Domain.** Rewrote the `InventoryItem`/`StockMovement` model; quantity is always
+  positive and the type names direction (`USAGE`/`EXPIRED` out, the rest in).
+  `applyStockMovement` refuses an outflow that would go below zero; `isLowStock` is
+  `stock <= minStock`. `addInventoryItem` writes opening stock as an `ADJUSTMENT`
+  ("Opening stock") in the item's transaction; `recordStockMovement` writes the ledger
+  row and the cached level together, both through `UnitOfWork`.
+- **Ports/persistence.** `InventoryRepository` on `Repositories`, implemented on
+  PostgreSQL and SQLite; movements scope through their item, duplicate SKUs translate
+  from the `(clinic_id, sku)` index on both engines.
+- **API.** `GET/POST /api/v1/inventory/items`; `GET/POST
+/api/v1/inventory/items/:itemId/movements`. Routes are wired in `app.ts`; movement
+  writes answer the updated item, foreign items are 404 before any write.
+- **Validation.** Zod item/movement schemas, with the movement vocabulary mirrored
+  because `validation` does not depend on `domain`.
+- **App.** `/inventory` (new route, previously a 404 from the sidebar): low-stock card,
+  catalogue, add form, movement form and selected-item history in the clinic's clock.
+  No optimistic writes; refusals keep the draft and quote the server.
+- **Docs.** ADR 0026 records the ledger semantics; roadmap and state updated.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             domain 350, validation 148, app 327, api-client 15, database 6,
+                          desktop 3; API SQLite smoke 26; PG suite skipped
+pnpm run test:e2e         135/135 passed
+```
+
+**Notes**
+
+- PG integration for inventory typechecks and skips here (no `TEST_DATABASE_URL`); the
+  SQLite smoke covers the same routes.
+- Low stock is deliberately client-side: one list, one definition, no second endpoint.
+- Batches, lots, expiry depletion and transfers are out of scope; ADR 0026 records the
+  boundary.

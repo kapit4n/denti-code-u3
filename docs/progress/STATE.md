@@ -1,9 +1,9 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 45 (Milestone 9, slice 4 — patient statement)
+> Last updated: session 46 (Milestone 10 — inventory)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
-> **Milestone 9 is complete.** Session 44 landed invoice-scoped follow-up payments and the visit workspace's invoice controls; session 45 landed the **patient statement**, the last roadmap bullet. The ledger now answers both questions: what is owed (`/balance`) and how it got that way (`/statement`). The next milestone is **Milestone 10 — INVENTORY** (roadmap order); no product decision is blocking it.
+> **Milestone 10 is complete.** Session 46 delivered the clinic's inventory: items with units, stock levels and minimums, an append-only movement ledger updated in the same transaction as the cached level, usage that refuses to overdraw, and low-stock visibility on `/inventory`. The next milestone is **Milestone 11 — REPORTS** (roadmap order); no product decision is blocking it.
 
 ## Phase
 
@@ -156,7 +156,47 @@ number that drifts, and the invoices already carry everything needed to add one 
   new assertions), e2e 128 → 131. Typecheck 12/12, lint 12/12 + `BOUNDARY GUARD OK`,
   format clean, build 5/5, e2e 131/131.
 
-**Status: Milestones 5–9 complete; next is Milestone 10 — INVENTORY
+**Session 46 — inventory (Milestone 10, all three bullets).**
+
+- **The model** (`packages/domain/src/inventory/inventory.ts`, ADR 0026). An
+  `InventoryItem` carries its unit, cached stock, minimum and unit cost. A
+  `StockMovement` is one append-only ledger row. Quantity is always positive and the
+  type names the direction: `USAGE`/`EXPIRED` take stock out, `PURCHASE`/`RETURN`/
+  `ADJUSTMENT` put it in. `isLowStock` is `stock <= minStock`; an outflow larger than
+  the shelf raises `INSUFFICIENT_STOCK` rather than clamping.
+- **The use cases.** `addInventoryItem` validates and trims the item, defaults its
+  unit, and writes opening stock as an `ADJUSTMENT` ("Opening stock") in the same
+  transaction as the item; zero opening stock writes nothing. `recordStockMovement`
+  reads the item inside the transaction, applies the direction, and writes the
+  movement and the new cached level together. Both write through `UnitOfWork`.
+- **Ports and persistence.** A new `InventoryRepository` (`listByClinic`, `findById`,
+  `add`, `updateStock`, `addMovement`, `listMovements`) on `Repositories`, implemented
+  on PostgreSQL and SQLite (ADR 0025). Movements have no clinic column, so their read
+  joins the item; duplicate SKUs come back through the `(clinic_id, sku)` unique index
+  as `DUPLICATED_RECORD` on both engines.
+- **API** — `GET/POST /api/v1/inventory/items` and `GET/POST
+/api/v1/inventory/items/:itemId/movements` in `routes/inventory.ts`, wired with
+  `inventory`, `unitOfWork`, `ids` and `clock`. The movement write answers the updated
+  item beside the movement, so the page never guesses the new level; a foreign item is
+  a 404 before anything is written.
+- **Validation.** `createInventoryItemSchema` and `recordStockMovementSchema` mirror
+  the movement vocabulary (the validation package does not depend on the domain),
+  cap quantities at the integer column's range, and keep costs in minor units.
+- **App** — `/inventory` (the sidebar's link had pointed at a 404 since the shell was
+  built): a low-stock card, the catalogue with per-unit stock/minimum/cost, an add form
+  that converts the typed cost to minor units once, and a movement form with the
+  selected item's history in the clinic's clock. Failures quote the server and keep the
+  draft; every list is a refetch, never an optimistic patch.
+- **Tests.** 12 domain tests, 6 validation tests, and 5 component tests; API SQLite
+  smoke (26 total) covering opening stock, usage, shortage rollback, duplicate SKU,
+  foreign/unknown 404s and boundary 422s; a PG integration spec for the same route
+  (typechecks, skips without `TEST_DATABASE_URL`); 4 new browser specs including the
+  shortage draft. ADR 0026 records the ledger semantics.
+- **Counts.** Domain 338 → 350, validation 142 → 148, app 322 → 327, API SQLite smoke
+  25 → 26, e2e 131 → 135. Typecheck 12/12, lint 12/12 + `BOUNDARY GUARD OK`, format
+  clean, build 5/5, e2e 135/135.
+
+**Status: Milestones 5–10 complete; next is Milestone 11 — REPORTS
 (`docs/roadmap.md`).
 dashboard UI/UX redesign delivered (session 42, presentation only).
 Milestone 8 (treatments) now has its catalogue, its

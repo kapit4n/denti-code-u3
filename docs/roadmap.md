@@ -387,11 +387,15 @@ numbering and status (session 40, refined session 44), payments/methods/allocati
 
 ---
 
-## Milestone 10 — INVENTORY
+## Milestone 10 — INVENTORY ✅ (session 46)
 
 - Items, units, stock levels, minimums
 - Stock movements on usage
 - Low-stock visibility
+
+Complete: append-only movement ledger with a cached level (ADR 0026), opening stock as
+an adjustment, usage that refuses to overdraw, `/inventory` with low-stock visibility,
+and both engines behind one port. See `docs/progress/LOG.md`.
 
 ---
 

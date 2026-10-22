@@ -68,6 +68,8 @@ const foreignTreatmentId = 'a0a0a0a0-0000-4000-8000-000000000009';
 /** Another clinic's patient and visit, so the notes read has something to refuse. */
 const foreignPatientId = 'a0a0a0a0-0000-4000-8000-000000000011';
 const foreignVisitId = 'a0a0a0a0-0000-4000-8000-000000000012';
+/** Another clinic's stock item, so the movement read has something to refuse. */
+const foreignInventoryItemId = 'a0a0a0a0-0000-4000-8000-000000000013';
 
 describe('API on SQLite', () => {
   let dir: string;
@@ -1155,6 +1157,157 @@ describe('API on SQLite', () => {
     expect(unknownStatement.statusCode).toBe(404);
   });
 
+  it('adds items, moves stock and keeps the ledger scoped to the clinic', async () => {
+    const resin = await app.inject({
+      method: 'POST',
+      url: '/api/v1/inventory/items',
+      payload: {
+        name: '  Composite resin A2  ',
+        sku: 'COMP-A2',
+        description: '  Syringe, shade A2  ',
+        unit: 'syringe',
+        openingStock: 10,
+        minStock: 4,
+        costMinor: 4_500,
+      },
+    });
+
+    expect(resin.statusCode).toBe(201);
+    // Trimmed at the boundary, with the opening stock on the item and on its ledger.
+    expect(resin.json().item).toMatchObject({
+      clinicId,
+      name: 'Composite resin A2',
+      sku: 'COMP-A2',
+      description: 'Syringe, shade A2',
+      unit: 'syringe',
+      stock: 10,
+      minStock: 4,
+      costMinor: 4_500,
+      isActive: true,
+    });
+    const resinId = resin.json().item.id as string;
+
+    const opening = await app.inject({
+      method: 'GET',
+      url: `/api/v1/inventory/items/${resinId}/movements`,
+    });
+    expect(opening.statusCode).toBe(200);
+    expect(opening.json().items).toHaveLength(1);
+    expect(opening.json().items[0]).toMatchObject({
+      type: 'ADJUSTMENT',
+      quantity: 10,
+      reference: 'Opening stock',
+      unitCostMinor: 4_500,
+    });
+
+    const gauze = await app.inject({
+      method: 'POST',
+      url: '/api/v1/inventory/items',
+      payload: { name: 'Gauze', sku: 'GAUZE', unit: 'pack', openingStock: 2, minStock: 5 },
+    });
+    expect(gauze.statusCode).toBe(201);
+    // Opening stock of zero writes no movement: zero is absence, not an event.
+    expect(gauze.json().item.stock).toBe(2);
+
+    const listed = await app.inject({ method: 'GET', url: '/api/v1/inventory/items' });
+    expect(listed.statusCode).toBe(200);
+    const items = listed.json().items as { name: string; stock: number; minStock: number }[];
+    expect(items.map((item) => item.name)).toEqual(['Composite resin A2', 'Gauze']);
+    // Low stock is not a server filter: the row that is below its minimum is still
+    // returned, because the page compares the two columns the item carries.
+    expect(items[1]).toMatchObject({ name: 'Gauze', stock: 2, minStock: 5 });
+
+    const used = await app.inject({
+      method: 'POST',
+      url: `/api/v1/inventory/items/${resinId}/movements`,
+      payload: { type: 'USAGE', quantity: 7, reference: '  Visit 42  ' },
+    });
+    expect(used.statusCode).toBe(201);
+    // The write answers with the new level, so the page never guesses it — the same
+    // envelope PostgreSQL answers with, on the engine that must not disagree.
+    expect(used.json().item).toMatchObject({ id: resinId, stock: 3 });
+    expect(used.json().movement).toMatchObject({
+      itemId: resinId,
+      type: 'USAGE',
+      quantity: 7,
+      reference: 'Visit 42',
+    });
+
+    const history = await app.inject({
+      method: 'GET',
+      url: `/api/v1/inventory/items/${resinId}/movements`,
+    });
+    expect(history.statusCode).toBe(200);
+    const movements = history.json().items as { type: string; quantity: number }[];
+    expect(movements).toHaveLength(2);
+    expect(movements.map((movement) => movement.type).sort()).toEqual(['ADJUSTMENT', 'USAGE']);
+
+    // Using more than the shelf holds is refused by the domain and folded to 409 by
+    // the wire; nothing is written, so the level stays at the last real count.
+    const short = await app.inject({
+      method: 'POST',
+      url: `/api/v1/inventory/items/${resinId}/movements`,
+      payload: { type: 'USAGE', quantity: 4 },
+    });
+    expect(short.statusCode).toBe(409);
+    expect(short.json().error.code).toBe('DOMAIN_RULE_VIOLATION');
+    const afterShort = await app.inject({
+      method: 'GET',
+      url: `/api/v1/inventory/items/${resinId}/movements`,
+    });
+    expect(afterShort.json().items).toHaveLength(2);
+
+    // The same SKU again is the (clinic_id, sku) unique index answering, on this
+    // engine too (ADR 0025).
+    const duplicate = await app.inject({
+      method: 'POST',
+      url: '/api/v1/inventory/items',
+      payload: { name: 'Another resin', sku: 'COMP-A2' },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json().error.code).toBe('DOMAIN_RULE_VIOLATION');
+
+    // Another clinic's item is unknown here — the same 404 as one that never was.
+    const foreignRead = await app.inject({
+      method: 'GET',
+      url: `/api/v1/inventory/items/${foreignInventoryItemId}/movements`,
+    });
+    expect(foreignRead.statusCode).toBe(404);
+    expect(foreignRead.json().error.code).toBe('NOT_FOUND');
+
+    const foreignWrite = await app.inject({
+      method: 'POST',
+      url: `/api/v1/inventory/items/${foreignInventoryItemId}/movements`,
+      payload: { type: 'USAGE', quantity: 1 },
+    });
+    expect(foreignWrite.statusCode).toBe(404);
+    expect(foreignWrite.json().error.code).toBe('NOT_FOUND');
+
+    const unknownWrite = await app.inject({
+      method: 'POST',
+      url: '/api/v1/inventory/items/00000000-0000-4000-8000-000000000000/movements',
+      payload: { type: 'USAGE', quantity: 1 },
+    });
+    expect(unknownWrite.statusCode).toBe(404);
+
+    // A movement of zero is refused by the boundary schema before the domain is asked.
+    const zero = await app.inject({
+      method: 'POST',
+      url: `/api/v1/inventory/items/${resinId}/movements`,
+      payload: { type: 'USAGE', quantity: 0 },
+    });
+    expect(zero.statusCode).toBe(422);
+    expect(zero.json().error.code).toBe('VALIDATION_ERROR');
+
+    const unnamed = await app.inject({
+      method: 'POST',
+      url: '/api/v1/inventory/items',
+      payload: { name: '   ' },
+    });
+    expect(unnamed.statusCode).toBe(422);
+    expect(unnamed.json().error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('summarises the day on the dashboard, occupancy included', async () => {
     // Two disjoint 30-minute bookings from a capacity of 08:00–17:00 × one
     // dentist: 60 of 540 minutes, which rounds to 11% occupancy.
@@ -1250,6 +1403,18 @@ async function seed(db: importedDb) {
     name: 'Root canal therapy',
     defaultPriceMinor: 60000,
     isActive: true,
+  });
+
+  // Another clinic's stock item: the movement endpoints' scoping has a real row to
+  // refuse, not merely an id that was nowhere (ADR 0014).
+  await db.insert(sqliteSchema.inventoryItems).values({
+    id: foreignInventoryItemId,
+    clinicId: otherClinicId,
+    name: 'Foreign gauze',
+    unit: 'pack',
+    stock: 5,
+    minStock: 1,
+    costMinor: 100,
   });
 
   // A patient and a visit in that other clinic: the note endpoints' whole scoping

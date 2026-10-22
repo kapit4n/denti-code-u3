@@ -1325,3 +1325,105 @@ export function visitWorkspaceFixtures(overrides: MockedResponses = {}): MockedR
     ...overrides,
   };
 }
+
+/**
+ * The clinic's shelves, as `GET /api/v1/inventory/items` returns them.
+ *
+ * One item above its minimum and one below it, because the low-stock card and the
+ * catalogue are two views of the same rows: a fixture where every row was low
+ * could not tell a page that filtered correctly from one that called everything
+ * low. Costs are integer minor units and units differ, so a client that assumed
+ * "each" or converted the cost twice is visible at a glance.
+ */
+export const inventoryItems = {
+  items: [
+    {
+      id: '11111111-aaaa-4bbb-8ccc-000000000001',
+      clinicId: '11111111-1111-4111-8111-111111111111',
+      name: 'Composite resin A2',
+      sku: 'COMP-A2',
+      description: 'Syringe, shade A2',
+      unit: 'syringe',
+      stock: 2,
+      minStock: 3,
+      costMinor: 4500,
+      isActive: true,
+    },
+    {
+      id: '11111111-aaaa-4bbb-8ccc-000000000002',
+      clinicId: '11111111-1111-4111-8111-111111111111',
+      name: 'Gauze',
+      sku: 'GAUZE',
+      description: null,
+      unit: 'pack',
+      stock: 40,
+      minStock: 10,
+      costMinor: 800,
+      isActive: true,
+    },
+  ],
+} as const;
+
+/** Resin's ledger, newest first — the opening count made explicit. */
+export const resinStockMovements = {
+  items: [
+    {
+      id: '11111111-bbbb-4ccc-8ddd-000000000002',
+      itemId: '11111111-aaaa-4bbb-8ccc-000000000001',
+      type: 'USAGE',
+      quantity: 1,
+      unitCostMinor: null,
+      reference: 'Visit 42',
+      notes: null,
+      performedAt: '2026-10-05T14:30:00.000Z',
+    },
+    {
+      id: '11111111-bbbb-4ccc-8ddd-000000000001',
+      itemId: '11111111-aaaa-4bbb-8ccc-000000000001',
+      type: 'ADJUSTMENT',
+      quantity: 3,
+      unitCostMinor: 4500,
+      reference: 'Opening stock',
+      notes: null,
+      performedAt: '2026-10-01T09:00:00.000Z',
+    },
+  ],
+} as const;
+
+/**
+ * What the API answers when a new item is added.
+ *
+ * The server's id and stock, not the form's: a spec asserting the POST body has
+ * already proved the client sent the right cost; this fixture proves the page
+ * uses the row the server returned rather than inventing one.
+ */
+export const addedInventoryItem = {
+  id: '11111111-aaaa-4bbb-8ccc-000000000003',
+  clinicId: '11111111-1111-4111-8111-111111111111',
+  name: 'Lidocaine 2%',
+  sku: 'LIDO-2',
+  description: null,
+  unit: 'box',
+  stock: 12,
+  minStock: 4,
+  costMinor: 8000,
+  isActive: true,
+} as const;
+
+/** The movement the API writes when usage is recorded, with the level it produced. */
+export const recordedStockMovement = {
+  item: {
+    ...inventoryItems.items[0],
+    stock: 1,
+  },
+  movement: {
+    id: '11111111-bbbb-4ccc-8ddd-000000000003',
+    itemId: '11111111-aaaa-4bbb-8ccc-000000000001',
+    type: 'USAGE',
+    quantity: 1,
+    unitCostMinor: null,
+    reference: 'Visit 42',
+    notes: null,
+    performedAt: '2026-10-05T15:00:00.000Z',
+  },
+} as const;
