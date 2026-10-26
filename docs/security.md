@@ -33,11 +33,26 @@ details?, requestId } }`); unknown errors become a generic 500. Database driver
 - **Least data exposure.** Responses include only fields the screen needs;
   clinical content is not fetched "just in case".
 - **Authorization boundary.** Roles and permissions are modelled in the domain
-  (`ROLE_PERMISSIONS`, `hasPermission`) and enforced in the API. UI only hides
-  affordances; it never enforces access.
-- **Authentication boundary (designed, not implemented).** `users` table with
-  `password_hash` (never a password), clinic membership, and a session concept
-  is reserved. Implementation is Milestone 12.
+  (`CLINIC_PERMISSIONS`, `hasPermission`) and enforced by the API. UI only hides
+  affordances; it never enforces access. Every API route declares its required
+  permission on the route itself (`config: { permission }`), and the auth plugin
+  checks it before the handler runs; a missing permission is `FORBIDDEN` (403).
+- **Authentication boundary (implemented, session 48; ADR 0028).** Requests are
+  authenticated by the auth plugin, which **fails closed**: only `/`, `/health`,
+  `/ready` and `POST /api/v1/auth/login` are public. Sessions are opaque random
+  tokens; the database stores only their SHA-256 digest. Passwords are hashed with
+  `node:crypto` scrypt (`scrypt$N$r$p$salt$hash`, per-password salt,
+  `timingSafeEqual`). Sessions expire after 12 hours by default. Login refusals are
+  identical for an unknown email, a wrong password, a deactivated user and a missing
+  hash, so the endpoint does not reveal which accounts exist. A request is scoped to
+  the clinic the session belongs to; the old config-only `CLINIC_ID` lookup is gone.
+- **Login is throttled (ADR 0029).** Failed attempts are counted per normalised email and
+  client address (five per fifteen minutes by default, `AUTH_LOGIN_MAX_ATTEMPTS` /
+  `AUTH_LOGIN_WINDOW_MINUTES`). Only credential failures count and a success clears the
+  key; an exhausted window answers `429 RATE_LIMITED` with `Retry-After`, before any hash
+  is computed. The counter is in process, so it is per instance and resets on restart.
+  Behind a reverse proxy, either trust the proxy's forwarded address per deployment or
+  let the proxy do the limiting, otherwise every client shares the proxy's address.
 - **Desktop capability restriction.** Tauri's capability grants are minimal; no
   shell plugin, no filesystem-wide access, no remote code loading; CSP restricts
   script sources in release builds.
@@ -49,11 +64,19 @@ details?, requestId } }`); unknown errors become a generic 500. Database driver
 - **Type safety as a security control.** Strict TypeScript plus shared contracts
   makes it harder to pass unvalidated shapes into domain logic.
 
-## 3. Known gaps (intentional for Phase 1)
+## 3. Known gaps (intentional)
 
-- No authentication implementation (any endpoint is currently open).
-- No session management, token rotation, CSRF/refresh strategy.
-- No rate limiting or abuse protection.
+- **The login limiter is per instance and in memory.** A multi-instance deployment
+  needs a shared counter or proxy-level limiting, and a restart clears it. It does not
+  stop an attacker who varies both email and address.
+- **The bearer token is held in `localStorage`** on the web target, so it is readable
+  by page script (XSS). Mitigations are short-lived, revocable tokens and clearing
+  the session on logout/401; an `HttpOnly` cookie would be a new ADR and would need
+  CSRF protection.
+- No session rotation on privilege change, and no "sign out everywhere" control beyond
+  revoking rows.
+- Multi-clinic membership is not modelled: one session belongs to one clinic and the
+  API refuses a session whose clinic differs from the configured one.
 - No encryption-at-rest policy, key management, or backup/retention procedures.
 - No audit log (only `created_at`/`updated_at`/actor columns).
 - No security headers/CSP middleware for the API (only the desktop webview CSP).
@@ -62,8 +85,11 @@ details?, requestId } }`); unknown errors become a generic 500. Database driver
 
 ## 4. Before any real patient data is used
 
-1. Implement authentication + session handling with the roles in
-   `docs/open-questions.md` #1 resolved.
+1. **Authentication + sessions with roles are in place (session 48)**, and **login is
+   throttled per instance (session 49)**; still decide the token-storage story (the
+   current bearer token is in `localStorage`), move throttling to shared storage or the
+   proxy for a multi-instance deployment, and resolve `docs/open-questions.md` #1
+   (clinic membership beyond one clinic) and #15 (audit log).
 2. Enable TLS everywhere (API + database) and document key handling.
 3. Define retention/anonymisation policy with the clinic and legal counsel
    (`docs/open-questions.md` #7).

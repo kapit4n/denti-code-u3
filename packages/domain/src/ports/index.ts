@@ -22,6 +22,7 @@ import type {
   PatientId,
   TreatmentId,
   TreatmentPlanId,
+  UserId,
   VisitId,
 } from '@denti-code-u3/types';
 import type {
@@ -46,6 +47,7 @@ import type {
   PatientProfile,
 } from '../patient/index.js';
 import type { Clinic, ClinicRole } from '../organization/index.js';
+import type { AuthenticatedUser, Session, UserWithCredentials } from '../organization/auth.js';
 import type {
   Charge,
   Invoice,
@@ -141,6 +143,8 @@ export interface Repositories {
   readonly attachments: VisitAttachmentRepository;
   readonly odontogramEntries: OdontogramEntryRepository;
   readonly inventory: InventoryRepository;
+  readonly users: UserRepository;
+  readonly sessions: SessionRepository;
 }
 
 export interface Page<TItem> {
@@ -1021,4 +1025,49 @@ export interface ClinicMembership {
 
 export interface ClinicMembershipRepository {
   listForUser(userId: string): Promise<readonly ClinicMembership[]>;
+}
+
+/**
+ * Reading and updating the people who log in.
+ *
+ * The domain declared `ClinicMembership` and `ClinicMembershipRepository` in
+ * Milestone 1 and nothing implemented them, because there was no authentication.
+ * This port is the honest single-clinic version of the same idea: a user carries
+ * their own `clinic_id`, so membership is a column, not a join table, and
+ * `findByCredentials` is scoped to the clinic the process serves. If true
+ * multi-clinic membership ever arrives, this port grows the list `users` cannot
+ * answer today — see `docs/open-questions.md` #1.
+ *
+ * `findByCredentials` deliberately takes the clinic and the email, not a userId:
+ * login does not know the id yet, only what the person typed.
+ */
+export interface UserRepository {
+  /**
+   * The user with this email in this clinic, with the credential hash attached.
+   *
+   * Case-insensitive on email, because a person does not think their address has
+   * a case. Returns `undefined` for an unknown email — the caller must not turn
+   * that into a different message than a wrong password.
+   */
+  findByEmailForLogin(clinicId: ClinicId, email: string): Promise<UserWithCredentials | undefined>;
+  findById(clinicId: ClinicId, userId: UserId): Promise<AuthenticatedUser | undefined>;
+  /** Stamps `last_login_at` after a successful login. */
+  recordLogin(clinicId: ClinicId, userId: UserId, at: IsoDateTime): Promise<void>;
+  save(user: AuthenticatedUser & { readonly passwordHash: string }): Promise<void>;
+}
+
+/**
+ * Persisting sessions.
+ *
+ * A session is looked up by the **hash** of the presented token, never by the
+ * token, so the stored value is useless to anyone who reads the table. Expiry is
+ * not enforced by the query: the domain's `assertSessionUsable` decides, and a
+ * repository that silently filtered expired rows would hide the difference
+ * between "no such session" and "the session timed out".
+ */
+export interface SessionRepository {
+  save(session: Session): Promise<void>;
+  findByTokenHash(tokenHash: string): Promise<Session | undefined>;
+  /** Marks a session revoked. Idempotent: revoking twice is not an error. */
+  revoke(tokenHash: string, at: IsoDateTime): Promise<void>;
 }

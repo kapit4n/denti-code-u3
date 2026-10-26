@@ -123,100 +123,107 @@ export async function registerReportsRoutes(
   app: FastifyInstance,
   { reports, dentists, clock }: ReportsDependencies,
 ): Promise<void> {
-  app.get('/api/v1/reports/summary', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const parsed = reportRangeQuerySchema.safeParse(request.query);
+  app.get(
+    '/api/v1/reports/summary',
+    { config: { permission: 'reports:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const parsed = reportRangeQuerySchema.safeParse(request.query);
 
-    if (!parsed.success) {
-      return reply.status(422).send({
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'The report period could not be accepted',
-          details: { issues: parsed.error.issues },
-          requestId: request.id,
-        },
-      });
-    }
-
-    const { from, to, dentistId } = parsed.data;
-
-    try {
-      const settings = await reports.readClinicSettings(clinicId);
-      const range = resolveClinicDateRange(from, to, settings.timeZone);
-
-      if (range.days.length > MAX_REPORT_DAYS) {
+      if (!parsed.success) {
         return reply.status(422).send({
           error: {
             code: 'VALIDATION_ERROR',
-            message: `A report may not span more than ${MAX_REPORT_DAYS} days`,
+            message: 'The report period could not be accepted',
+            details: { issues: parsed.error.issues },
             requestId: request.id,
           },
         });
       }
 
-      const selectedDentist = dentistId
-        ? await dentists.findById(clinicId, asDentistId(dentistId))
-        : undefined;
+      const { from, to, dentistId } = parsed.data;
 
-      if (dentistId && !selectedDentist) {
-        throw new DomainError('NOT_FOUND', `Dentist ${dentistId} was not found`, {
-          entity: 'Dentist',
-          id: dentistId,
-        });
-      }
+      try {
+        const settings = await reports.readClinicSettings(clinicId);
+        const range = resolveClinicDateRange(from, to, settings.timeZone);
 
-      const [allDentists, breakdown, productionRows, collectionsMinor, outstandingMinor, hours] =
-        await Promise.all([
-          dentists.listByClinic(clinicId),
-          reports.readAppointmentBreakdown(clinicId, range.start, range.end, selectedDentist?.id),
-          reports.readProductionByDentist(clinicId, range.start, range.end, selectedDentist?.id),
-          reports.sumPaymentsInWindow(clinicId, range.start, range.end),
-          reports.sumOutstanding(clinicId),
-          reports.readOperatingHours(clinicId),
-        ]);
+        if (range.days.length > MAX_REPORT_DAYS) {
+          return reply.status(422).send({
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: `A report may not span more than ${MAX_REPORT_DAYS} days`,
+              requestId: request.id,
+            },
+          });
+        }
 
-      const activeDentistCount = allDentists.filter((dentist) => dentist.isActive).length;
-      const capacityDentistCount = selectedDentist ? 1 : activeDentistCount;
-      const capacityMinutes = capacityMinutesForDays(range.days, hours, capacityDentistCount);
+        const selectedDentist = dentistId
+          ? await dentists.findById(clinicId, asDentistId(dentistId))
+          : undefined;
 
-      const appointments = emptyTotals();
-      for (const row of breakdown) {
-        addAppointmentRow(appointments, row);
-      }
+        if (dentistId && !selectedDentist) {
+          throw new DomainError('NOT_FOUND', `Dentist ${dentistId} was not found`, {
+            entity: 'Dentist',
+            id: dentistId,
+          });
+        }
 
-      const productionMinor = productionRows.reduce((total, row) => total + row.productionMinor, 0);
-      const performance = buildDentistPerformance({
-        breakdown,
-        productionRows,
-        dentists: allDentists,
-        selectedDentistId: selectedDentist?.id ?? null,
-        capacityMinutes,
-      });
+        const [allDentists, breakdown, productionRows, collectionsMinor, outstandingMinor, hours] =
+          await Promise.all([
+            dentists.listByClinic(clinicId),
+            reports.readAppointmentBreakdown(clinicId, range.start, range.end, selectedDentist?.id),
+            reports.readProductionByDentist(clinicId, range.start, range.end, selectedDentist?.id),
+            reports.sumPaymentsInWindow(clinicId, range.start, range.end),
+            reports.sumOutstanding(clinicId),
+            reports.readOperatingHours(clinicId),
+          ]);
 
-      return {
-        period: {
-          from,
-          to,
-          timeZone: settings.timeZone,
-          dentistId: selectedDentist?.id ?? null,
-        },
-        currencyCode: settings.currencyCode,
-        appointments,
-        production: { totalMinor: productionMinor },
-        collections: { totalMinor: collectionsMinor },
-        outstanding: { totalMinor: outstandingMinor },
-        occupancy: {
-          bookedMinutes: appointments.bookedMinutes,
+        const activeDentistCount = allDentists.filter((dentist) => dentist.isActive).length;
+        const capacityDentistCount = selectedDentist ? 1 : activeDentistCount;
+        const capacityMinutes = capacityMinutesForDays(range.days, hours, capacityDentistCount);
+
+        const appointments = emptyTotals();
+        for (const row of breakdown) {
+          addAppointmentRow(appointments, row);
+        }
+
+        const productionMinor = productionRows.reduce(
+          (total, row) => total + row.productionMinor,
+          0,
+        );
+        const performance = buildDentistPerformance({
+          breakdown,
+          productionRows,
+          dentists: allDentists,
+          selectedDentistId: selectedDentist?.id ?? null,
           capacityMinutes,
-          rate: occupancyRate(appointments.bookedMinutes, capacityMinutes),
-        },
-        dentists: performance,
-        generatedAt: clock.now(),
-      };
-    } catch (error) {
-      return sendProblem(reply, request, error, 'Failed to build the report');
-    }
-  });
+        });
+
+        return {
+          period: {
+            from,
+            to,
+            timeZone: settings.timeZone,
+            dentistId: selectedDentist?.id ?? null,
+          },
+          currencyCode: settings.currencyCode,
+          appointments,
+          production: { totalMinor: productionMinor },
+          collections: { totalMinor: collectionsMinor },
+          outstanding: { totalMinor: outstandingMinor },
+          occupancy: {
+            bookedMinutes: appointments.bookedMinutes,
+            capacityMinutes,
+            rate: occupancyRate(appointments.bookedMinutes, capacityMinutes),
+          },
+          dentists: performance,
+          generatedAt: clock.now(),
+        };
+      } catch (error) {
+        return sendProblem(reply, request, error, 'Failed to build the report');
+      }
+    },
+  );
 }
 
 interface DentistPerformanceInput {

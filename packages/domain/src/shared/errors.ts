@@ -24,6 +24,15 @@ export type DomainErrorCode =
   | 'UNBOOKABLE_RESOURCE'
   | 'INSUFFICIENT_STOCK'
   | 'DUPLICATED_RECORD'
+  /**
+   * The caller is not (or is no longer) authenticated.
+   *
+   * Distinct from `FORBIDDEN`: a 401 says "prove who you are", a 403 says "I know
+   * who you are and you may not do this". A missing, malformed or expired session
+   * is `UNAUTHENTICATED`; a valid session whose role lacks the permission is
+   * `FORBIDDEN`. The API maps the first to 401 and the second to 403.
+   */
+  | 'UNAUTHENTICATED'
   | 'FORBIDDEN';
 
 export class DomainError extends Error {

@@ -98,50 +98,54 @@ export async function registerAppointmentsRoutes(
    * Half-open `[from, to)`, so a caller paging through consecutive days does not
    * receive each midnight appointment twice.
    */
-  app.get('/api/v1/appointments', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const parsed = agendaRangeQuerySchema.safeParse(request.query);
+  app.get(
+    '/api/v1/appointments',
+    { config: { permission: 'appointments:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const parsed = agendaRangeQuerySchema.safeParse(request.query);
 
-    if (!parsed.success) {
-      return reply.status(422).send({
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'The agenda window could not be accepted',
-          details: { issues: parsed.error.issues },
-          requestId: request.id,
-        },
-      });
-    }
+      if (!parsed.success) {
+        return reply.status(422).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'The agenda window could not be accepted',
+            details: { issues: parsed.error.issues },
+            requestId: request.id,
+          },
+        });
+      }
 
-    const { from, to, dentistIds, chairIds } = parsed.data;
-    const windowDays = (new Date(to).getTime() - new Date(from).getTime()) / 86_400_000;
+      const { from, to, dentistIds, chairIds } = parsed.data;
+      const windowDays = (new Date(to).getTime() - new Date(from).getTime()) / 86_400_000;
 
-    if (windowDays > MAX_WINDOW_DAYS) {
-      return reply.status(422).send({
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: `The agenda window may not span more than ${MAX_WINDOW_DAYS} days`,
-          requestId: request.id,
-        },
-      });
-    }
+      if (windowDays > MAX_WINDOW_DAYS) {
+        return reply.status(422).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: `The agenda window may not span more than ${MAX_WINDOW_DAYS} days`,
+            requestId: request.id,
+          },
+        });
+      }
 
-    try {
-      const items = await appointments.findAgenda(clinicId, {
-        from: from as IsoDateTime,
-        to: to as IsoDateTime,
-        ...(dentistIds ? { dentistIds: dentistIds.map(asDentistId) } : {}),
-        ...(chairIds ? { chairIds: chairIds.map(asChairId) } : {}),
-      });
+      try {
+        const items = await appointments.findAgenda(clinicId, {
+          from: from as IsoDateTime,
+          to: to as IsoDateTime,
+          ...(dentistIds ? { dentistIds: dentistIds.map(asDentistId) } : {}),
+          ...(chairIds ? { chairIds: chairIds.map(asChairId) } : {}),
+        });
 
-      return {
-        items,
-        window: { from, to },
-      };
-    } catch (error) {
-      return sendProblem(reply, request, error, 'Failed to read the agenda');
-    }
-  });
+        return {
+          items,
+          window: { from, to },
+        };
+      } catch (error) {
+        return sendProblem(reply, request, error, 'Failed to read the agenda');
+      }
+    },
+  );
 
   /**
    * `POST /api/v1/appointments` — book an appointment.
@@ -155,33 +159,42 @@ export async function registerAppointmentsRoutes(
    * 201 with the `AgendaEntry` the row became, so a client can put the booking on
    * the grid without guessing the end time or the patient's name.
    */
-  app.post('/api/v1/appointments', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const parsed = createAppointmentSchema.safeParse(request.body);
+  app.post(
+    '/api/v1/appointments',
+    { config: { permission: 'appointments:write' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const parsed = createAppointmentSchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return sendInvalidBody(reply, request, 'The appointment could not be accepted', parsed.error);
-    }
+      if (!parsed.success) {
+        return sendInvalidBody(
+          reply,
+          request,
+          'The appointment could not be accepted',
+          parsed.error,
+        );
+      }
 
-    try {
-      const entry = await createAppointment(
-        clinicId,
-        {
-          patientId: asPatientId(parsed.data.patientId),
-          dentistId: asDentistId(parsed.data.dentistId),
-          ...(parsed.data.chairId ? { chairId: asChairId(parsed.data.chairId) } : {}),
-          startsAt: parsed.data.startsAt as IsoDateTime,
-          durationMinutes: parsed.data.durationMinutes,
-          ...(parsed.data.notes ? { notes: parsed.data.notes } : {}),
-        },
-        bookingDependencies({ appointments, dentists, chairs, clinics, ids }),
-      );
+      try {
+        const entry = await createAppointment(
+          clinicId,
+          {
+            patientId: asPatientId(parsed.data.patientId),
+            dentistId: asDentistId(parsed.data.dentistId),
+            ...(parsed.data.chairId ? { chairId: asChairId(parsed.data.chairId) } : {}),
+            startsAt: parsed.data.startsAt as IsoDateTime,
+            durationMinutes: parsed.data.durationMinutes,
+            ...(parsed.data.notes ? { notes: parsed.data.notes } : {}),
+          },
+          bookingDependencies({ appointments, dentists, chairs, clinics, ids }),
+        );
 
-      return reply.status(201).send(entry);
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(201).send(entry);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `PUT /api/v1/appointments/:appointmentId/schedule` — move an appointment.
@@ -196,45 +209,49 @@ export async function registerAppointmentsRoutes(
    * absent means "this patient has no email", and it is deliberate — a front desk
    * that only changes the time must not clear the chair as a side effect of a drag.
    */
-  app.put('/api/v1/appointments/:appointmentId/schedule', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const path = readAppointmentId(request.params);
+  app.put(
+    '/api/v1/appointments/:appointmentId/schedule',
+    { config: { permission: 'appointments:write' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const path = readAppointmentId(request.params);
 
-    if (!path.valid) {
-      return sendInvalidPath(reply, request);
-    }
-    const { appointmentId } = path;
+      if (!path.valid) {
+        return sendInvalidPath(reply, request);
+      }
+      const { appointmentId } = path;
 
-    const parsed = rescheduleAppointmentSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return sendInvalidBody(
-        reply,
-        request,
-        'The new schedule could not be accepted',
-        parsed.error,
-      );
-    }
+      const parsed = rescheduleAppointmentSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendInvalidBody(
+          reply,
+          request,
+          'The new schedule could not be accepted',
+          parsed.error,
+        );
+      }
 
-    try {
-      const entry = await rescheduleAppointment(
-        clinicId,
-        appointmentId,
-        {
-          startsAt: parsed.data.startsAt as IsoDateTime,
-          ...(parsed.data.durationMinutes !== undefined
-            ? { durationMinutes: parsed.data.durationMinutes }
-            : {}),
-          ...(parsed.data.dentistId ? { dentistId: asDentistId(parsed.data.dentistId) } : {}),
-          ...(parsed.data.chairId ? { chairId: asChairId(parsed.data.chairId) } : {}),
-        },
-        bookingDependencies({ appointments, dentists, chairs, clinics, ids }),
-      );
+      try {
+        const entry = await rescheduleAppointment(
+          clinicId,
+          appointmentId,
+          {
+            startsAt: parsed.data.startsAt as IsoDateTime,
+            ...(parsed.data.durationMinutes !== undefined
+              ? { durationMinutes: parsed.data.durationMinutes }
+              : {}),
+            ...(parsed.data.dentistId ? { dentistId: asDentistId(parsed.data.dentistId) } : {}),
+            ...(parsed.data.chairId ? { chairId: asChairId(parsed.data.chairId) } : {}),
+          },
+          bookingDependencies({ appointments, dentists, chairs, clinics, ids }),
+        );
 
-      return reply.status(200).send(entry);
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(200).send(entry);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `POST /api/v1/appointments/:appointmentId/status` — move the appointment's state.
@@ -249,44 +266,48 @@ export async function registerAppointmentsRoutes(
    * is not merely bookkeeping: a cancelled appointment holds no chair, so putting it
    * back has to win the chair like any other booking.
    */
-  app.post('/api/v1/appointments/:appointmentId/status', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const path = readAppointmentId(request.params);
+  app.post(
+    '/api/v1/appointments/:appointmentId/status',
+    { config: { permission: 'appointments:write' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const path = readAppointmentId(request.params);
 
-    if (!path.valid) {
-      return sendInvalidPath(reply, request);
-    }
-    const { appointmentId } = path;
+      if (!path.valid) {
+        return sendInvalidPath(reply, request);
+      }
+      const { appointmentId } = path;
 
-    const parsed = transitionAppointmentSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return sendInvalidBody(
-        reply,
-        request,
-        'The status change could not be accepted',
-        parsed.error,
-      );
-    }
+      const parsed = transitionAppointmentSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendInvalidBody(
+          reply,
+          request,
+          'The status change could not be accepted',
+          parsed.error,
+        );
+      }
 
-    try {
-      const entry = await transitionAppointmentStatus(
-        clinicId,
-        appointmentId,
-        {
-          to: parsed.data.to,
-          ...(parsed.data.reason ? { reason: parsed.data.reason } : {}),
-        },
-        // The narrow object on purpose: a status transition names no clinician and no
-        // chair, so it has nothing to ask the bookable-resources rule and must not be
-        // handed the repositories to ask it with.
-        writeDependencies({ appointments, clinics, ids }),
-      );
+      try {
+        const entry = await transitionAppointmentStatus(
+          clinicId,
+          appointmentId,
+          {
+            to: parsed.data.to,
+            ...(parsed.data.reason ? { reason: parsed.data.reason } : {}),
+          },
+          // The narrow object on purpose: a status transition names no clinician and no
+          // chair, so it has nothing to ask the bookable-resources rule and must not be
+          // handed the repositories to ask it with.
+          writeDependencies({ appointments, clinics, ids }),
+        );
 
-      return reply.status(200).send(entry);
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(200).send(entry);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 }
 
 /**

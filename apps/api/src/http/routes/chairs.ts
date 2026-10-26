@@ -27,7 +27,7 @@ export async function registerChairsRoutes(
   app: FastifyInstance,
   { chairs }: ChairsDependencies,
 ): Promise<void> {
-  app.get('/api/v1/chairs', async (request, reply) => {
+  app.get('/api/v1/chairs', { config: { permission: 'clinic:read' } }, async (request, reply) => {
     const clinicId = request.clinicId as ClinicId;
     const parsed = chairListQuerySchema.safeParse(request.query);
 

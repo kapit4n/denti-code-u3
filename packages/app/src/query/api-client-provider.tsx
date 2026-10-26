@@ -19,17 +19,23 @@ export interface ApiClientProviderProps {
   readonly baseUrl: string;
   /** Injected by tests. Otherwise built from `baseUrl`. */
   readonly client?: ApiClient;
+  /** Injected per request, typically from the session. */
+  readonly getAuthorizationHeader?: () => string | undefined;
   readonly children: ReactNode;
 }
 
 export function ApiClientProvider({
   baseUrl,
   client,
+  getAuthorizationHeader,
   children,
 }: ApiClientProviderProps): ReactNode {
   // Memoised because an unmemoised client would get a new identity on every
   // render, invalidating every context consumer on every parent render.
-  const value = useMemo(() => client ?? new ApiClient({ baseUrl }), [client, baseUrl]);
+  const value = useMemo(
+    () => client ?? new ApiClient({ baseUrl, getAuthorizationHeader }),
+    [client, baseUrl, getAuthorizationHeader],
+  );
 
   return <ApiClientContext.Provider value={value}>{children}</ApiClientContext.Provider>;
 }

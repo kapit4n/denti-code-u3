@@ -1,9 +1,9 @@
 /**
  * Patient endpoints.
  *
- * Scoped to the clinic on the request (ADR 0014 — see
- * `apps/api/src/http/plugins/clinic-scope.ts`). Two scoping details are worth
- * calling out because they are the ones that leak:
+ * Scoped to the clinic on the request (ADR 0014 — the clinic is resolved from the
+ * authenticated session by `apps/api/src/http/plugins/auth.ts`). Two scoping
+ * details are worth calling out because they are the ones that leak:
  *
  *  - every read goes through `PatientRepository`, whose methods all require a
  *    `ClinicId`, so one clinic can never see another's patients;
@@ -100,49 +100,53 @@ export async function registerPatientsRoutes(
    * `clinicId` comes from the request scope, never from the body: a client that
    * could choose its own clinic would be a cross-tenant write (ADR 0014).
    */
-  app.post('/api/v1/patients', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const parsed = createPatientSchema.safeParse(request.body);
+  app.post(
+    '/api/v1/patients',
+    { config: { permission: 'patients:write' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const parsed = createPatientSchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return reply.status(422).send({
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'The patient details could not be accepted',
-          details: { issues: parsed.error.issues },
-          requestId: request.id,
-        },
-      });
-    }
+      if (!parsed.success) {
+        return reply.status(422).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'The patient details could not be accepted',
+            details: { issues: parsed.error.issues },
+            requestId: request.id,
+          },
+        });
+      }
 
-    try {
-      const { patient, recordNumber } = await registerPatient(clinicId, parsed.data, {
-        patients,
-        ids,
-        clock,
-      });
+      try {
+        const { patient, recordNumber } = await registerPatient(clinicId, parsed.data, {
+          patients,
+          ids,
+          clock,
+        });
 
-      return reply.status(201).send({
-        id: patient.id,
-        clinicId: patient.clinicId,
-        recordNumber,
-        firstName: patient.firstName,
-        lastName: patient.lastName,
-        preferredName: patient.preferredName ?? null,
-        identificationNumber: patient.identificationNumber ?? null,
-        phone: patient.phone ?? null,
-        email: patient.email ?? null,
-        birthDate: patient.birthDate ?? null,
-        isActive: patient.isActive,
-      });
-    } catch (error) {
-      // Business rules (a birth date that has not happened, a name that is empty
-      // once trimmed) arrive from the use case as a `DomainError`, which
-      // `sendProblem` maps to the right status. Letting it escape would make every
-      // rejected form a 500 and tell the user nothing about what to fix.
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(201).send({
+          id: patient.id,
+          clinicId: patient.clinicId,
+          recordNumber,
+          firstName: patient.firstName,
+          lastName: patient.lastName,
+          preferredName: patient.preferredName ?? null,
+          identificationNumber: patient.identificationNumber ?? null,
+          phone: patient.phone ?? null,
+          email: patient.email ?? null,
+          birthDate: patient.birthDate ?? null,
+          isActive: patient.isActive,
+        });
+      } catch (error) {
+        // Business rules (a birth date that has not happened, a name that is empty
+        // once trimmed) arrive from the use case as a `DomainError`, which
+        // `sendProblem` maps to the right status. Letting it escape would make every
+        // rejected form a 500 and tell the user nothing about what to fix.
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * Edit a patient.
@@ -159,47 +163,51 @@ export async function registerPatientsRoutes(
    * body assembled from the request instead of the row would be a value that was
    * never stored.
    */
-  app.put('/api/v1/patients/:patientId', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const { patientId } = request.params as { patientId: string };
-    const parsed = updatePatientSchema.safeParse(request.body);
+  app.put(
+    '/api/v1/patients/:patientId',
+    { config: { permission: 'patients:write' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const { patientId } = request.params as { patientId: string };
+      const parsed = updatePatientSchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return reply.status(422).send({
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'The patient details could not be accepted',
-          details: { issues: parsed.error.issues },
-          requestId: request.id,
-        },
-      });
-    }
-
-    try {
-      const found = await updatePatient(clinicId, patientId as PatientId, parsed.data, {
-        patients,
-        clock,
-      });
-
-      if (!found) {
-        // The same answer for "no such patient" and "not in this clinic". Anything
-        // else tells a caller that an id exists somewhere it cannot reach.
-        return reply.status(404).send({
+      if (!parsed.success) {
+        return reply.status(422).send({
           error: {
-            code: 'NOT_FOUND',
-            message: 'No patient with that id exists in this clinic',
+            code: 'VALIDATION_ERROR',
+            message: 'The patient details could not be accepted',
+            details: { issues: parsed.error.issues },
             requestId: request.id,
           },
         });
       }
 
-      return reply.status(204).send();
-    } catch (error) {
-      // A birth date that has not happened is a domain rule, not a schema rule, so
-      // it can only be caught here.
-      return sendProblem(reply, request, error);
-    }
-  });
+      try {
+        const found = await updatePatient(clinicId, patientId as PatientId, parsed.data, {
+          patients,
+          clock,
+        });
+
+        if (!found) {
+          // The same answer for "no such patient" and "not in this clinic". Anything
+          // else tells a caller that an id exists somewhere it cannot reach.
+          return reply.status(404).send({
+            error: {
+              code: 'NOT_FOUND',
+              message: 'No patient with that id exists in this clinic',
+              requestId: request.id,
+            },
+          });
+        }
+
+        return reply.status(204).send();
+      } catch (error) {
+        // A birth date that has not happened is a domain rule, not a schema rule, so
+        // it can only be caught here.
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * The patient list.
@@ -209,41 +217,45 @@ export async function registerPatientsRoutes(
    * the point. `request.clinicId` is handed to the one method that can scope a
    * query, so there is no code path in which a handler could forget it.
    */
-  app.get('/api/v1/patients', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const query = request.query as {
-      q?: string;
-      page?: string;
-      limit?: string;
-      onlyActive?: string;
-    };
-
-    const page = resolvePage(query.page);
-    const limit = resolvePageSize(query.limit);
-
-    try {
-      const { items, total } = await patients.search(clinicId, {
-        term: query.q,
-        // Only honoured when actually sent as `true`. Defaulting a missing flag to
-        // false would hide every deactivated patient on a first page load, which
-        // is the opposite of the point of keeping them searchable.
-        onlyActive: query.onlyActive === 'true',
-        page: { offset: (page - 1) * limit, limit },
-      });
-
-      return {
-        items,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
+  app.get(
+    '/api/v1/patients',
+    { config: { permission: 'patients:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const query = request.query as {
+        q?: string;
+        page?: string;
+        limit?: string;
+        onlyActive?: string;
       };
-    } catch (error) {
-      return sendProblem(reply, request, error, 'Failed to list patients');
-    }
-  });
+
+      const page = resolvePage(query.page);
+      const limit = resolvePageSize(query.limit);
+
+      try {
+        const { items, total } = await patients.search(clinicId, {
+          term: query.q,
+          // Only honoured when actually sent as `true`. Defaulting a missing flag to
+          // false would hide every deactivated patient on a first page load, which
+          // is the opposite of the point of keeping them searchable.
+          onlyActive: query.onlyActive === 'true',
+          page: { offset: (page - 1) * limit, limit },
+        });
+
+        return {
+          items,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
+        };
+      } catch (error) {
+        return sendProblem(reply, request, error, 'Failed to list patients');
+      }
+    },
+  );
 
   /**
    * The patient profile: the central clinical context for the rest of the app.
@@ -259,31 +271,35 @@ export async function registerPatientsRoutes(
    * `patients` later would have appeared in the API by accident. Naming the fields
    * means a new column is invisible until someone adds it deliberately.
    */
-  app.get('/api/v1/patients/:patientId', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const { patientId } = request.params as { patientId: string };
+  app.get(
+    '/api/v1/patients/:patientId',
+    { config: { permission: 'patients:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const { patientId } = request.params as { patientId: string };
 
-    try {
-      const profile = await patients.findProfile(clinicId, asPatientId(patientId));
+      try {
+        const profile = await patients.findProfile(clinicId, asPatientId(patientId));
 
-      if (!profile) {
-        // "No such patient" and "not in this clinic" are the same answer, so a
-        // caller cannot use this endpoint to discover that an id exists
-        // elsewhere (ADR 0014).
-        return reply.status(404).send({
-          error: {
-            code: 'NOT_FOUND',
-            message: 'No patient with that id exists in this clinic',
-            requestId: request.id,
-          },
-        });
+        if (!profile) {
+          // "No such patient" and "not in this clinic" are the same answer, so a
+          // caller cannot use this endpoint to discover that an id exists
+          // elsewhere (ADR 0014).
+          return reply.status(404).send({
+            error: {
+              code: 'NOT_FOUND',
+              message: 'No patient with that id exists in this clinic',
+              requestId: request.id,
+            },
+          });
+        }
+
+        return profile;
+      } catch (error) {
+        return sendProblem(reply, request, error, 'Failed to read the patient profile');
       }
-
-      return profile;
-    } catch (error) {
-      return sendProblem(reply, request, error, 'Failed to read the patient profile');
-    }
-  });
+    },
+  );
 
   /**
    * The odontogram chart for one patient: the tooth-level clinical record.
@@ -292,28 +308,32 @@ export async function registerPatientsRoutes(
    * is the same 404 the profile gives; `{ entries: [] }` is a real patient whose
    * teeth have never been charted, and renders as an empty chart.
    */
-  app.get('/api/v1/patients/:patientId/odontogram', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const { patientId } = request.params as { patientId: string };
+  app.get(
+    '/api/v1/patients/:patientId/odontogram',
+    { config: { permission: 'odontogram:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const { patientId } = request.params as { patientId: string };
 
-    try {
-      const odontogram = await patients.findOdontogram(clinicId, asPatientId(patientId));
+      try {
+        const odontogram = await patients.findOdontogram(clinicId, asPatientId(patientId));
 
-      if (!odontogram) {
-        return reply.status(404).send({
-          error: {
-            code: 'NOT_FOUND',
-            message: 'No patient with that id exists in this clinic',
-            requestId: request.id,
-          },
-        });
+        if (!odontogram) {
+          return reply.status(404).send({
+            error: {
+              code: 'NOT_FOUND',
+              message: 'No patient with that id exists in this clinic',
+              requestId: request.id,
+            },
+          });
+        }
+
+        return odontogram;
+      } catch (error) {
+        return sendProblem(reply, request, error, 'Failed to read the odontogram');
       }
-
-      return odontogram;
-    } catch (error) {
-      return sendProblem(reply, request, error, 'Failed to read the odontogram');
-    }
-  });
+    },
+  );
 
   /**
    * One patient's treatment plans, newest first, with their items.
@@ -323,28 +343,32 @@ export async function registerPatientsRoutes(
    * with nothing planned yet. The plans are drawn with the same components the
    * profile's outstanding-treatments card folds into one line each, now whole.
    */
-  app.get('/api/v1/patients/:patientId/treatment-plans', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const { patientId } = request.params as { patientId: string };
+  app.get(
+    '/api/v1/patients/:patientId/treatment-plans',
+    { config: { permission: 'treatments:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const { patientId } = request.params as { patientId: string };
 
-    try {
-      const plans = await treatmentPlans.listForPatient(clinicId, asPatientId(patientId));
+      try {
+        const plans = await treatmentPlans.listForPatient(clinicId, asPatientId(patientId));
 
-      if (!plans) {
-        return reply.status(404).send({
-          error: {
-            code: 'NOT_FOUND',
-            message: 'No patient with that id exists in this clinic',
-            requestId: request.id,
-          },
-        });
+        if (!plans) {
+          return reply.status(404).send({
+            error: {
+              code: 'NOT_FOUND',
+              message: 'No patient with that id exists in this clinic',
+              requestId: request.id,
+            },
+          });
+        }
+
+        return { items: plans };
+      } catch (error) {
+        return sendProblem(reply, request, error, 'Failed to read the treatment plans');
       }
-
-      return { items: plans };
-    } catch (error) {
-      return sendProblem(reply, request, error, 'Failed to read the treatment plans');
-    }
-  });
+    },
+  );
 
   /**
    * Chart one tooth of a patient.
@@ -359,43 +383,47 @@ export async function registerPatientsRoutes(
    * formed or not; a finding that is not a finding answers 422 before the domain
    * is asked.
    */
-  app.post('/api/v1/patients/:patientId/odontogram/entries', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const { patientId } = request.params as { patientId: string };
-    const parsed = createOdontogramEntrySchema.safeParse(request.body);
+  app.post(
+    '/api/v1/patients/:patientId/odontogram/entries',
+    { config: { permission: 'odontogram:write' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const { patientId } = request.params as { patientId: string };
+      const parsed = createOdontogramEntrySchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return reply.status(422).send({
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'The odontogram entry could not be accepted',
-          details: { issues: parsed.error.issues },
-          requestId: request.id,
-        },
-      });
-    }
+      if (!parsed.success) {
+        return reply.status(422).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'The odontogram entry could not be accepted',
+            details: { issues: parsed.error.issues },
+            requestId: request.id,
+          },
+        });
+      }
 
-    try {
-      const entry = await recordOdontogramEntry(clinicId, asPatientId(patientId), parsed.data, {
-        patients,
-        entries: odontogramEntries,
-        clock,
-        newId: (): OdontogramEntryId => asOdontogramEntryId(ids.nextId()),
-      });
+      try {
+        const entry = await recordOdontogramEntry(clinicId, asPatientId(patientId), parsed.data, {
+          patients,
+          entries: odontogramEntries,
+          clock,
+          newId: (): OdontogramEntryId => asOdontogramEntryId(ids.nextId()),
+        });
 
-      return reply.status(201).send({
-        id: entry.id,
-        patientId: entry.patientId,
-        visitId: entry.visitId,
-        dentition: entry.dentition,
-        tooth: entry.tooth,
-        surfaces: entry.surfaces,
-        condition: entry.condition,
-        notes: entry.notes,
-        recordedAt: entry.recordedAt,
-      });
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(201).send({
+          id: entry.id,
+          patientId: entry.patientId,
+          visitId: entry.visitId,
+          dentition: entry.dentition,
+          tooth: entry.tooth,
+          surfaces: entry.surfaces,
+          condition: entry.condition,
+          notes: entry.notes,
+          recordedAt: entry.recordedAt,
+        });
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 }

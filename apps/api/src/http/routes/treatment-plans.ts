@@ -70,58 +70,62 @@ export async function registerTreatmentPlanRoutes(
    * later. What is stored is what this endpoint answers with, so the client's
    * refetch and this 201 cannot disagree.
    */
-  app.post('/api/v1/patients/:patientId/treatment-plans', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const { patientId } = request.params as { patientId: string };
-    const parsed = createTreatmentPlanSchema.safeParse(request.body);
+  app.post(
+    '/api/v1/patients/:patientId/treatment-plans',
+    { config: { permission: 'treatments:write' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const { patientId } = request.params as { patientId: string };
+      const parsed = createTreatmentPlanSchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return reply.status(422).send({
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'The treatment plan could not be accepted',
-          details: { issues: parsed.error.issues },
-          requestId: request.id,
-        },
-      });
-    }
+      if (!parsed.success) {
+        return reply.status(422).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'The treatment plan could not be accepted',
+            details: { issues: parsed.error.issues },
+            requestId: request.id,
+          },
+        });
+      }
 
-    try {
-      const plan = await createTreatmentPlan(
-        clinicId,
-        {
-          patientId: asPatientId(patientId),
-          dentistId: parsed.data.dentistId ? asDentistId(parsed.data.dentistId) : null,
-          title: parsed.data.title ?? null,
-          notes: parsed.data.notes ?? null,
-          items: parsed.data.items.map((item) => ({
-            treatmentId: item.treatmentId ? asTreatmentId(item.treatmentId) : null,
-            tooth: item.tooth ?? null,
-            surfaces: item.surfaces,
-            quantity: item.quantity,
-            estimatedPriceMinor: item.estimatedPriceMinor,
-            notes: item.notes ?? null,
-          })),
-        },
-        {
-          patients,
-          dentists,
-          treatments,
-          treatmentPlans,
-          clock,
-          newId: (): TreatmentPlanId => asTreatmentPlanId(ids.nextId()),
-          newItemId: () => ids.nextId(),
-        },
-      );
+      try {
+        const plan = await createTreatmentPlan(
+          clinicId,
+          {
+            patientId: asPatientId(patientId),
+            dentistId: parsed.data.dentistId ? asDentistId(parsed.data.dentistId) : null,
+            title: parsed.data.title ?? null,
+            notes: parsed.data.notes ?? null,
+            items: parsed.data.items.map((item) => ({
+              treatmentId: item.treatmentId ? asTreatmentId(item.treatmentId) : null,
+              tooth: item.tooth ?? null,
+              surfaces: item.surfaces,
+              quantity: item.quantity,
+              estimatedPriceMinor: item.estimatedPriceMinor,
+              notes: item.notes ?? null,
+            })),
+          },
+          {
+            patients,
+            dentists,
+            treatments,
+            treatmentPlans,
+            clock,
+            newId: (): TreatmentPlanId => asTreatmentPlanId(ids.nextId()),
+            newItemId: () => ids.nextId(),
+          },
+        );
 
-      return reply.status(201).send({ plan });
-    } catch (error) {
-      // A patient this clinic does not hold answers 404; a named dentist or
-      // treatment the clinic does not hold answers 422; both arrive as a
-      // `DomainError` and are mapped by `sendProblem`, never a 500.
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(201).send({ plan });
+      } catch (error) {
+        // A patient this clinic does not hold answers 404; a named dentist or
+        // treatment the clinic does not hold answers 422; both arrive as a
+        // `DomainError` and are mapped by `sendProblem`, never a 500.
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * Move a plan along: its status, its title, its notes.
@@ -131,36 +135,40 @@ export async function registerTreatmentPlanRoutes(
    * stored. A plan that is not this patient's answers 404, whether it does not exist
    * or belongs to another patient, because the two are the same answer on purpose.
    */
-  app.patch('/api/v1/patients/:patientId/treatment-plans/:planId', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const { patientId, planId } = request.params as { patientId: string; planId: string };
-    const parsed = updateTreatmentPlanSchema.safeParse(request.body);
+  app.patch(
+    '/api/v1/patients/:patientId/treatment-plans/:planId',
+    { config: { permission: 'treatments:write' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const { patientId, planId } = request.params as { patientId: string; planId: string };
+      const parsed = updateTreatmentPlanSchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return reply.status(422).send({
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'The treatment plan update could not be accepted',
-          details: { issues: parsed.error.issues },
-          requestId: request.id,
-        },
-      });
-    }
+      if (!parsed.success) {
+        return reply.status(422).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'The treatment plan update could not be accepted',
+            details: { issues: parsed.error.issues },
+            requestId: request.id,
+          },
+        });
+      }
 
-    try {
-      await updateTreatmentPlan(
-        clinicId,
-        asPatientId(patientId),
-        asTreatmentPlanId(planId),
-        parsed.data,
-        { patients, treatmentPlans, clock },
-      );
+      try {
+        await updateTreatmentPlan(
+          clinicId,
+          asPatientId(patientId),
+          asTreatmentPlanId(planId),
+          parsed.data,
+          { patients, treatmentPlans, clock },
+        );
 
-      return reply.status(204).send();
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(204).send();
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * Mark one line of a plan done.
@@ -172,6 +180,7 @@ export async function registerTreatmentPlanRoutes(
    */
   app.post(
     '/api/v1/patients/:patientId/treatment-plans/:planId/items/:itemId/complete',
+    { config: { permission: 'treatments:write' } },
     async (request, reply) => {
       const clinicId = request.clinicId as ClinicId;
       const { patientId, planId, itemId } = request.params as {

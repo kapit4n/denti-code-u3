@@ -269,7 +269,7 @@ export async function registerVisitsRoutes(
    * same button at the same moment both pass the domain's check, and the unique index
    * is the only place they were ever both visible.
    */
-  app.post('/api/v1/visits', async (request, reply) => {
+  app.post('/api/v1/visits', { config: { permission: 'visits:write' } }, async (request, reply) => {
     const clinicId = request.clinicId as ClinicId;
     const parsed = startVisitSchema.safeParse(request.body);
 
@@ -310,41 +310,45 @@ export async function registerVisitsRoutes(
    * `inTreatment` total does not grow: both read the book, and a walk-in is not in it.
    * The patient's timeline and profile are where this record shows up.
    */
-  app.post('/api/v1/visits/walk-in', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const parsed = startWalkInVisitSchema.safeParse(request.body);
+  app.post(
+    '/api/v1/visits/walk-in',
+    { config: { permission: 'visits:write' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const parsed = startWalkInVisitSchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return sendInvalidBody(
-        reply,
-        request,
-        'The walk-in visit could not be started',
-        parsed.error,
-      );
-    }
+      if (!parsed.success) {
+        return sendInvalidBody(
+          reply,
+          request,
+          'The walk-in visit could not be started',
+          parsed.error,
+        );
+      }
 
-    try {
-      const visit = await startWalkInVisit(
-        clinicId,
-        {
-          patientId: asPatientId(parsed.data.patientId),
-          dentistId: asDentistId(parsed.data.dentistId),
-          ...(parsed.data.chairId ? { chairId: asChairId(parsed.data.chairId) } : {}),
-        },
-        {
-          visits,
-          dentists,
-          chairs,
-          clock,
-          newId: () => asVisitId(ids.nextId()),
-        },
-      );
+      try {
+        const visit = await startWalkInVisit(
+          clinicId,
+          {
+            patientId: asPatientId(parsed.data.patientId),
+            dentistId: asDentistId(parsed.data.dentistId),
+            ...(parsed.data.chairId ? { chairId: asChairId(parsed.data.chairId) } : {}),
+          },
+          {
+            visits,
+            dentists,
+            chairs,
+            clock,
+            newId: () => asVisitId(ids.nextId()),
+          },
+        );
 
-      return reply.status(201).send(visit);
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(201).send(visit);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `POST /api/v1/visits/:visitId/complete` — the clinician finished with the patient.
@@ -364,24 +368,28 @@ export async function registerVisitsRoutes(
    * That is a decision with a price, and the test in `visits.integration.test.ts` says
    * so beside the assertion.
    */
-  app.post('/api/v1/visits/:visitId/complete', async (request, reply) => {
-    const path = readVisitId(request.params, request.clinicId as ClinicId);
+  app.post(
+    '/api/v1/visits/:visitId/complete',
+    { config: { permission: 'visits:write' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request);
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
 
-    try {
-      const completed = await completeVisitRecord(path.clinicId, path.visitId, {
-        visits,
-        clock,
-      });
+      try {
+        const completed = await completeVisitRecord(path.clinicId, path.visitId, {
+          visits,
+          clock,
+        });
 
-      return reply.status(200).send(completed);
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(200).send(completed);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `POST /api/v1/visits/:visitId/reopen` — amend a closed visit.
@@ -395,21 +403,25 @@ export async function registerVisitsRoutes(
    * and there is no user model to record. The roadmap's "(audited)" is deferred with the
    * open question that says what would be needed (ADR 0022).
    */
-  app.post('/api/v1/visits/:visitId/reopen', async (request, reply) => {
-    const path = readVisitId(request.params, request.clinicId as ClinicId);
+  app.post(
+    '/api/v1/visits/:visitId/reopen',
+    { config: { permission: 'visits:write' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request);
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
 
-    try {
-      const reopened = await reopenVisitRecord(path.clinicId, path.visitId, { visits, clock });
+      try {
+        const reopened = await reopenVisitRecord(path.clinicId, path.visitId, { visits, clock });
 
-      return reply.status(200).send(reopened);
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(200).send(reopened);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `GET /api/v1/visits/:visitId` — one visit.
@@ -421,21 +433,25 @@ export async function registerVisitsRoutes(
    * question about visits is answered by a window and a set of filters — a visit is a
    * clinical record with no schedule (ADR 0023).
    */
-  app.get('/api/v1/visits/:visitId', async (request, reply) => {
-    const path = readVisitId(request.params, request.clinicId as ClinicId);
+  app.get(
+    '/api/v1/visits/:visitId',
+    { config: { permission: 'visits:read' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request);
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
 
-    try {
-      const visit = await getVisit(path.clinicId, path.visitId, { visits });
+      try {
+        const visit = await getVisit(path.clinicId, path.visitId, { visits });
 
-      return reply.status(200).send(visit);
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(200).send(visit);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `GET /api/v1/visits/:visitId/notes` — what the clinician wrote on this visit.
@@ -449,24 +465,28 @@ export async function registerVisitsRoutes(
    * not in this clinic, the answer is the same `NOT_FOUND` the visit itself gives
    * (ADR 0014).
    */
-  app.get('/api/v1/visits/:visitId/notes', async (request, reply) => {
-    const path = readVisitId(request.params, request.clinicId as ClinicId);
+  app.get(
+    '/api/v1/visits/:visitId/notes',
+    { config: { permission: 'visits:read' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request);
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
 
-    try {
-      const notes = await listClinicalNotes(path.clinicId, path.visitId, {
-        visits,
-        notes: clinicalNotes,
-      });
+      try {
+        const notes = await listClinicalNotes(path.clinicId, path.visitId, {
+          visits,
+          notes: clinicalNotes,
+        });
 
-      return reply.status(200).send({ notes });
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(200).send({ notes });
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `POST /api/v1/visits/:visitId/notes` — file a note.
@@ -484,32 +504,36 @@ export async function registerVisitsRoutes(
    * deleted between the use case's read and the insert, which the repository
    * translates from the foreign key so that the same refusal arrives the same way.
    */
-  app.post('/api/v1/visits/:visitId/notes', async (request, reply) => {
-    const path = readVisitId(request.params, request.clinicId as ClinicId);
+  app.post(
+    '/api/v1/visits/:visitId/notes',
+    { config: { permission: 'visits:write' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request);
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
 
-    const parsed = createClinicalNoteSchema.safeParse(request.body);
+      const parsed = createClinicalNoteSchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return sendInvalidBody(reply, request, 'The note could not be saved', parsed.error);
-    }
+      if (!parsed.success) {
+        return sendInvalidBody(reply, request, 'The note could not be saved', parsed.error);
+      }
 
-    try {
-      const note = await addClinicalNote(path.clinicId, path.visitId, parsed.data.body, {
-        visits,
-        notes: clinicalNotes,
-        clock,
-        newId: () => asClinicalNoteId(ids.nextId()),
-      });
+      try {
+        const note = await addClinicalNote(path.clinicId, path.visitId, parsed.data.body, {
+          visits,
+          notes: clinicalNotes,
+          clock,
+          newId: () => asClinicalNoteId(ids.nextId()),
+        });
 
-      return reply.status(201).send(note);
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(201).send(note);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `GET /api/v1/visits/:visitId/attachments` — the files attached to this visit.
@@ -521,24 +545,28 @@ export async function registerVisitsRoutes(
    * answer `[]` for another clinic's visit — an empty list that reads as "no files
    * were attached" (ADR 0014).
    */
-  app.get('/api/v1/visits/:visitId/attachments', async (request, reply) => {
-    const path = readVisitId(request.params, request.clinicId as ClinicId);
+  app.get(
+    '/api/v1/visits/:visitId/attachments',
+    { config: { permission: 'visits:read' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request);
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
 
-    try {
-      const files = await listVisitAttachments(path.clinicId, path.visitId, {
-        visits,
-        attachments,
-      });
+      try {
+        const files = await listVisitAttachments(path.clinicId, path.visitId, {
+          visits,
+          attachments,
+        });
 
-      return reply.status(200).send({ attachments: files });
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(200).send({ attachments: files });
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `POST /api/v1/visits/:visitId/attachments` — attach a file to a visit.
@@ -554,39 +582,43 @@ export async function registerVisitsRoutes(
    * deleted between the use case's read and the insert, which the repository
    * translates from the foreign key so that the same refusal arrives the same way.
    */
-  app.post('/api/v1/visits/:visitId/attachments', async (request, reply) => {
-    const path = readVisitId(request.params, request.clinicId as ClinicId);
+  app.post(
+    '/api/v1/visits/:visitId/attachments',
+    { config: { permission: 'visits:write' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request);
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
 
-    const parsed = createVisitAttachmentSchema.safeParse(request.body);
+      const parsed = createVisitAttachmentSchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return sendInvalidBody(reply, request, 'The file could not be attached', parsed.error);
-    }
+      if (!parsed.success) {
+        return sendInvalidBody(reply, request, 'The file could not be attached', parsed.error);
+      }
 
-    try {
-      const attachment = await addVisitAttachment(
-        path.clinicId,
-        path.visitId,
-        parsed.data.fileName,
-        parsed.data.contentType ?? null,
-        parsed.data.sizeBytes ?? null,
-        {
-          visits,
-          attachments,
-          clock,
-          newId: () => asVisitAttachmentId(ids.nextId()),
-        },
-      );
+      try {
+        const attachment = await addVisitAttachment(
+          path.clinicId,
+          path.visitId,
+          parsed.data.fileName,
+          parsed.data.contentType ?? null,
+          parsed.data.sizeBytes ?? null,
+          {
+            visits,
+            attachments,
+            clock,
+            newId: () => asVisitAttachmentId(ids.nextId()),
+          },
+        );
 
-      return reply.status(201).send(attachment);
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(201).send(attachment);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `GET /api/v1/visits/:visitId/treatments` — what was actually done in this visit.
@@ -602,24 +634,28 @@ export async function registerVisitsRoutes(
    * would answer `[]` for another clinic's visit — an empty list that reads as "nothing
    * was done" (ADR 0014).
    */
-  app.get('/api/v1/visits/:visitId/treatments', async (request, reply) => {
-    const path = readVisitId(request.params, request.clinicId as ClinicId);
+  app.get(
+    '/api/v1/visits/:visitId/treatments',
+    { config: { permission: 'treatments:read' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request);
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
 
-    try {
-      const treatments = await listTreatmentRecords(path.clinicId, path.visitId, {
-        visits,
-        treatmentRecords,
-      });
+      try {
+        const treatments = await listTreatmentRecords(path.clinicId, path.visitId, {
+          visits,
+          treatmentRecords,
+        });
 
-      return reply.status(200).send({ treatments });
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(200).send({ treatments });
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `POST /api/v1/visits/:visitId/treatments` — record a treatment performed.
@@ -642,46 +678,50 @@ export async function registerVisitsRoutes(
    * deleted between the read and the insert, answered by the domain the way its read
    * would.
    */
-  app.post('/api/v1/visits/:visitId/treatments', async (request, reply) => {
-    const path = readVisitId(request.params, request.clinicId as ClinicId);
+  app.post(
+    '/api/v1/visits/:visitId/treatments',
+    { config: { permission: 'treatments:write' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request);
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
 
-    const parsed = recordVisitTreatmentSchema.safeParse(request.body);
+      const parsed = recordVisitTreatmentSchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return sendInvalidBody(reply, request, 'The treatment could not be recorded', parsed.error);
-    }
+      if (!parsed.success) {
+        return sendInvalidBody(reply, request, 'The treatment could not be recorded', parsed.error);
+      }
 
-    try {
-      const recorded = await recordVisitTreatment(
-        path.clinicId,
-        path.visitId,
-        {
-          treatmentId: asTreatmentId(parsed.data.treatmentId),
-          ...(parsed.data.tooth !== undefined ? { tooth: parsed.data.tooth } : {}),
-          ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes } : {}),
-          ...(parsed.data.treatmentPlanItemId !== undefined
-            ? { treatmentPlanItemId: parsed.data.treatmentPlanItemId }
-            : {}),
-        },
-        {
-          visits,
-          treatments,
-          treatmentPlans,
-          treatmentRecords,
-          clock,
-          newId: () => asVisitTreatmentExecutionId(ids.nextId()),
-        },
-      );
+      try {
+        const recorded = await recordVisitTreatment(
+          path.clinicId,
+          path.visitId,
+          {
+            treatmentId: asTreatmentId(parsed.data.treatmentId),
+            ...(parsed.data.tooth !== undefined ? { tooth: parsed.data.tooth } : {}),
+            ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes } : {}),
+            ...(parsed.data.treatmentPlanItemId !== undefined
+              ? { treatmentPlanItemId: parsed.data.treatmentPlanItemId }
+              : {}),
+          },
+          {
+            visits,
+            treatments,
+            treatmentPlans,
+            treatmentRecords,
+            clock,
+            newId: () => asVisitTreatmentExecutionId(ids.nextId()),
+          },
+        );
 
-      return reply.status(201).send(recorded);
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(201).send(recorded);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `GET /api/v1/visits/:visitId/prescriptions` — what the patient was sent home with.
@@ -695,24 +735,28 @@ export async function registerVisitsRoutes(
    * `[]` for another clinic's visit — an empty list that reads as "nothing was
    * prescribed" (ADR 0014).
    */
-  app.get('/api/v1/visits/:visitId/prescriptions', async (request, reply) => {
-    const path = readVisitId(request.params, request.clinicId as ClinicId);
+  app.get(
+    '/api/v1/visits/:visitId/prescriptions',
+    { config: { permission: 'visits:read' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request);
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
 
-    try {
-      const list = await listVisitPrescriptions(path.clinicId, path.visitId, {
-        visits,
-        prescriptions,
-      });
+      try {
+        const list = await listVisitPrescriptions(path.clinicId, path.visitId, {
+          visits,
+          prescriptions,
+        });
 
-      return reply.status(200).send({ prescriptions: list });
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(200).send({ prescriptions: list });
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `POST /api/v1/visits/:visitId/prescriptions` — prescribe a medication.
@@ -731,46 +775,55 @@ export async function registerVisitsRoutes(
    * deleted between the read and the insert, answered by the domain the way its read
    * would.
    */
-  app.post('/api/v1/visits/:visitId/prescriptions', async (request, reply) => {
-    const path = readVisitId(request.params, request.clinicId as ClinicId);
+  app.post(
+    '/api/v1/visits/:visitId/prescriptions',
+    { config: { permission: 'visits:write' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request);
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
 
-    const parsed = createPrescriptionSchema.safeParse(request.body);
+      const parsed = createPrescriptionSchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return sendInvalidBody(reply, request, 'The prescription could not be written', parsed.error);
-    }
+      if (!parsed.success) {
+        return sendInvalidBody(
+          reply,
+          request,
+          'The prescription could not be written',
+          parsed.error,
+        );
+      }
 
-    try {
-      const prescription = await addVisitPrescription(
-        path.clinicId,
-        path.visitId,
-        {
-          medication: parsed.data.medication,
-          dosage: parsed.data.dosage,
-          route: parsed.data.route,
-          frequency: parsed.data.frequency,
-          durationDays: parsed.data.durationDays,
-          ...(parsed.data.instructions !== undefined
-            ? { instructions: parsed.data.instructions }
-            : {}),
-        },
-        {
-          visits,
-          prescriptions,
-          clock,
-          newId: () => asPrescriptionId(ids.nextId()),
-        },
-      );
+      try {
+        const prescription = await addVisitPrescription(
+          path.clinicId,
+          path.visitId,
+          {
+            medication: parsed.data.medication,
+            dosage: parsed.data.dosage,
+            route: parsed.data.route,
+            frequency: parsed.data.frequency,
+            durationDays: parsed.data.durationDays,
+            ...(parsed.data.instructions !== undefined
+              ? { instructions: parsed.data.instructions }
+              : {}),
+          },
+          {
+            visits,
+            prescriptions,
+            clock,
+            newId: () => asPrescriptionId(ids.nextId()),
+          },
+        );
 
-      return reply.status(201).send(prescription);
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(201).send(prescription);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `GET /api/v1/visits/:visitId/charges` — the bill this visit has grown.
@@ -784,24 +837,28 @@ export async function registerVisitsRoutes(
    * charges are not this clinic's to list. The visit read is what keeps the "is this
    * our patient's bill" and the "we cannot see this visit" answers apart (ADR 0014).
    */
-  app.get('/api/v1/visits/:visitId/charges', async (request, reply) => {
-    const path = readVisitId(request.params, request.clinicId as ClinicId);
+  app.get(
+    '/api/v1/visits/:visitId/charges',
+    { config: { permission: 'billing:read' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request);
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
 
-    try {
-      const list = await listVisitCharges(path.clinicId, path.visitId, {
-        visits,
-        charges,
-      });
+      try {
+        const list = await listVisitCharges(path.clinicId, path.visitId, {
+          visits,
+          charges,
+        });
 
-      return reply.status(200).send({ charges: list });
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(200).send({ charges: list });
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `POST /api/v1/visits/:visitId/charges` — raise a charge on the visit.
@@ -825,49 +882,53 @@ export async function registerVisitsRoutes(
    * deleted between the read and the insert, answered by the domain the way its read
    * would.
    */
-  app.post('/api/v1/visits/:visitId/charges', async (request, reply) => {
-    const path = readVisitId(request.params, request.clinicId as ClinicId);
+  app.post(
+    '/api/v1/visits/:visitId/charges',
+    { config: { permission: 'billing:write' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request);
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
 
-    const parsed = createChargeSchema.safeParse(request.body);
+      const parsed = createChargeSchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return sendInvalidBody(reply, request, 'The charge could not be raised', parsed.error);
-    }
+      if (!parsed.success) {
+        return sendInvalidBody(reply, request, 'The charge could not be raised', parsed.error);
+      }
 
-    try {
-      const charge = await addVisitCharge(
-        path.clinicId,
-        path.visitId,
-        {
-          description: parsed.data.description,
-          ...(parsed.data.quantity !== undefined ? { quantity: parsed.data.quantity } : {}),
-          unitPriceMinor: parsed.data.unitPriceMinor,
-          ...(parsed.data.discountMinor !== undefined
-            ? { discountMinor: parsed.data.discountMinor }
-            : {}),
-          ...(parsed.data.treatmentPlanItemId !== undefined
-            ? { treatmentPlanItemId: parsed.data.treatmentPlanItemId }
-            : {}),
-        },
-        {
-          visits,
-          charges,
-          clinics,
-          treatmentPlans,
-          clock,
-          newId: () => asChargeId(ids.nextId()),
-        },
-      );
+      try {
+        const charge = await addVisitCharge(
+          path.clinicId,
+          path.visitId,
+          {
+            description: parsed.data.description,
+            ...(parsed.data.quantity !== undefined ? { quantity: parsed.data.quantity } : {}),
+            unitPriceMinor: parsed.data.unitPriceMinor,
+            ...(parsed.data.discountMinor !== undefined
+              ? { discountMinor: parsed.data.discountMinor }
+              : {}),
+            ...(parsed.data.treatmentPlanItemId !== undefined
+              ? { treatmentPlanItemId: parsed.data.treatmentPlanItemId }
+              : {}),
+          },
+          {
+            visits,
+            charges,
+            clinics,
+            treatmentPlans,
+            clock,
+            newId: () => asChargeId(ids.nextId()),
+          },
+        );
 
-      return reply.status(201).send(charge);
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(201).send(charge);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `GET /api/v1/visits/:visitId/payments` — money received against this bill.
@@ -886,24 +947,28 @@ export async function registerVisitsRoutes(
    * subject; if the subject is not in this clinic, the answer is the same
    * `NOT_FOUND` the visit itself gives (ADR 0014).
    */
-  app.get('/api/v1/visits/:visitId/payments', async (request, reply) => {
-    const path = readVisitId(request.params, request.clinicId as ClinicId);
+  app.get(
+    '/api/v1/visits/:visitId/payments',
+    { config: { permission: 'billing:read' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request);
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
 
-    try {
-      const list = await listVisitPayments(path.clinicId, path.visitId, {
-        visits,
-        payments,
-      });
+      try {
+        const list = await listVisitPayments(path.clinicId, path.visitId, {
+          visits,
+          payments,
+        });
 
-      return reply.status(200).send({ payments: list });
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(200).send({ payments: list });
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `POST /api/v1/visits/:visitId/payments` — settle all or part of the bill.
@@ -931,41 +996,45 @@ export async function registerVisitsRoutes(
    * remainder across those documents oldest first (Milestone 9). Either way the
    * door closes when nothing is left to collect here.
    */
-  app.post('/api/v1/visits/:visitId/payments', async (request, reply) => {
-    const path = readVisitId(request.params, request.clinicId as ClinicId);
+  app.post(
+    '/api/v1/visits/:visitId/payments',
+    { config: { permission: 'billing:write' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request);
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
 
-    const parsed = createPaymentSchema.safeParse(request.body);
+      const parsed = createPaymentSchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return sendInvalidBody(reply, request, 'The payment could not be recorded', parsed.error);
-    }
+      if (!parsed.success) {
+        return sendInvalidBody(reply, request, 'The payment could not be recorded', parsed.error);
+      }
 
-    try {
-      const payment = await payVisitCharges(
-        path.clinicId,
-        path.visitId,
-        {
-          method: parsed.data.method,
-          amountMinor: parsed.data.amountMinor,
-          ...(parsed.data.reference != null ? { reference: parsed.data.reference } : {}),
-        },
-        {
-          unitOfWork,
-          clock,
-          newInvoiceId: () => asInvoiceId(ids.nextId()),
-          newPaymentId: () => asPaymentId(ids.nextId()),
-        },
-      );
+      try {
+        const payment = await payVisitCharges(
+          path.clinicId,
+          path.visitId,
+          {
+            method: parsed.data.method,
+            amountMinor: parsed.data.amountMinor,
+            ...(parsed.data.reference != null ? { reference: parsed.data.reference } : {}),
+          },
+          {
+            unitOfWork,
+            clock,
+            newInvoiceId: () => asInvoiceId(ids.nextId()),
+            newPaymentId: () => asPaymentId(ids.nextId()),
+          },
+        );
 
-      return reply.status(201).send(payment);
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(201).send(payment);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `POST /api/v1/visits/:visitId/invoices` — raise this visit's bill as a
@@ -984,25 +1053,29 @@ export async function registerVisitsRoutes(
    *
    * 404 for a visit this clinic does not hold.
    */
-  app.post('/api/v1/visits/:visitId/invoices', async (request, reply) => {
-    const path = readVisitId(request.params, request.clinicId as ClinicId);
+  app.post(
+    '/api/v1/visits/:visitId/invoices',
+    { config: { permission: 'billing:write' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request);
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
 
-    try {
-      const invoice = await issueVisitInvoice(path.clinicId, path.visitId, {
-        unitOfWork,
-        clock,
-        newInvoiceId: () => asInvoiceId(ids.nextId()),
-      });
+      try {
+        const invoice = await issueVisitInvoice(path.clinicId, path.visitId, {
+          unitOfWork,
+          clock,
+          newInvoiceId: () => asInvoiceId(ids.nextId()),
+        });
 
-      return reply.status(201).send(invoice);
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(201).send(invoice);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
   /**
    * `GET /api/v1/patients/:patientId/visits` — the clinical timeline.
@@ -1019,21 +1092,25 @@ export async function registerVisitsRoutes(
    * clinician reading "these are this patient's visits" has to be able to trust that it
    * is all of them.
    */
-  app.get('/api/v1/patients/:patientId/visits', async (request, reply) => {
-    const path = readPatientId(request.params, request.clinicId as ClinicId);
+  app.get(
+    '/api/v1/patients/:patientId/visits',
+    { config: { permission: 'visits:read' } },
+    async (request, reply) => {
+      const path = readPatientId(request.params, request.clinicId as ClinicId);
 
-    if (!path.valid) {
-      return sendInvalidVisitId(reply, request, 'The patient id in the path is not valid');
-    }
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request, 'The patient id in the path is not valid');
+      }
 
-    try {
-      const list = await listVisitsForPatient(path.clinicId, path.patientId, { visits });
+      try {
+        const list = await listVisitsForPatient(path.clinicId, path.patientId, { visits });
 
-      return reply.status(200).send({ visits: list });
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(200).send({ visits: list });
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 }
 
 type ParsedPatientPath =

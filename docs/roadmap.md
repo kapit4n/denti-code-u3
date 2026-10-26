@@ -418,11 +418,21 @@ collections are clinic-wide, and work with no visit is shown as "Unassigned". Se
 ## Milestone 12 — PRODUCTION HARDENING
 
 - Authentication implementation (sessions, roles, permissions, clinic
-  membership)
+  membership) — **done, session 48** (ADR 0028): scrypt password hashing,
+  opaque bearer sessions (SHA-256 at rest, 12h default), fail-closed request
+  auth, a domain role/permission matrix enforced on every route, and a login
+  screen with a session gate in `packages/app`. Per-clinician clinic membership
+  is one clinic by construction (a session's clinic must equal the configured
+  clinic); multi-clinic membership is a future milestone.
+- Login rate limiting — **done, session 49** (ADR 0029): failed attempts counted
+  per email and client address in process (5 per 15 minutes by default),
+  `429 RATE_LIMITED` with `Retry-After`, cleared by a successful login. Per
+  instance only; a multi-instance deployment needs shared storage or a proxy.
 - Error monitoring, structured log shipping
 - Performance: query tuning, agenda query optimisation
 - Backup/restore procedures for PostgreSQL
-- Security review of the API boundary
+- Security review of the API boundary (note: the bearer token is held in
+  `localStorage` — recorded as a follow-up)
 - Compliance-relevant data-handling decisions (only if actually implemented and
   verified — no claims without evidence)
 

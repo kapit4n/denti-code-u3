@@ -1,4 +1,5 @@
 export * from './appointments/index.js';
+export * from './auth/index.js';
 export * from './clinic/index.js';
 export * from './common/index.js';
 export * from './env/index.js';

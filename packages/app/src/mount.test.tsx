@@ -18,9 +18,29 @@ afterEach(() => {
   // only it can restore, and assigning to it is a parse error under Vite 8.
   vi.unstubAllEnvs();
   document.body.innerHTML = '';
+  window.localStorage.clear();
 });
 
+function seedSession(): void {
+  window.localStorage.setItem(
+    'denti-code-session',
+    JSON.stringify({
+      token: 'test-token',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      user: {
+        id: '00000000-0000-4000-8000-000000000001',
+        clinicId: '00000000-0000-4000-8000-000000000002',
+        email: 'test@example.com',
+        fullName: 'Test User',
+        role: 'ADMINISTRATOR',
+        isActive: true,
+      },
+    }),
+  );
+}
+
 function mountInto(container: HTMLElement): ReturnType<typeof createAppRouter> {
+  seedSession();
   const router = createAppRouter({ target: 'web' });
   mountApp({ container, router, apiBaseUrl: 'http://api.test', queryClient: new QueryClient() });
   return router;
@@ -47,7 +67,10 @@ describe('mountApp', () => {
     root.id = 'root';
     document.body.append(root);
 
-    const router = mountInto(root);
+    seedSession();
+
+    const router = createAppRouter({ target: 'web' });
+    mountApp({ router, apiBaseUrl: 'http://api.test', queryClient: new QueryClient() });
     await router.load();
 
     await waitFor(() => {

@@ -10,12 +10,13 @@
 import { createMemoryHistory } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RouterProvider } from '@tanstack/react-router';
 
 import { ApiClientProvider } from './query/api-client-provider.js';
 import { createAppRouter } from './router.js';
 import { defaultWebCapabilities, type PlatformCapabilities } from './platform/index.js';
+import { SessionProvider } from './features/auth/session-provider.js';
 
 const desktopCapabilities: PlatformCapabilities = {
   ...defaultWebCapabilities,
@@ -31,7 +32,26 @@ const desktopCapabilities: PlatformCapabilities = {
   },
 };
 
+function seedSession(): void {
+  window.localStorage.setItem(
+    'denti-code-session',
+    JSON.stringify({
+      token: 'test-token',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      user: {
+        id: '00000000-0000-4000-8000-000000000001',
+        clinicId: '00000000-0000-4000-8000-000000000002',
+        email: 'test@example.com',
+        fullName: 'Test User',
+        role: 'ADMINISTRATOR',
+        isActive: true,
+      },
+    }),
+  );
+}
+
 function renderApp(capabilities: PlatformCapabilities = defaultWebCapabilities) {
+  seedSession();
   const router = createAppRouter({
     target: capabilities.target,
     history: createMemoryHistory({ initialEntries: ['/'] }),
@@ -45,7 +65,9 @@ function renderApp(capabilities: PlatformCapabilities = defaultWebCapabilities) 
   render(
     <QueryClientProvider client={queryClient}>
       <ApiClientProvider baseUrl="http://api.test/api/v1">
-        <RouterProvider router={router} />
+        <SessionProvider>
+          <RouterProvider router={router} />
+        </SessionProvider>
       </ApiClientProvider>
     </QueryClientProvider>,
   );
@@ -54,6 +76,10 @@ function renderApp(capabilities: PlatformCapabilities = defaultWebCapabilities) 
 }
 
 describe('createAppRouter', () => {
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
   it('builds a router from the generated route tree', () => {
     const router = createAppRouter({ history: createMemoryHistory({ initialEntries: ['/'] }) });
 
@@ -106,17 +132,20 @@ describe('createAppRouter', () => {
 });
 
 describe('the mounted route tree', () => {
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
   it('renders the index route inside the application frame', async () => {
     renderApp();
-
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Foundation is mounted' })).toBeInTheDocument();
-    });
 
     // The frame comes from the root route, not from the index route. Checking it
     // after the route settles also proves the frame survived the route's own
     // render rather than only appearing on an empty tree.
-    expect(screen.getByText(/^Denti-Code U3 · Milestone 2/)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Foundation is mounted' })).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
   });
 
   it('renders the same routes on the desktop target', async () => {
@@ -147,7 +176,7 @@ describe('the mounted route tree', () => {
       expect(screen.getByRole('heading', { name: 'Foundation is mounted' })).toBeInTheDocument();
     });
 
-    expect(screen.getAllByText(/^Denti-Code U3 · Milestone 2/)).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
   });
 });
 

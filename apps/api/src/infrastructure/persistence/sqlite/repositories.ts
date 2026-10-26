@@ -27,6 +27,8 @@ import { SQLitePrescriptionRepository } from './repositories/prescription-reposi
 import { SQLiteTreatmentPlanRepository } from './repositories/treatment-plan-repository.js';
 import { SQLiteTreatmentRecordRepository } from './repositories/treatment-record-repository.js';
 import { SQLiteTreatmentRepository } from './repositories/treatment-repository.js';
+import { SQLiteUserRepository } from './repositories/user-repository.js';
+import { SQLiteSessionRepository } from './repositories/session-repository.js';
 import { SQLiteVisitAttachmentRepository } from './repositories/visit-attachment-repository.js';
 import { SQLiteVisitRepository } from './repositories/visit-repository.js';
 
@@ -50,5 +52,7 @@ export function sqliteRepositoriesFor(db: SqliteDatabase): Repositories {
     attachments: new SQLiteVisitAttachmentRepository(db),
     odontogramEntries: new SQLiteOdontogramEntryRepository(db),
     inventory: new SQLiteInventoryRepository(db),
+    users: new SQLiteUserRepository(db),
+    sessions: new SQLiteSessionRepository(db),
   };
 }

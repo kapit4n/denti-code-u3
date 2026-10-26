@@ -52,6 +52,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as sqliteSchema from '@denti-code-u3/database/schema/sqlite';
 import { resolveClinicTimeWindow } from '../src/application/clinic-time-window.js';
 import { createSqliteConnection } from '../src/infrastructure/persistence/sqlite/connection.js';
+import { ScryptPasswordHasher } from '../src/infrastructure/security/scrypt-password-hasher.js';
 import { buildServer, type DentiApiServer } from '../src/app.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -70,10 +71,14 @@ const foreignPatientId = 'a0a0a0a0-0000-4000-8000-000000000011';
 const foreignVisitId = 'a0a0a0a0-0000-4000-8000-000000000012';
 /** Another clinic's stock item, so the movement read has something to refuse. */
 const foreignInventoryItemId = 'a0a0a0a0-0000-4000-8000-000000000013';
+/** The seeded login every request in this suite authenticates as. */
+const ADMIN_EMAIL = 'admin@sqlite-smoke.test';
+const ADMIN_PASSWORD = 'smoke-secret';
 
 describe('API on SQLite', () => {
   let dir: string;
   let app: DentiApiServer;
+  let authToken: string;
 
   beforeAll(async () => {
     dir = mkdtempSync(path.join(tmpdir(), 'denti-sqlite-'));
@@ -96,6 +101,34 @@ describe('API on SQLite', () => {
       CLINIC_TIMEZONE: 'UTC',
       CLINIC_ID: clinicId,
     });
+
+    // Log in once and let every request below carry the bearer token by default:
+    // these tests are about the clinical surface, not about authentication, which
+    // has its own specs. `injectWithAuth` also proves the default path stays
+    // authenticated — a route that forgot to be public yet answered without a token
+    // would be a bug this suite would have to fail on.
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
+    });
+    if (login.statusCode !== 200) {
+      throw new Error(`Smoke login failed: ${login.statusCode} ${login.body}`);
+    }
+    authToken = login.json().token;
+
+    const originalInject = app.inject.bind(app);
+    app.inject = ((options: string | Record<string, unknown>) => {
+      const normalized = typeof options === 'string' ? { url: options } : options;
+      const url = normalized.url;
+      if (url === '/ready' || url === '/health') {
+        return originalInject(options as never);
+      }
+      return originalInject({
+        ...normalized,
+        headers: { authorization: `Bearer ${authToken}`, ...(normalized.headers as object) },
+      } as never);
+    }) as typeof app.inject;
   });
 
   afterAll(async () => {
@@ -1433,6 +1466,18 @@ async function seed(db: importedDb) {
     legalName: null,
     timeZone: 'UTC',
     currencyCode: 'USD',
+    isActive: true,
+  });
+
+  // The administrator every request in this suite logs in as. The hash is produced
+  // by the real hasher, so login exercises the same verification the product does.
+  await db.insert(sqliteSchema.users).values({
+    id: 'a0a0a0a0-0000-4000-8000-0000000000a1',
+    clinicId,
+    email: ADMIN_EMAIL,
+    passwordHash: await new ScryptPasswordHasher().hash(ADMIN_PASSWORD),
+    fullName: 'Smoke Admin',
+    role: 'ADMINISTRATOR',
     isActive: true,
   });
 

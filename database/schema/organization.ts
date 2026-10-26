@@ -156,6 +156,39 @@ export const rolePermissions = pgTable(
   (table) => [primaryKey({ columns: [table.role, table.permission] })],
 );
 
+/**
+ * Login sessions, one row per issued token.
+ *
+ * The column is `token_hash`, never the token: a database dump cannot be
+ * replayed against the API. `revoked_at` is a timestamp rather than a deleted
+ * row, so "who was logged in, and when did it end" survives the logout — the
+ * seed of the audit story that arrives with authentication. A session belongs to
+ * one user in one clinic; a token that names another clinic is refused in the
+ * use case, not honoured by a query.
+ */
+export const sessions = pgTable(
+  'sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tokenHash: text('token_hash').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    clinicId: uuid('clinic_id')
+      .notNull()
+      .references(() => clinics.id, { onDelete: 'cascade' }),
+    issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [
+    // The lookup is always by hash, never by id: a login presents a token, not a
+    // session id, and this unique index is what makes that lookup a single probe.
+    uniqueIndex('sessions_token_hash_uq').on(table.tokenHash),
+    index('sessions_user_idx').on(table.userId),
+  ],
+);
+
 export const clinicRelations = relations(clinics, ({ many }) => ({
   operatingHours: many(clinicOperatingHours),
   rooms: many(rooms),

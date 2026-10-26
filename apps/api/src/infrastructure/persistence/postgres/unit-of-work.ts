@@ -39,6 +39,8 @@ import { DrizzlePrescriptionRepository } from '../repositories/prescription-repo
 import { DrizzleTreatmentPlanRepository } from '../repositories/treatment-plan-repository.js';
 import { DrizzleTreatmentRecordRepository } from '../repositories/treatment-record-repository.js';
 import { DrizzleTreatmentRepository } from '../repositories/treatment-repository.js';
+import { DrizzleUserRepository } from '../repositories/user-repository.js';
+import { DrizzleSessionRepository } from '../repositories/session-repository.js';
 import { DrizzleVisitAttachmentRepository } from '../repositories/visit-attachment-repository.js';
 import { DrizzleVisitRepository } from '../repositories/visit-repository.js';
 
@@ -69,6 +71,8 @@ export function repositoriesFor(db: DentiDatabase): Repositories {
     attachments: new DrizzleVisitAttachmentRepository(db),
     odontogramEntries: new DrizzleOdontogramEntryRepository(db),
     inventory: new DrizzleInventoryRepository(db),
+    users: new DrizzleUserRepository(db),
+    sessions: new DrizzleSessionRepository(db),
   };
 }
 

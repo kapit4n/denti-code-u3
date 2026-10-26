@@ -3312,3 +3312,125 @@ pnpm run test:e2e         139/139 passed
   abstraction, not a Tauri import.
 - Collections are clinic-wide by design. Per-clinician collections need `payments` to
   carry a clinician, which is a billing-model change out of scope here.
+
+## Session 48 — Milestone 12 slice 1: authentication — 2026-10-26
+
+**Goal.** Replace the config-only `CLINIC_ID` stand-in with real authentication:
+users, sessions, password hashing, a login screen, and role-based authorization on
+the API. No remaining Milestone 12 bullet was attempted.
+
+**What was built**
+
+- **Domain.** `organization/auth.ts` (`AuthenticatedUser`, `UserWithCredentials`,
+  `Session`, `Principal`, `principalFromUser`, `isSessionExpired`,
+  `assertSessionUsable`, `assertUserActive`); `organization/authenticate.ts`
+  (`login`, `resolvePrincipal`, `logout`, `DEFAULT_SESSION_TTL_HOURS = 12`);
+  `organization/roles.ts` (four roles, the permission matrix, `hasPermission`);
+  `shared/security.ts` (`PasswordHasher`, `TokenGenerator` ports); `UNAUTHENTICATED`
+  added to `DomainErrorCode`; `UserRepository`/`SessionRepository` on `Repositories`.
+- **Persistence (both engines).** `sessions` table in `database/schema` and
+  `database/schema/sqlite` with a unique token-hash index and a user index; migrations
+  `0007_yellow_red_wolf.sql` (PG) and `0006_pale_scalphunter.sql` (SQLite). User and
+  session repositories on each engine; email lookup is `lower(email)`; only the login
+  read selects the password hash.
+- **Crypto.** `ScryptPasswordHasher` (`scrypt$N$r$p$salt$hash`, per-password salt,
+  `timingSafeEqual`) and `CryptoTokenGenerator` (32 random bytes, base64url). The token
+  is stored as SHA-256 hex — no KDF per request.
+- **API.** `registerAuth` on `onRequest`, fail-closed (`config.public` opts out);
+  `POST /api/v1/auth/login` (public), `POST /api/v1/auth/logout`,
+  `GET /api/v1/auth/me`; `UNAUTHENTICATED` → 401 + `WWW-Authenticate`; every API route
+  declares `config: { permission }` and gets 403 when the role lacks it. The old
+  `clinic-scope.ts` is deleted.
+- **Seed.** Four development users with the password `denti-code-dev`; dentists carry
+  their `userId`; the seed prints the logins.
+- **Client/app.** Session storage with validate-on-read; `SessionProvider` (sign in/out,
+  bearer header injection, query-cache clear, listens for `denti-code:unauthorized`); a
+  login page; the root route gates the shell on `isAuthenticated`; the header shows the
+  user and Sign out; `ApiClient.setAuthorizationHeaderGetter`.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run build            5/5 successful
+pnpm run test             domain 368, validation 153, app 344, api-client 15, database 6,
+                          desktop 3
+API integration           38 passed / 273 skipped (PG specs typecheck, skip without
+                          TEST_DATABASE_URL; SQLite smoke logs in and carries a token;
+                          auth.integration.test.ts covers 401/403/200/login/logout/me)
+pnpm run test:e2e         143/143 passed (new login.spec.ts; shared fixture seeds session)
+```
+
+**Notes / follow-ups**
+
+- `POST /auth/login` is not rate-limited. That is a deployment (proxy) concern and an
+  open question, not a limiter invented in the app.
+- The token lives in `localStorage`, so XSS can read it; it is short-lived and
+  revocable. An `HttpOnly` cookie would be a new ADR and would need CSRF.
+- Remaining Milestone 12 bullets: error monitoring / log shipping, performance tuning,
+  PostgreSQL backup/restore, a security review, and a data-handling review.
+- The e2e reports request poll was tightened: it could read the summary request made
+  before the clinician selection and fail on a missing `dentistId`.
+- `docs/security.md` now describes the implemented auth boundary and the remaining
+  gaps (token storage, rotation); `docs/open-questions.md` closes #1/T1 for one clinic
+  per process and keeps multi-clinic membership as future work. Login rate limiting
+  arrived in session 49.
+
+---
+
+## Session 49 — Milestone 12 slice 2: login rate limiting — 2026-10-26
+
+**Goal.** Close ADR 0028's explicit gap: a failed login was an identical, cheap 401 with
+nothing to slow repeated guessing.
+
+**Decision (ADR 0029).** A bounded, in-memory fixed-window limiter keyed by normalised
+email **and** `request.ip`. Email-only enables account-lockout denial of service;
+address-only lets one shared clinic terminal throttle the whole clinic. Only
+`UNAUTHENTICATED` results count and a success clears the key. The check runs after body
+validation, before the credential check, so the right password cannot slip through an
+exhausted window and no hash is computed for a refused attempt. In process because the
+deployment is one API process; a counter table would add two repository methods on both
+engines for state that expires in fifteen minutes. Counters are per instance and reset on
+restart — documented as the multi-instance limitation.
+
+**Implementation**
+
+- `apps/api/src/infrastructure/security/login-rate-limiter.ts`: `check` / `recordFailure`
+  / `recordSuccess`, injectable clock, `maxKeys` safety valve (expired pruning, then
+  oldest eviction), `Retry-After` rounded up to whole seconds.
+- Env: `AUTH_LOGIN_MAX_ATTEMPTS` (default 5, 1–100) and `AUTH_LOGIN_WINDOW_MINUTES`
+  (default 15, 1–1440) in `packages/validation`, mapped into `ApiConfig`, documented in
+  `.env.example`.
+- `POST /api/v1/auth/login`: limiter injected from `buildServer`; refusals answer
+  `429 RATE_LIMITED` + `Retry-After`, logging request id and address but never the email.
+- `RATE_LIMITED` added to the API error code union and the client's `API_ERROR_CODES`;
+  `LoginPage` shows "Too many sign-in attempts. Try again later." for it, and keeps the
+  single credential-failure message otherwise.
+
+**Verification**
+
+```
+rate limiter unit         8/8
+API integration           40 passed / 273 skipped (SQLite auth + smoke; +2 throttling)
+packages/app test         345 passed (+1 429 message)
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run test             12/12 tasks successful
+pnpm run build            5/5 successful
+pnpm run test:e2e         144/144 passed (+1 throttled login spec)
+pnpm run db:migrate       applied (no schema change)
+pnpm run db:seed          complete; four development logins unchanged
+```
+
+**Notes / follow-ups**
+
+- The limiter does not stop an attacker who varies both email and address; that stays a
+  deployment-layer concern.
+- Behind a reverse proxy (`trustProxy: false`), every client appears as the proxy unless
+  the deployment opts into forwarded addresses, making the key effectively email-only.
+- A multi-instance deployment must move the counter to shared storage or enable proxy
+  rate limiting.
+- The token is still in `localStorage`; ADR 0028's token-storage follow-up stands.

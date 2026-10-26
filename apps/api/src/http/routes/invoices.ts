@@ -50,28 +50,32 @@ export async function registerInvoiceRoutes(
    * invoice is a legal document and its printed total must not move when a price is
    * edited later.
    */
-  app.get('/api/v1/patients/:patientId/invoices', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const { patientId } = request.params as { patientId: string };
+  app.get(
+    '/api/v1/patients/:patientId/invoices',
+    { config: { permission: 'billing:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const { patientId } = request.params as { patientId: string };
 
-    try {
-      const list = await invoices.findForPatient(clinicId, asPatientId(patientId));
+      try {
+        const list = await invoices.findForPatient(clinicId, asPatientId(patientId));
 
-      if (!list) {
-        return reply.status(404).send({
-          error: {
-            code: 'NOT_FOUND',
-            message: 'No patient with that id exists in this clinic',
-            requestId: request.id,
-          },
-        });
+        if (!list) {
+          return reply.status(404).send({
+            error: {
+              code: 'NOT_FOUND',
+              message: 'No patient with that id exists in this clinic',
+              requestId: request.id,
+            },
+          });
+        }
+
+        return { items: list };
+      } catch (error) {
+        return sendProblem(reply, request, error, 'Failed to read the invoices');
       }
-
-      return { items: list };
-    } catch (error) {
-      return sendProblem(reply, request, error, 'Failed to read the invoices');
-    }
-  });
+    },
+  );
 
   /**
    * One invoice, with the charges it folded in — the document's own detail.
@@ -80,28 +84,32 @@ export async function registerInvoiceRoutes(
    * that belongs to another clinic: the two cases must be indistinguishable, or the
    * endpoint reports whose invoices exist elsewhere.
    */
-  app.get('/api/v1/invoices/:invoiceId', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const { invoiceId } = request.params as { invoiceId: string };
+  app.get(
+    '/api/v1/invoices/:invoiceId',
+    { config: { permission: 'billing:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const { invoiceId } = request.params as { invoiceId: string };
 
-    try {
-      const invoice = await invoices.findById(clinicId, asInvoiceId(invoiceId));
+      try {
+        const invoice = await invoices.findById(clinicId, asInvoiceId(invoiceId));
 
-      if (!invoice) {
-        return reply.status(404).send({
-          error: {
-            code: 'NOT_FOUND',
-            message: 'No invoice with that id exists in this clinic',
-            requestId: request.id,
-          },
-        });
+        if (!invoice) {
+          return reply.status(404).send({
+            error: {
+              code: 'NOT_FOUND',
+              message: 'No invoice with that id exists in this clinic',
+              requestId: request.id,
+            },
+          });
+        }
+
+        return invoice;
+      } catch (error) {
+        return sendProblem(reply, request, error, 'Failed to read the invoice');
       }
-
-      return invoice;
-    } catch (error) {
-      return sendProblem(reply, request, error, 'Failed to read the invoice');
-    }
-  });
+    },
+  );
 
   /**
    * What the patient owes this clinic: billed, allocated, outstanding, credit, and
@@ -115,20 +123,24 @@ export async function registerInvoiceRoutes(
    * A patient this clinic does not hold is a 404, thrown by the use case rather than
    * assembled here: a zero balance and a stranger's id must not be the same answer.
    */
-  app.get('/api/v1/patients/:patientId/balance', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const { patientId } = request.params as { patientId: string };
+  app.get(
+    '/api/v1/patients/:patientId/balance',
+    { config: { permission: 'billing:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const { patientId } = request.params as { patientId: string };
 
-    try {
-      return await getPatientBalance(clinicId, asPatientId(patientId), {
-        invoices,
-        payments,
-        clinics,
-      });
-    } catch (error) {
-      return sendProblem(reply, request, error, 'Failed to read the balance');
-    }
-  });
+      try {
+        return await getPatientBalance(clinicId, asPatientId(patientId), {
+          invoices,
+          payments,
+          clinics,
+        });
+      } catch (error) {
+        return sendProblem(reply, request, error, 'Failed to read the balance');
+      }
+    },
+  );
 
   /**
    * The patient's statement: every issued document and every payment, oldest first,
@@ -143,18 +155,22 @@ export async function registerInvoiceRoutes(
    * A patient this clinic does not hold is a 404, thrown by the use case before the
    * clinic or the payments are read.
    */
-  app.get('/api/v1/patients/:patientId/statement', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const { patientId } = request.params as { patientId: string };
+  app.get(
+    '/api/v1/patients/:patientId/statement',
+    { config: { permission: 'billing:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const { patientId } = request.params as { patientId: string };
 
-    try {
-      return await getPatientStatement(clinicId, asPatientId(patientId), {
-        invoices,
-        payments,
-        clinics,
-      });
-    } catch (error) {
-      return sendProblem(reply, request, error, 'Failed to read the statement');
-    }
-  });
+      try {
+        return await getPatientStatement(clinicId, asPatientId(patientId), {
+          invoices,
+          payments,
+          clinics,
+        });
+      } catch (error) {
+        return sendProblem(reply, request, error, 'Failed to read the statement');
+      }
+    },
+  );
 }

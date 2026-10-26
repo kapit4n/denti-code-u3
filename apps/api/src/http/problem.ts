@@ -16,6 +16,7 @@ export type ApiErrorCode =
   | 'NOT_FOUND'
   | 'DOMAIN_RULE_VIOLATION'
   | 'SCHEDULING_CONFLICT'
+  | 'RATE_LIMITED'
   | 'INTERNAL_ERROR';
 
 export interface ApiProblem {
@@ -37,6 +38,9 @@ const DOMAIN_ERROR_HTTP_STATUS: Record<DomainErrorCode, number> = {
   UNBOOKABLE_RESOURCE: 409,
   INSUFFICIENT_STOCK: 409,
   DUPLICATED_RECORD: 409,
+  // 401, not 403: the caller has not proven who they are, so the answer is
+  // "authenticate", which the client can act on by showing a login screen.
+  UNAUTHENTICATED: 401,
   FORBIDDEN: 403,
 };
 
@@ -77,6 +81,9 @@ export function toApiErrorCode(domainCode: DomainErrorCode): ApiErrorCode {
   }
   if (domainCode === 'NOT_FOUND') {
     return 'NOT_FOUND';
+  }
+  if (domainCode === 'UNAUTHENTICATED') {
+    return 'UNAUTHENTICATED';
   }
   if (domainCode === 'FORBIDDEN') {
     return 'FORBIDDEN';

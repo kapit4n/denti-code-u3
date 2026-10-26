@@ -10,15 +10,17 @@
  * ADR-0008 exists to prevent.
  */
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { ApiClientError } from '@denti-code-u3/api-client';
 
 import type { PlatformCapabilities, RuntimeTarget } from './platform/index.js';
 import { ApiClientProvider } from './query/api-client-provider.js';
 import type { RootRouteContext } from './routes/__root.js';
 import { createAppRouter, type AppRouter } from './router.js';
+import { SessionProvider } from './features/auth/session-provider.js';
 
 export interface MountAppOptions {
   /**
@@ -44,7 +46,9 @@ export function mountApp(options: MountAppOptions = {}): void {
     <StrictMode>
       <QueryClientProvider client={options.queryClient ?? createQueryClient()}>
         <ApiClientProvider baseUrl={options.apiBaseUrl ?? readApiBaseUrl(options.target)}>
-          <RouterProvider router={router} />
+          <SessionProvider>
+            <RouterProvider router={router} />
+          </SessionProvider>
         </ApiClientProvider>
       </QueryClientProvider>
     </StrictMode>,
@@ -117,5 +121,16 @@ function createQueryClient(): QueryClient {
         retry: false,
       },
     },
+    queryCache: new QueryCache({
+      onError: (error) => {
+        // A 401 means the token is no longer accepted (expired, revoked, or the
+        // account was deactivated while the tab was open). The session provider
+        // listens for this and drops the local session, which re-renders the login
+        // screen — rather than leaving the operator on a page of failed requests.
+        if (error instanceof ApiClientError && error.code === 'UNAUTHENTICATED') {
+          window.dispatchEvent(new Event('denti-code:unauthorized'));
+        }
+      },
+    }),
   });
 }

@@ -21,13 +21,17 @@ export interface ApiConfig {
   /**
    * The clinic this process serves.
    *
-   * Authentication is not built yet, so there is no session to resolve a clinic
-   * from. This is the single-clinic assumption ADR 0014 explicitly permits, and
-   * it lives only at the HTTP edge: repositories and use cases still receive
-   * `clinicId` as an explicit argument, so adding auth later means replacing
-   * this one lookup, not re-scoping every query.
+   * A session must belong to this clinic, so a token issued for another clinic is
+   * refused (ADR 0028). The value still lives only at the HTTP edge: repositories
+   * and use cases keep receiving `clinicId` as an explicit argument.
    */
   readonly clinicId: string;
+  /** Session lifetime in hours. See `apiEnvironmentSchema`. */
+  readonly sessionTtlHours: number;
+  /** Failed logins allowed per email and address in the window below. */
+  readonly loginMaxAttempts: number;
+  /** The rate-limit window, in minutes. */
+  readonly loginWindowMinutes: number;
 }
 
 export type EnvSource = Record<string, string | undefined>;
@@ -63,6 +67,9 @@ export function loadApiConfig(env: EnvSource = process.env): ApiConfig {
     databaseUrl: value.DATABASE_URL,
     clinicTimeZone: value.CLINIC_TIMEZONE,
     clinicId: value.CLINIC_ID,
+    sessionTtlHours: value.SESSION_TTL_HOURS,
+    loginMaxAttempts: value.AUTH_LOGIN_MAX_ATTEMPTS,
+    loginWindowMinutes: value.AUTH_LOGIN_WINDOW_MINUTES,
   });
 }
 

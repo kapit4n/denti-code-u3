@@ -43,6 +43,13 @@
       "when": 1792004660828,
       "tag": "0005_faithful_secret_warriors",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792709345532,
+      "tag": "0006_pale_scalphunter",
+      "breakpoints": true
     }
   ]
 }

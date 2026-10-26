@@ -40,17 +40,21 @@ export async function registerTreatmentsRoutes(
   app: FastifyInstance,
   { treatments, ids }: TreatmentsDependencies,
 ): Promise<void> {
-  app.get('/api/v1/treatments', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
+  app.get(
+    '/api/v1/treatments',
+    { config: { permission: 'treatments:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
 
-    try {
-      const items = await treatments.listByClinic(clinicId);
+      try {
+        const items = await treatments.listByClinic(clinicId);
 
-      return { items };
-    } catch (error) {
-      return sendProblem(reply, request, error, 'Failed to list treatments');
-    }
-  });
+        return { items };
+      } catch (error) {
+        return sendProblem(reply, request, error, 'Failed to list treatments');
+      }
+    },
+  );
 
   /**
    * Add a treatment to the catalogue.
@@ -60,35 +64,39 @@ export async function registerTreatmentsRoutes(
    * clinic the request never saw (ADR 0014). The id and the created/updated stamps
    * are the server's: what is stored is what this endpoint answers with.
    */
-  app.post('/api/v1/treatments', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const parsed = createTreatmentSchema.safeParse(request.body);
+  app.post(
+    '/api/v1/treatments',
+    { config: { permission: 'treatments:write' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const parsed = createTreatmentSchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return reply.status(422).send({
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'The treatment could not be accepted',
-          details: { issues: parsed.error.issues },
-          requestId: request.id,
-        },
-      });
-    }
+      if (!parsed.success) {
+        return reply.status(422).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'The treatment could not be accepted',
+            details: { issues: parsed.error.issues },
+            requestId: request.id,
+          },
+        });
+      }
 
-    try {
-      const item = await addTreatment(clinicId, parsed.data, {
-        treatments,
-        newId: (): TreatmentId => asTreatmentId(ids.nextId()),
-      });
+      try {
+        const item = await addTreatment(clinicId, parsed.data, {
+          treatments,
+          newId: (): TreatmentId => asTreatmentId(ids.nextId()),
+        });
 
-      return reply.status(201).send({ item });
-    } catch (error) {
-      // A duplicate code arrives as a `DUPLICATED_RECORD` from the repository's
-      // translation of the unique index; a blank name arrives as `INVALID_INPUT`
-      // from the domain. `sendProblem` maps both to the status the caller can act
-      // on, and nothing here turns the clinic's most common catalogue mistake into
-      // a 500 with a request id.
-      return sendProblem(reply, request, error);
-    }
-  });
+        return reply.status(201).send({ item });
+      } catch (error) {
+        // A duplicate code arrives as a `DUPLICATED_RECORD` from the repository's
+        // translation of the unique index; a blank name arrives as `INVALID_INPUT`
+        // from the domain. `sendProblem` maps both to the status the caller can act
+        // on, and nothing here turns the clinic's most common catalogue mistake into
+        // a 500 with a request id.
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 }

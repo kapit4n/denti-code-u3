@@ -39,11 +39,41 @@ export { expect };
 /** Monday 2026-10-05 08:00 in the clinic — the day every fixture here describes. */
 export const FROZEN_NOW = '2026-10-05T13:00:00.000Z';
 
+/**
+ * The session every spec starts with.
+ *
+ * The application now opens on a login screen; an unauthenticated page would make
+ * every spec here fail for a reason unrelated to what it tests. Seeding storage
+ * before the first navigation puts the app past the login and inside the shell, so
+ * the specs keep asking their own question. The login flow itself is covered by
+ * `login.spec.ts`, which clears this session before it starts.
+ *
+ * The expiry is beyond the frozen clock, so the "is this session still valid?"
+ * check on read does not turn the seeded session into a login prompt.
+ */
+export const TEST_SESSION = {
+  token: 'e2e-session-token',
+  expiresAt: '2030-01-01T00:00:00.000Z',
+  user: {
+    id: '00000000-0000-4000-8000-000000000001',
+    clinicId: '00000000-0000-4000-8000-000000000002',
+    email: 'admin@denti-code.test',
+    fullName: 'E2E Admin',
+    role: 'ADMINISTRATOR',
+    isActive: true,
+  },
+} as const;
+
 export const test = base.extend({
   page: async ({ page }, use) => {
     // Before the first navigation: the clock is read on load (the agenda's "today"),
     // so installing it after `goto` would let one frame through at the real date.
     await page.clock.setFixedTime(FROZEN_NOW);
+    // Also before the first navigation: the app reads the session on mount, so a
+    // session written after `goto` would only take effect on a reload.
+    await page.addInitScript((session) => {
+      window.localStorage.setItem('denti-code-session', JSON.stringify(session));
+    }, TEST_SESSION);
     await use(page);
   },
 });

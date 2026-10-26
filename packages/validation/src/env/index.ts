@@ -65,6 +65,22 @@ export const apiEnvironmentSchema = z.object({
   DATABASE_URL: databaseUrlSchema,
   CLINIC_TIMEZONE: timeZoneSchema.default('UTC'),
   CLINIC_ID: clinicIdSchema,
+  /**
+   * How long an issued session stays valid, in hours.
+   *
+   * Configurable because a shared reception terminal and a clinician's own
+   * workstation want different answers, and because a test needs a session that
+   * expires on command. Defaults to a working day.
+   */
+  SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(720).default(12),
+  /**
+   * Failed sign-in attempts allowed per email and client address before login
+   * answers 429. Five in fifteen minutes leaves room for a mistyped password and
+   * still makes guessing impractical (ADR 0029).
+   */
+  AUTH_LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(100).default(5),
+  /** The window those attempts are counted in, in minutes. */
+  AUTH_LOGIN_WINDOW_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
 });
 
 export const databaseEnvironmentSchema = z.object({

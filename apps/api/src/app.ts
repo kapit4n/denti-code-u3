@@ -15,7 +15,8 @@ import {
   type DatabaseConnection,
 } from './infrastructure/persistence/connection.js';
 import { registerCors } from './http/plugins/cors.js';
-import { registerClinicScope } from './http/plugins/clinic-scope.js';
+import { registerAuth } from './http/plugins/auth.js';
+import { registerAuthRoutes } from './http/routes/auth.js';
 import { registerHealthRoutes } from './http/routes/health.js';
 import { registerDashboardRoutes } from './http/routes/dashboard.js';
 import { registerReportsRoutes } from './http/routes/reports.js';
@@ -31,6 +32,9 @@ import { registerPatientsRoutes } from './http/routes/patients.js';
 import { registerTreatmentPlanRoutes } from './http/routes/treatment-plans.js';
 import { systemClock } from './infrastructure/clock/system-clock.js';
 import { uuidGenerator } from './infrastructure/id/uuid-generator.js';
+import { LoginRateLimiter } from './infrastructure/security/login-rate-limiter.js';
+import { ScryptPasswordHasher } from './infrastructure/security/scrypt-password-hasher.js';
+import { CryptoTokenGenerator } from './infrastructure/security/token-generator.js';
 import { sendProblem } from './http/problem.js';
 
 export interface ServerDependencies {
@@ -87,9 +91,28 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   await registerCors(app, config);
   await registerHealthRoutes(app, { config, connection });
 
-  // Registered before every clinical route: `request.clinicId` is what makes
-  // ADR 0014's scoping rule enforceable rather than aspirational.
-  await registerClinicScope(app, { config });
+  // Authentication, before every clinical route. It resolves the bearer token into
+  // `request.principal` (and `request.clinicId`), and refuses any route that has
+  // not declared itself public — so a route added later is protected by default
+  // rather than public by omission. This replaced the config-based `clinic-scope`
+  // plugin, which was the single-clinic stand-in for exactly this (ADR 0014, 0028).
+  const auth = {
+    users: connection.repositories.users,
+    sessions: connection.repositories.sessions,
+    passwordHasher: new ScryptPasswordHasher(),
+    tokenGenerator: new CryptoTokenGenerator(),
+    clock: systemClock,
+    ids: uuidGenerator,
+    sessionTtlHours: config.sessionTtlHours,
+  };
+  await registerAuth(app, { config, auth });
+  // Failed sign-ins are counted in this process (ADR 0029). One limiter per
+  // server means the state cannot leak between two tests' servers either.
+  const loginRateLimiter = new LoginRateLimiter({
+    maxAttempts: config.loginMaxAttempts,
+    windowMs: config.loginWindowMinutes * 60_000,
+  });
+  await registerAuthRoutes(app, { auth, clinicId: config.clinicId, loginRateLimiter });
 
   // Every reader and writer shares one repository per port, so "today" and "the
   // book" each have one implementation — the connection builds them once, behind
@@ -256,7 +279,7 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     clinics: connection.repositories.clinics,
   });
 
-  app.get('/', async () => ({
+  app.get('/', { config: { public: true } }, async () => ({
     service: 'denti-code-u3-api',
     docs: '/api/v1 (arriving with the first milestone that needs it)',
   }));

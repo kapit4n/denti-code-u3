@@ -32,7 +32,7 @@ export async function registerDentistsRoutes(
   app: FastifyInstance,
   { dentists }: DentistsDependencies,
 ): Promise<void> {
-  app.get('/api/v1/dentists', async (request, reply) => {
+  app.get('/api/v1/dentists', { config: { permission: 'staff:read' } }, async (request, reply) => {
     const clinicId = request.clinicId as ClinicId;
     const parsed = dentistListQuerySchema.safeParse(request.query);
 

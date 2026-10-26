@@ -16,6 +16,8 @@ import type { PlatformCapabilities } from '../platform/index.js';
 import { ThemeProvider } from '../features/theme/theme-provider.js';
 import { ErrorBoundary } from '../components/error-boundary.js';
 import { Shell } from '../components/shell/index.js';
+import { useSession } from '../features/auth/session-provider.js';
+import { LoginPage } from '../features/auth/components/login-page.js';
 
 /**
  * The root route's context.
@@ -61,12 +63,13 @@ export const Route = createRootRouteWithContext<RootRouteContext>()({
  */
 function RootLayout(): React.ReactNode {
   const { capabilities } = useRouteContext({ from: '__root__' });
+  const { isAuthenticated } = useSession();
 
   return (
     <ErrorBoundary>
       <AppRoot capabilities={capabilities}>
         <ThemeProvider defaultTheme="light" storageKey="denti-code-theme">
-          <Shell />
+          {isAuthenticated ? <Shell /> : <LoginPage />}
         </ThemeProvider>
       </AppRoot>
     </ErrorBoundary>

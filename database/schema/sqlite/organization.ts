@@ -170,3 +170,32 @@ export const rolePermissions = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.role, table.permission] })],
 );
+
+/**
+ * Login sessions — the SQLite twin of the PostgreSQL `sessions` table.
+ *
+ * `token_hash` is stored, never the token (a dump cannot be replayed), and
+ * `revoked_at` is a timestamp rather than a delete so the end of a session
+ * survives logout. Timestamps are epoch milliseconds, as everywhere in this
+ * schema.
+ */
+export const sessions = sqliteTable(
+  'sessions',
+  {
+    id: text('id').primaryKey().default(uuidDefault),
+    tokenHash: text('token_hash').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    clinicId: text('clinic_id')
+      .notNull()
+      .references(() => clinics.id, { onDelete: 'cascade' }),
+    issuedAt: integer('issued_at', { mode: 'timestamp_ms' }).notNull().default(nowDefault),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+    revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
+  },
+  (table) => [
+    uniqueIndex('sessions_token_hash_uq').on(table.tokenHash),
+    index('sessions_user_idx').on(table.userId),
+  ],
+);

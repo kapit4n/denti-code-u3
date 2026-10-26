@@ -50,6 +50,13 @@
       "when": 1792004653160,
       "tag": "0006_modern_lake",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792709340547,
+      "tag": "0007_yellow_red_wolf",
+      "breakpoints": true
     }
   ]
 }

@@ -17,6 +17,7 @@ export const API_ERROR_CODES = [
   'NOT_FOUND',
   'DOMAIN_RULE_VIOLATION',
   'SCHEDULING_CONFLICT',
+  'RATE_LIMITED',
   'INTERNAL_ERROR',
   'NETWORK_ERROR',
 ] as const;
@@ -75,7 +76,7 @@ export class ApiClient {
 
   private readonly fetchImplementation: typeof fetch;
 
-  private readonly getAuthorizationHeader?: () => string | undefined;
+  private getAuthorizationHeader?: () => string | undefined;
 
   private readonly defaultTimeoutMs: number;
 
@@ -84,6 +85,10 @@ export class ApiClient {
     this.fetchImplementation = options.fetchImplementation ?? globalThis.fetch.bind(globalThis);
     this.getAuthorizationHeader = options.getAuthorizationHeader;
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS;
+  }
+
+  setAuthorizationHeaderGetter(getter?: () => string | undefined): void {
+    this.getAuthorizationHeader = getter;
   }
 
   async get<TResponse>(path: string, options: RequestOptions<never> = {}): Promise<TResponse> {

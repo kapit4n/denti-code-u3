@@ -59,11 +59,11 @@ test.describe('Reports', () => {
         const latest = api.requests.filter((url) => url.includes('/reports/summary')).at(-1);
         return latest ?? '';
       })
-      .toContain('from=2026-09-01');
+      .toContain(`dentistId=${everyDentistList.items[0].id}`);
 
     const requested = api.requests.filter((url) => url.includes('/reports/summary')).at(-1)!;
+    expect(requested).toContain('from=2026-09-01');
     expect(requested).toContain('to=2026-09-30');
-    expect(requested).toContain(`dentistId=${everyDentistList.items[0].id}`);
   });
 
   test('renders unknown occupancy as unknown rather than zero', async ({ page }) => {

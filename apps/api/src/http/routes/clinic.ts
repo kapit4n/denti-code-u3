@@ -32,7 +32,7 @@ export async function registerClinicRoutes(
    * opening hours the calendar shades as non-working. `settings` is an empty record
    * until the column exists, which is honest — better than a guess at its shape.
    */
-  app.get('/api/v1/clinic', async (request, reply) => {
+  app.get('/api/v1/clinic', { config: { permission: 'clinic:read' } }, async (request, reply) => {
     const clinicId = request.clinicId as ClinicId;
 
     try {

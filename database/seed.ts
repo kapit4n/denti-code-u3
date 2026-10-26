@@ -32,6 +32,49 @@ import * as sqliteSchema from '@denti-code-u3/database/schema/sqlite';
 /** Must match `CLINIC_ID` in `.env.example`. */
 export const DEVELOPMENT_CLINIC_ID = '11111111-1111-4111-8111-111111111111';
 
+/**
+ * The development login the seeded clinic ships with.
+ *
+ * An administrator and a receptionist, plus a user for each dentist so a clinician
+ * has an account of their own. The password is the same for all four and is
+ * printed by `pnpm run db:seed`; it is a **development credential only** and the
+ * seed refuses to run against a database whose URL looks like production.
+ */
+export const DEVELOPMENT_USERS = [
+  {
+    id: '11111111-3333-4444-8555-000000000001',
+    email: 'admin@denti-code.test',
+    fullName: 'Ada Administradora',
+    role: 'ADMINISTRATOR',
+    /** Links this user to the seeded dentist with the matching id, if any. */
+    dentistId: undefined as string | undefined,
+  },
+  {
+    id: '11111111-3333-4444-8555-000000000002',
+    email: 'recepcion@denti-code.test',
+    fullName: 'Rita Recepción',
+    role: 'RECEPTIONIST',
+    dentistId: undefined as string | undefined,
+  },
+  {
+    id: '11111111-3333-4444-8555-000000000003',
+    email: 'elena.vargas@denti-code.test',
+    fullName: 'Dr. Elena Vargas',
+    role: 'DENTIST',
+    dentistId: '11111111-2222-4333-8444-000000000001' as string | undefined,
+  },
+  {
+    id: '11111111-3333-4444-8555-000000000004',
+    email: 'marco.salas@denti-code.test',
+    fullName: 'Dr. Marco Salas',
+    role: 'DENTIST',
+    dentistId: '11111111-2222-4333-8444-000000000002' as string | undefined,
+  },
+] as const;
+
+/** The password every seeded development user shares. Printed by the seed. */
+export const DEVELOPMENT_PASSWORD = 'denti-code-dev';
+
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
   console.error('DATABASE_URL is not set. Copy .env.example to .env first.');
@@ -50,6 +93,33 @@ const timeZone = process.env.CLINIC_TIMEZONE ?? 'America/Argentina/Buenos_Aires'
 const currencyCode = 'USD';
 
 const now = new Date();
+
+/**
+ * Hash a password the way the API's `ScryptPasswordHasher` does.
+ *
+ * Duplicated here rather than imported from `apps/api`, because the seed is part
+ * of `database/` and must not depend on the API process. The format is the
+ * contract (`scrypt$N$r$p$salt$hash`), and the API's own test proves it verifies
+ * hashes in exactly this shape.
+ */
+async function hashPassword(password: string): Promise<string> {
+  const { randomBytes, scrypt } = await import('node:crypto');
+  const { promisify } = await import('node:util');
+  const scryptAsync = promisify(scrypt) as (
+    password: string,
+    salt: Buffer,
+    keylen: number,
+    options: { N: number; r: number; p: number; maxmem: number },
+  ) => Promise<Buffer>;
+  const salt = randomBytes(16);
+  const derived = await scryptAsync(password, salt, 64, {
+    N: 16384,
+    r: 8,
+    p: 1,
+    maxmem: 64 * 1024 * 1024,
+  });
+  return ['scrypt', 16384, 8, 1, salt.toString('base64'), derived.toString('base64')].join('$');
+}
 
 function seedSummary(): string {
   return `clinic ${DEVELOPMENT_CLINIC_ID}, 3 patients, 2 dentists, 2 rooms, 4 chairs, 4 appointments, 2 visits (1 completed, 1 open), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 attachments, 2 odontogram entries, 3 charges, 2 payments`;
@@ -87,6 +157,7 @@ async function seedPostgres(db: PostgresJsDatabase<typeof pgSchema>): Promise<vo
     )
     .onConflictDoNothing();
 
+  await insertUsersPg(db);
   await insertDentistsPg(db);
   await insertRoomsAndChairsPg(db);
   await insertPatientsPg(db);
@@ -126,6 +197,7 @@ async function seedSqlite(db: BetterSQLite3Database<typeof sqliteSchema>): Promi
     )
     .onConflictDoNothing();
 
+  await insertUsersSqlite(db);
   await insertDentistsSqlite(db);
   await insertRoomsAndChairsSqlite(db);
   await insertPatientsSqlite(db);
@@ -136,6 +208,42 @@ async function seedSqlite(db: BetterSQLite3Database<typeof sqliteSchema>): Promi
   await insertPaymentsSqlite(db);
 }
 
+async function insertUsersPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
+  const passwordHash = await hashPassword(DEVELOPMENT_PASSWORD);
+  await db
+    .insert(pgSchema.users)
+    .values(
+      DEVELOPMENT_USERS.map((user) => ({
+        id: user.id,
+        clinicId: DEVELOPMENT_CLINIC_ID,
+        email: user.email,
+        passwordHash,
+        fullName: user.fullName,
+        role: user.role,
+        isActive: true,
+      })),
+    )
+    .onConflictDoNothing();
+}
+
+async function insertUsersSqlite(db: BetterSQLite3Database<typeof sqliteSchema>): Promise<void> {
+  const passwordHash = await hashPassword(DEVELOPMENT_PASSWORD);
+  await db
+    .insert(sqliteSchema.users)
+    .values(
+      DEVELOPMENT_USERS.map((user) => ({
+        id: user.id,
+        clinicId: DEVELOPMENT_CLINIC_ID,
+        email: user.email,
+        passwordHash,
+        fullName: user.fullName,
+        role: user.role,
+        isActive: true,
+      })),
+    )
+    .onConflictDoNothing();
+}
+
 async function insertDentistsPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
   await db
     .insert(pgSchema.dentists)
@@ -143,6 +251,7 @@ async function insertDentistsPg(db: PostgresJsDatabase<typeof pgSchema>): Promis
       {
         id: '11111111-2222-4333-8444-000000000001',
         clinicId: DEVELOPMENT_CLINIC_ID,
+        userId: '11111111-3333-4444-8555-000000000003',
         fullName: 'Dr. Elena Vargas',
         speciality: 'General dentistry',
         isActive: true,
@@ -150,6 +259,7 @@ async function insertDentistsPg(db: PostgresJsDatabase<typeof pgSchema>): Promis
       {
         id: '11111111-2222-4333-8444-000000000002',
         clinicId: DEVELOPMENT_CLINIC_ID,
+        userId: '11111111-3333-4444-8555-000000000004',
         fullName: 'Dr. Marco Salas',
         speciality: 'Endodontics',
         isActive: true,
@@ -165,6 +275,7 @@ async function insertDentistsSqlite(db: BetterSQLite3Database<typeof sqliteSchem
       {
         id: '11111111-2222-4333-8444-000000000001',
         clinicId: DEVELOPMENT_CLINIC_ID,
+        userId: '11111111-3333-4444-8555-000000000003',
         fullName: 'Dr. Elena Vargas',
         speciality: 'General dentistry',
         isActive: true,
@@ -172,6 +283,7 @@ async function insertDentistsSqlite(db: BetterSQLite3Database<typeof sqliteSchem
       {
         id: '11111111-2222-4333-8444-000000000002',
         clinicId: DEVELOPMENT_CLINIC_ID,
+        userId: '11111111-3333-4444-8555-000000000004',
         fullName: 'Dr. Marco Salas',
         speciality: 'Endodontics',
         isActive: true,
@@ -1026,4 +1138,9 @@ if (isSqliteUrl(databaseUrl)) {
 if (seedResult !== undefined) {
   console.log(`Seed complete: ${seedResult}`);
   console.log(`CLINIC_ID=${DEVELOPMENT_CLINIC_ID}`);
+  console.log('');
+  console.log('Development logins (password is development-only):');
+  for (const user of DEVELOPMENT_USERS) {
+    console.log(`  ${user.role.padEnd(14)} ${user.email}  /  ${DEVELOPMENT_PASSWORD}`);
+  }
 }

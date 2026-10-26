@@ -39,93 +39,109 @@ export async function registerInventoryRoutes(
   app: FastifyInstance,
   { inventory, unitOfWork, ids, clock }: InventoryDependencies,
 ): Promise<void> {
-  app.get('/api/v1/inventory/items', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
+  app.get(
+    '/api/v1/inventory/items',
+    { config: { permission: 'inventory:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
 
-    try {
-      const items = await inventory.listByClinic(clinicId);
-      return { items };
-    } catch (error) {
-      return sendProblem(reply, request, error, 'Failed to list inventory');
-    }
-  });
+      try {
+        const items = await inventory.listByClinic(clinicId);
+        return { items };
+      } catch (error) {
+        return sendProblem(reply, request, error, 'Failed to list inventory');
+      }
+    },
+  );
 
-  app.post('/api/v1/inventory/items', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const parsed = createInventoryItemSchema.safeParse(request.body);
+  app.post(
+    '/api/v1/inventory/items',
+    { config: { permission: 'inventory:write' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const parsed = createInventoryItemSchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return reply.status(422).send({
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'The inventory item could not be accepted',
-          details: { issues: parsed.error.issues },
-          requestId: request.id,
-        },
-      });
-    }
-
-    try {
-      const item = await addInventoryItem(clinicId, parsed.data, {
-        unitOfWork,
-        newItemId: () => asInventoryItemId(ids.nextId()),
-        newMovementId: () => ids.nextId(),
-        clock,
-      });
-
-      return reply.status(201).send({ item });
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
-
-  app.get('/api/v1/inventory/items/:itemId/movements', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const { itemId } = request.params as { itemId: string };
-
-    try {
-      const item = await inventory.findById(clinicId, asInventoryItemId(itemId));
-
-      if (!item) {
-        throw new DomainError('NOT_FOUND', `Item ${itemId} was not found`, {
-          entity: 'InventoryItem',
-          id: itemId,
+      if (!parsed.success) {
+        return reply.status(422).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'The inventory item could not be accepted',
+            details: { issues: parsed.error.issues },
+            requestId: request.id,
+          },
         });
       }
 
-      const items = await inventory.listMovements(clinicId, item.id);
-      return { items };
-    } catch (error) {
-      return sendProblem(reply, request, error, 'Failed to read stock movements');
-    }
-  });
+      try {
+        const item = await addInventoryItem(clinicId, parsed.data, {
+          unitOfWork,
+          newItemId: () => asInventoryItemId(ids.nextId()),
+          newMovementId: () => ids.nextId(),
+          clock,
+        });
 
-  app.post('/api/v1/inventory/items/:itemId/movements', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const { itemId } = request.params as { itemId: string };
-    const parsed = recordStockMovementSchema.safeParse(request.body);
+        return reply.status(201).send({ item });
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 
-    if (!parsed.success) {
-      return reply.status(422).send({
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'The stock movement could not be accepted',
-          details: { issues: parsed.error.issues },
-          requestId: request.id,
-        },
-      });
-    }
+  app.get(
+    '/api/v1/inventory/items/:itemId/movements',
+    { config: { permission: 'inventory:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const { itemId } = request.params as { itemId: string };
 
-    try {
-      const result = await recordStockMovement(clinicId, asInventoryItemId(itemId), parsed.data, {
-        unitOfWork,
-        newMovementId: () => ids.nextId(),
-        clock,
-      });
+      try {
+        const item = await inventory.findById(clinicId, asInventoryItemId(itemId));
 
-      return reply.status(201).send(result);
-    } catch (error) {
-      return sendProblem(reply, request, error);
-    }
-  });
+        if (!item) {
+          throw new DomainError('NOT_FOUND', `Item ${itemId} was not found`, {
+            entity: 'InventoryItem',
+            id: itemId,
+          });
+        }
+
+        const items = await inventory.listMovements(clinicId, item.id);
+        return { items };
+      } catch (error) {
+        return sendProblem(reply, request, error, 'Failed to read stock movements');
+      }
+    },
+  );
+
+  app.post(
+    '/api/v1/inventory/items/:itemId/movements',
+    { config: { permission: 'inventory:write' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const { itemId } = request.params as { itemId: string };
+      const parsed = recordStockMovementSchema.safeParse(request.body);
+
+      if (!parsed.success) {
+        return reply.status(422).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'The stock movement could not be accepted',
+            details: { issues: parsed.error.issues },
+            requestId: request.id,
+          },
+        });
+      }
+
+      try {
+        const result = await recordStockMovement(clinicId, asInventoryItemId(itemId), parsed.data, {
+          unitOfWork,
+          newMovementId: () => ids.nextId(),
+          clock,
+        });
+
+        return reply.status(201).send(result);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
 }

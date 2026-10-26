@@ -1,9 +1,9 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 47 (Milestone 11 — reports)
+> Last updated: session 49 (Milestone 12 — login rate limiting)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
-> **Milestone 11 is complete.** Session 47 delivered reporting: `GET /api/v1/reports/summary` assembles a clinic-local period from the rows the clinic already keeps, and `/reports` draws appointments, production, collections, outstanding, occupancy and a per-clinician table with a CSV export. The next milestone is **Milestone 12 — PRODUCTION HARDENING** (roadmap order); no product decision is blocking it.
+> **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
 
 ## Phase
 
@@ -243,7 +243,8 @@ number that drifts, and the invoices already carry everything needed to add one 
   own total, plus the new reports block), e2e 135 → 139. Typecheck 12/12, lint 12/12 +
   `BOUNDARY GUARD OK` (one pre-existing warning), format clean, build 5/5, e2e 139/139.
 
-**Status: Milestones 5–11 complete; next is Milestone 12 — PRODUCTION HARDENING
+**Status: Milestones 5–11 complete; Milestone 12 in progress (authentication and
+login throttling delivered, sessions 48–49).
 (`docs/roadmap.md`).
 dashboard UI/UX redesign delivered (session 42, presentation only).
 Milestone 8 (treatments) now has its catalogue, its
@@ -3048,3 +3049,90 @@ fixed by filtering the voids in the domain.
 warning) · format clean · build 5/5 · domain 327, validation 142, app 318,
 api-client 15, database 6, desktop 3; API SQLite smoke 25 (PG suite typechecks but
 **skips — no Docker or PostgreSQL client in this environment**) · e2e: **128/128**.
+
+Session 48: Milestone 12's **authentication slice** (ADR 0028) — the API no longer
+trusts a configured `CLINIC_ID` as the caller. The schema gained a `sessions` table on
+both engines (ADR 0025), and `users` is now real data: the seed creates four development
+users (`admin@`, `recepcion@`, `elena.vargas@`, `marco.salas@denti-code.test`, password
+`denti-code-dev`) and links the two dentists to theirs. Passwords are hashed with
+`node:crypto` scrypt (`scrypt$N$r$p$salt$hash`, `timingSafeEqual`); `bcrypt`/`argon2`
+were rejected as native addons. Login returns an opaque 32-byte bearer token; the API
+stores only its **SHA-256** digest (the token is high-entropy, so a per-request KDF buys
+nothing). Sessions last 12 hours by default (`SESSION_TTL_HOURS`, 1–720). Login refusals
+are identical for an unknown email, a wrong password, a deactivated user and a missing
+hash, so there is no account enumeration; email lookup is case-insensitive.
+
+The auth plugin (`apps/api/src/http/plugins/auth.ts`) runs on `onRequest` and **fails
+closed**: only `/`, `/health`, `/ready` and `POST /auth/login` are public. It replaces
+the deleted `clinic-scope.ts`, sets `request.principal` and `request.clinicId`, and
+enforces a role/permission matrix that lives in the domain
+(`packages/domain/src/organization/roles.ts`). Every API route now declares
+`config: { permission: … }`, so a caller whose role lacks it gets **403** (distinct from
+the **401** that means "log in"). The matrix is pinned by a new domain test.
+
+The client owns the session in one place (`packages/app/src/features/auth`): storage
+with a validate-on-read, `SessionProvider` that pushes the bearer header into the shared
+`ApiClient`, a login screen gated by the root route, and a header that shows the
+signed-in user and a Sign out button. A 401 from any query dispatches
+`denti-code:unauthorized`; the provider clears the session and the query cache, so an
+expired or revoked token becomes a login screen instead of a page of failed requests.
+
+**Verification:** typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing
+warning) · format clean · build 5/5 · domain **368**, validation 153, app **344**,
+api-client 15, database 6, desktop 3 · API integration: **38 passed / 273 skipped**
+(the PG specs still typecheck and skip without `TEST_DATABASE_URL`; the SQLite smoke
+suite logs in and now sends a bearer token on every request, and a new
+`auth.integration.test.ts` covers 401/403/200/login/logout/me) · db:migrate + db:seed
+re-verified · e2e **143/143** (a new `login.spec.ts`; the shared fixture seeds a session
+so every other spec still starts inside the shell). The reports spec's request poll was
+tightened to wait for `dentistId` — it could read the pre-selection request.
+
+---
+
+Session 49: Milestone 12's **login rate limiting** (ADR 0029). ADR 0028 shipped
+authentication with one recorded gap — an attacker could try passwords indefinitely,
+because every failure was an identical, cheap 401. This slice closes it without adding
+infrastructure.
+
+**What was built.** `LoginRateLimiter` (apps/api/src/infrastructure/security) is a
+bounded, in-memory fixed-window counter keyed by **normalised email + `request.ip`**.
+Email-only keys would let an attacker lock a known member of staff out; address-only
+keys would let one shared clinic terminal throttle everyone. Only
+`UNAUTHENTICATED` results from `login()` are counted — a validation error, a database
+outage or a bug must not punish a correct password — and a successful sign-in deletes
+the key. The check runs after body validation and **before** the credential check, so an
+exhausted window refuses even the right password (otherwise the password would leak
+through the limiter) and no hash is computed for a refused attempt. Defaults are five
+failures per fifteen minutes (`AUTH_LOGIN_MAX_ATTEMPTS` /
+`AUTH_LOGIN_WINDOW_MINUTES`, both validated in the env schema), and the map is capped at
+10 000 keys with expired-entry pruning and oldest-key eviction as a memory safety valve.
+
+**The answer.** `429 RATE_LIMITED` with `Retry-After: <seconds>` and the standard
+problem envelope. `RATE_LIMITED` was added to `ApiErrorCode` and the client's
+`API_ERROR_CODES`, and `LoginPage` now distinguishes it: a throttled operator sees
+"Too many sign-in attempts. Try again later." instead of being told a correct password
+is wrong. Refusals log the request id and address, never the email.
+
+**Why in process.** The deployment is one API process; a counter table would add two
+repository methods on both engines and a write on the unauthenticated login path for
+state that expires in fifteen minutes, and Redis is infrastructure this project does not
+have. The cost is honest and documented: counters are per instance, reset on restart, and
+a multi-instance deployment needs shared storage or proxy-level limiting. With
+`trustProxy: false`, a proxied deployment must trust the forwarded address per deployment
+or let the proxy own the limiter, otherwise every client shares the proxy's address.
+
+**Tests.** 8 unit tests for the limiter (limit, check-is-not-a-failure, success reset,
+window expiry, key independence, rounded `Retry-After`, pruning/eviction, bad
+configuration), 2 new integration tests (throttling from one account does not block a
+different account from the same address; a success clears the count so the next two
+failures are 401, not 429), a login-page component test for the 429 message, and a
+browser spec for the same status. The integration suite's server is built with
+`AUTH_LOGIN_MAX_ATTEMPTS=2` and two new throwaway users so the throttle is cheap to
+reach.
+
+**Verification:** limiter unit 8/8 · API unit **122** · API integration **40 passed /
+273 skipped** (SQLite auth + smoke) · app **345** · typecheck 12/12 · lint 12/12 + guard ·
+format clean · root test 12/12 tasks · build 5/5 · e2e **144/144** · db:migrate + db:seed
+re-verified (the development logins are unchanged).
+Docs: ADR 0029 (and ADR 0028's "not rate-limited" bullet updated), `security.md`,
+`roadmap.md`, `.env.example`.

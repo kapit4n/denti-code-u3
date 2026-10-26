@@ -72,154 +72,170 @@ export async function registerDashboardRoutes(
   app: FastifyInstance,
   { dashboard, appointments }: DashboardDependencies,
 ): Promise<void> {
-  app.get('/api/v1/dashboard/stats', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
+  app.get(
+    '/api/v1/dashboard/stats',
+    { config: { permission: 'reports:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
 
-    try {
-      const settings = await dashboard.readClinicSettings(clinicId);
-      const window = resolveClinicTimeWindow(new Date(), settings.timeZone);
-      const todayAppointments = await readAppointmentsInWindow(appointments, clinicId, window);
+      try {
+        const settings = await dashboard.readClinicSettings(clinicId);
+        const window = resolveClinicTimeWindow(new Date(), settings.timeZone);
+        const todayAppointments = await readAppointmentsInWindow(appointments, clinicId, window);
 
-      const byStatus = (statuses: readonly string[]) =>
-        todayAppointments.filter((appointment) => statuses.includes(appointment.status));
+        const byStatus = (statuses: readonly string[]) =>
+          todayAppointments.filter((appointment) => statuses.includes(appointment.status));
 
-      const bookedMinutes = minutesBookedWithin(todayAppointments, window);
+        const bookedMinutes = minutesBookedWithin(todayAppointments, window);
 
-      const [activePatients, pendingTreatmentItems, collectedThisMonth, capacityMinutes] =
-        await Promise.all([
-          dashboard.countActivePatients(clinicId),
-          dashboard.countOpenTreatmentItems(clinicId),
-          dashboard.sumPaymentsInWindow(clinicId, window.startOfMonth, window.startOfNextMonth),
-          dashboard.readCapacityMinutes(clinicId, window.dayOfWeek),
-        ]);
+        const [activePatients, pendingTreatmentItems, collectedThisMonth, capacityMinutes] =
+          await Promise.all([
+            dashboard.countActivePatients(clinicId),
+            dashboard.countOpenTreatmentItems(clinicId),
+            dashboard.sumPaymentsInWindow(clinicId, window.startOfMonth, window.startOfNextMonth),
+            dashboard.readCapacityMinutes(clinicId, window.dayOfWeek),
+          ]);
 
-      const occupancyRate =
-        capacityMinutes === null || capacityMinutes === 0
-          ? null
-          : Math.round((bookedMinutes / capacityMinutes) * 100);
+        const occupancyRate =
+          capacityMinutes === null || capacityMinutes === 0
+            ? null
+            : Math.round((bookedMinutes / capacityMinutes) * 100);
 
-      return {
-        today: {
-          appointments: todayAppointments.length,
-          completed: byStatus(['COMPLETED']).length,
-          pending: byStatus(['SCHEDULED', 'CONFIRMED']).length,
-          inTreatment: byStatus(['ARRIVED', 'IN_TREATMENT']).length,
-          cancelled: byStatus(['CANCELLED']).length,
-          noShow: byStatus(['NO_SHOW']).length,
-        },
-        clinic: {
-          activePatients,
-          pendingTreatmentItems,
-          /** Minor units of `currencyCode`. See the module comment. */
-          collectedThisMonthMinor: collectedThisMonth,
-          currencyCode: settings.currencyCode,
-          /** `null` when today's capacity is unknown; never a fabricated `0`. */
-          occupancyRate,
-        },
-      };
-    } catch (error) {
-      request.log.error({ err: error }, 'Failed to build the dashboard read model');
-      return reply.status(500).send({
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Failed to fetch dashboard statistics',
-          requestId: request.id,
-        },
-      });
-    }
-  });
+        return {
+          today: {
+            appointments: todayAppointments.length,
+            completed: byStatus(['COMPLETED']).length,
+            pending: byStatus(['SCHEDULED', 'CONFIRMED']).length,
+            inTreatment: byStatus(['ARRIVED', 'IN_TREATMENT']).length,
+            cancelled: byStatus(['CANCELLED']).length,
+            noShow: byStatus(['NO_SHOW']).length,
+          },
+          clinic: {
+            activePatients,
+            pendingTreatmentItems,
+            /** Minor units of `currencyCode`. See the module comment. */
+            collectedThisMonthMinor: collectedThisMonth,
+            currencyCode: settings.currencyCode,
+            /** `null` when today's capacity is unknown; never a fabricated `0`. */
+            occupancyRate,
+          },
+        };
+      } catch (error) {
+        request.log.error({ err: error }, 'Failed to build the dashboard read model');
+        return reply.status(500).send({
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Failed to fetch dashboard statistics',
+            requestId: request.id,
+          },
+        });
+      }
+    },
+  );
 
-  app.get('/api/v1/dashboard/today-appointments', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
+  app.get(
+    '/api/v1/dashboard/today-appointments',
+    { config: { permission: 'appointments:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
 
-    try {
-      const settings = await dashboard.readClinicSettings(clinicId);
-      const window = resolveClinicTimeWindow(new Date(), settings.timeZone);
-      const entries = await readAppointmentsInWindow(appointments, clinicId, window);
+      try {
+        const settings = await dashboard.readClinicSettings(clinicId);
+        const window = resolveClinicTimeWindow(new Date(), settings.timeZone);
+        const entries = await readAppointmentsInWindow(appointments, clinicId, window);
 
-      // The existing response shape is kept rather than replaced: this endpoint's
-      // shape is a UI contract with passing e2e specs, and reshaping it is not what
-      // moving the query behind the agenda repository is for.
-      return {
-        items: entries.map((entry) => ({
-          id: entry.id,
-          startsAt: entry.startsAt,
-          durationMinutes: entry.durationMinutes,
-          status: entry.status,
-          dentistId: entry.dentistId,
-          firstName: entry.patientFirstName,
-          lastName: entry.patientLastName,
-        })),
-      };
-    } catch (error) {
-      request.log.error({ err: error }, 'Failed to read today appointments');
-      return reply.status(500).send({
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Failed to fetch today appointments',
-          requestId: request.id,
-        },
-      });
-    }
-  });
+        // The existing response shape is kept rather than replaced: this endpoint's
+        // shape is a UI contract with passing e2e specs, and reshaping it is not what
+        // moving the query behind the agenda repository is for.
+        return {
+          items: entries.map((entry) => ({
+            id: entry.id,
+            startsAt: entry.startsAt,
+            durationMinutes: entry.durationMinutes,
+            status: entry.status,
+            dentistId: entry.dentistId,
+            firstName: entry.patientFirstName,
+            lastName: entry.patientLastName,
+          })),
+        };
+      } catch (error) {
+        request.log.error({ err: error }, 'Failed to read today appointments');
+        return reply.status(500).send({
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Failed to fetch today appointments',
+            requestId: request.id,
+          },
+        });
+      }
+    },
+  );
 
-  app.get('/api/v1/dashboard/upcoming-visits', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
+  app.get(
+    '/api/v1/dashboard/upcoming-visits',
+    { config: { permission: 'visits:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
 
-    try {
-      // "Upcoming" starts now and reaches a year out, so a clinic with nothing
-      // booked tomorrow still shows its next real work rather than an empty list.
-      const from = new Date();
-      const entries = await appointments.findAgenda(clinicId, {
-        from: from.toISOString() as IsoDateTime,
-        to: new Date(from.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString() as IsoDateTime,
-      });
+      try {
+        // "Upcoming" starts now and reaches a year out, so a clinic with nothing
+        // booked tomorrow still shows its next real work rather than an empty list.
+        const from = new Date();
+        const entries = await appointments.findAgenda(clinicId, {
+          from: from.toISOString() as IsoDateTime,
+          to: new Date(from.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString() as IsoDateTime,
+        });
 
-      // Cancelled work is not upcoming work. The repository returns it because the
-      // calendar must show that a slot is deliberately empty; this list is a
-      // different question, so it answers it here.
-      const items = entries
-        .filter((entry) => entry.status !== 'CANCELLED')
-        .slice(0, 8)
-        .map((entry) => ({
-          id: entry.id,
-          startsAt: entry.startsAt,
-          durationMinutes: entry.durationMinutes,
-          status: entry.status,
-          firstName: entry.patientFirstName,
-          lastName: entry.patientLastName,
-        }));
+        // Cancelled work is not upcoming work. The repository returns it because the
+        // calendar must show that a slot is deliberately empty; this list is a
+        // different question, so it answers it here.
+        const items = entries
+          .filter((entry) => entry.status !== 'CANCELLED')
+          .slice(0, 8)
+          .map((entry) => ({
+            id: entry.id,
+            startsAt: entry.startsAt,
+            durationMinutes: entry.durationMinutes,
+            status: entry.status,
+            firstName: entry.patientFirstName,
+            lastName: entry.patientLastName,
+          }));
 
-      return { items };
-    } catch (error) {
-      request.log.error({ err: error }, 'Failed to read upcoming visits');
-      return reply.status(500).send({
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Failed to fetch upcoming visits',
-          requestId: request.id,
-        },
-      });
-    }
-  });
+        return { items };
+      } catch (error) {
+        request.log.error({ err: error }, 'Failed to read upcoming visits');
+        return reply.status(500).send({
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Failed to fetch upcoming visits',
+            requestId: request.id,
+          },
+        });
+      }
+    },
+  );
 
-  app.get('/api/v1/dashboard/recent-patients', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
+  app.get(
+    '/api/v1/dashboard/recent-patients',
+    { config: { permission: 'patients:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
 
-    try {
-      const patients = await dashboard.recentPatients(clinicId, 8);
-      return { items: patients };
-    } catch (error) {
-      request.log.error({ err: error }, 'Failed to read recent patients');
-      return reply.status(500).send({
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Failed to fetch recent patients',
-          requestId: request.id,
-        },
-      });
-    }
-  });
+      try {
+        const patients = await dashboard.recentPatients(clinicId, 8);
+        return { items: patients };
+      } catch (error) {
+        request.log.error({ err: error }, 'Failed to read recent patients');
+        return reply.status(500).send({
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Failed to fetch recent patients',
+            requestId: request.id,
+          },
+        });
+      }
+    },
+  );
 
   /**
    * A compact per-day booking count for the dashboard's calendar preview.
@@ -227,37 +243,41 @@ export async function registerDashboardRoutes(
    * Grouping happens in SQL so the API returns one row per day instead of
    * shipping every appointment of the month to the browser to count there.
    */
-  app.get('/api/v1/dashboard/calendar-preview', async (request, reply) => {
-    const clinicId = request.clinicId as ClinicId;
-    const query = request.query as { days?: string };
+  app.get(
+    '/api/v1/dashboard/calendar-preview',
+    { config: { permission: 'appointments:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const query = request.query as { days?: string };
 
-    try {
-      const requested = Number(query.days ?? 14);
-      // Bounded so a crafted `?days=` cannot ask for the whole table.
-      const days = Number.isFinite(requested)
-        ? Math.min(60, Math.max(1, Math.trunc(requested)))
-        : 14;
+      try {
+        const requested = Number(query.days ?? 14);
+        // Bounded so a crafted `?days=` cannot ask for the whole table.
+        const days = Number.isFinite(requested)
+          ? Math.min(60, Math.max(1, Math.trunc(requested)))
+          : 14;
 
-      // Anchored to clinic-local midnight so the first day in the range is a
-      // full day; a UTC anchor would show a partial first day for most clinics.
-      const settings = await dashboard.readClinicSettings(clinicId);
-      const { start } = resolveClinicTimeWindow(new Date(), settings.timeZone);
-      const end = new Date(start.getTime() + days * 24 * 60 * 60 * 1000);
+        // Anchored to clinic-local midnight so the first day in the range is a
+        // full day; a UTC anchor would show a partial first day for most clinics.
+        const settings = await dashboard.readClinicSettings(clinicId);
+        const { start } = resolveClinicTimeWindow(new Date(), settings.timeZone);
+        const end = new Date(start.getTime() + days * 24 * 60 * 60 * 1000);
 
-      const items = await dashboard.calendarPreview(clinicId, start, end);
+        const items = await dashboard.calendarPreview(clinicId, start, end);
 
-      return { from: start.toISOString(), to: end.toISOString(), days, items };
-    } catch (error) {
-      request.log.error({ err: error }, 'Failed to read the calendar preview');
-      return reply.status(500).send({
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Failed to fetch calendar preview',
-          requestId: request.id,
-        },
-      });
-    }
-  });
+        return { from: start.toISOString(), to: end.toISOString(), days, items };
+      } catch (error) {
+        request.log.error({ err: error }, 'Failed to read the calendar preview');
+        return reply.status(500).send({
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Failed to fetch calendar preview',
+            requestId: request.id,
+          },
+        });
+      }
+    },
+  );
 }
 
 /** Exported for tests: the enum members the capacity maths depends on. */

@@ -20,14 +20,18 @@ export async function registerHealthRoutes(
   app: FastifyInstance,
   { config, connection }: HealthDependencies,
 ): Promise<void> {
-  app.get('/health', async () => ({
+  // Probes are read by an orchestrator that has no session, so they declare
+  // themselves public. They expose no clinical data — a status, a service name and
+  // a database reachability flag — and requiring auth would make a load balancer
+  // unable to tell a healthy process from a dead one.
+  app.get('/health', { config: { public: true } }, async () => ({
     status: 'ok',
     service: 'denti-code-u3-api',
     environment: config.nodeEnv,
     timestamp: new Date().toISOString(),
   }));
 
-  app.get('/ready', async (_request, reply) => {
+  app.get('/ready', { config: { public: true } }, async (_request, reply) => {
     const database = await connection.isReachable();
     return reply.status(database ? 200 : 503).send({
       status: database ? 'ready' : 'degraded',
