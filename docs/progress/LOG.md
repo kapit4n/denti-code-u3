@@ -3677,3 +3677,50 @@ pnpm run test             12/12 tasks successful (domain 376, app 351, desktop 4
 pnpm run build            5/5 successful
 pnpm run db:seed          run twice; counts stable
 ```
+
+---
+
+## Session 56 — typed English/Spanish UI, Spanish first
+
+**Request.** Keep the dashboard fully translated and make English available through an i18n
+system, because the clinic works in Spanish.
+
+**Foundation.** Added `packages/app/src/i18n` with no i18n dependency. `locale.ts` owns
+`LOCALES`, `DEFAULT_LOCALE = 'es'`, the `denti-code-locale` storage key and guarded reads;
+`catalog.ts` derives `TranslationKey` from the English catalogue and checks Spanish with
+`satisfies Record<TranslationKey, string>`; `i18n-provider.tsx` holds the choice, persists it,
+sets `<html lang>`, and falls back to English outside the provider for isolated component
+tests; `enum-label.ts` is the single assertion from an API enum string to a typed key.
+Interpolation is only `{name}`; plural sentences use explicit `.one`/`.other` keys.
+
+**Translated surfaces.** The root frame, header (including the bilingual switch), sidebar and
+global patient search; the whole dashboard; the patient list, registration, profile, edit
+page, forms/fields, picker, treatment plans, balance, invoices, statement and odontogram.
+Failure describers gained optional translated messages while keeping English defaults.
+
+**English stayed stable.** The browser suite was written in English, so English catalogue
+values keep the existing labels (including uppercase statuses and conditions), the shared
+`frozen-clock.ts` fixture pins `denti-code-locale=en`, and router/mount tests seed the same
+choice. `e2e/web/i18n.spec.ts` overrides the locale and covers Spanish dashboard → English,
+the patient list, and profile section headings.
+
+**Failures fixed during verification.** The first full e2e run was 151/154. Two failures were
+strict-locator drift in the new spec (`Pacientes` also matched a dashboard quick action;
+`Saldo` matched both the profile and balance cards); one was real: moving the profile's
+outstanding-treatment suffix into the catalogue dropped its leading space, rendering
+`Restorative plan· tooth 26`. Both catalogues now use ` · tooth {tooth}` and ` ×{count}`.
+After rebuilding the preview bundle, the full suite passed.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (existing warning)
+pnpm run format:check     clean
+pnpm run test             domain 376, app 355, desktop 4, API unit 128,
+                          API integration 46 passed / 273 skipped
+pnpm run build            5/5 successful
+pnpm run test:e2e         154/154 passed
+```
+
+Docs: ADR 0032, `docs/frontend.md` §14, `docs/open-questions.md` #9 updated.

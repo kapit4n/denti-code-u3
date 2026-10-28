@@ -14,7 +14,16 @@
 
 import { ApiClientError } from '@denti-code-u3/api-client';
 
-export function describePlanItemFailure(error: unknown, fallback: string): string | undefined {
+export interface PlanItemFailureMessages {
+  readonly notFound?: string;
+  readonly network?: string;
+}
+
+export function describePlanItemFailure(
+  error: unknown,
+  fallback: string,
+  messages?: PlanItemFailureMessages,
+): string | undefined {
   if (!error) {
     return undefined;
   }
@@ -30,9 +39,9 @@ export function describePlanItemFailure(error: unknown, fallback: string): strin
     case 'DOMAIN_RULE_VIOLATION':
       return message;
     case 'NOT_FOUND':
-      return 'That treatment plan item is no longer on this patient.';
+      return messages?.notFound ?? 'That treatment plan item is no longer on this patient.';
     case 'NETWORK_ERROR':
-      return 'Could not reach the server. The item was not marked done.';
+      return messages?.network ?? 'Could not reach the server. The item was not marked done.';
     default:
       return message;
   }

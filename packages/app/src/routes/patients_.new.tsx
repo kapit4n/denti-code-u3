@@ -17,12 +17,14 @@ import { Button } from '@denti-code-u3/ui';
 import { ArrowLeft } from 'lucide-react';
 
 import { PatientForm } from '../features/patients/components/patient-form.js';
+import { useTranslation } from '../i18n/index.js';
 
 export const Route = createFileRoute('/patients_/new')({
   component: NewPatient,
 });
 
 function NewPatient() {
+  const { t } = useTranslation();
   const [registered, setRegistered] = useState<{
     readonly id: string;
     readonly recordNumber: string;
@@ -32,15 +34,13 @@ function NewPatient() {
     <div className="mx-auto max-w-3xl space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">New patient</h1>
-          <p className="text-muted-foreground">
-            A record number is assigned automatically when the patient is registered.
-          </p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('patients.new.title')}</h1>
+          <p className="text-muted-foreground">{t('patients.new.subtitle')}</p>
         </div>
         <Button asChild variant="outline">
           <Link to="/patients">
             <ArrowLeft aria-hidden className="size-4" />
-            Back to patients
+            {t('patients.new.back')}
           </Link>
         </Button>
       </header>
@@ -57,19 +57,17 @@ function NewPatient() {
         >
           <div>
             <p className="font-medium">
-              Registered as{' '}
+              {t('patients.new.registeredAs')}{' '}
               <span className="font-mono" data-testid="assigned-record-number">
                 {registered.recordNumber}
               </span>
             </p>
-            <p className="text-sm text-muted-foreground">
-              Open the chart to add contact details or book an appointment.
-            </p>
+            <p className="text-sm text-muted-foreground">{t('patients.new.successHint')}</p>
           </div>
           <div className="flex gap-2">
             <Button asChild>
               <Link to="/patients/$patientId" params={{ patientId: registered.id }}>
-                Open chart
+                {t('patients.new.openChart')}
               </Link>
             </Button>
             <Button asChild variant="outline">
@@ -79,7 +77,7 @@ function NewPatient() {
                   setRegistered(null);
                 }}
               >
-                Register another
+                {t('patients.new.registerAnother')}
               </Link>
             </Button>
           </div>

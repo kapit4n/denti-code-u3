@@ -19,9 +19,11 @@ import {
 } from '@denti-code-u3/ui';
 import { UserRound } from 'lucide-react';
 
+import { useTranslation } from '../../../i18n/index.js';
 import { useRecentPatients } from '../hooks/use-dashboard-stats.js';
 
 export function RecentPatients() {
+  const { t } = useTranslation();
   const { data, isPending, error } = useRecentPatients();
 
   return (
@@ -33,10 +35,10 @@ export function RecentPatients() {
           size="sm"
           className="absolute right-4 top-4 text-muted-foreground"
         >
-          <Link to="/patients">View all</Link>
+          <Link to="/patients">{t('dashboard.recentPatients.viewAll')}</Link>
         </Button>
-        <CardTitle>Recent Patients</CardTitle>
-        <CardDescription>Newest records in this clinic</CardDescription>
+        <CardTitle>{t('dashboard.recentPatients.title')}</CardTitle>
+        <CardDescription>{t('dashboard.recentPatients.description')}</CardDescription>
       </CardHeader>
 
       <CardContent>
@@ -47,7 +49,7 @@ export function RecentPatients() {
             ))}
           </ul>
         ) : error ? (
-          <p className="text-sm text-destructive">Recent patients could not be loaded.</p>
+          <p className="text-sm text-destructive">{t('dashboard.recentPatients.error')}</p>
         ) : data && data.items.length > 0 ? (
           <ul className="space-y-2">
             {data.items.map((patient) => (
@@ -79,7 +81,7 @@ export function RecentPatients() {
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-metric-green-soft text-metric-green">
               <UserRound aria-hidden className="h-6 w-6" />
             </span>
-            <p className="text-sm text-muted-foreground">No patients registered yet.</p>
+            <p className="text-sm text-muted-foreground">{t('dashboard.recentPatients.empty')}</p>
           </div>
         )}
       </CardContent>

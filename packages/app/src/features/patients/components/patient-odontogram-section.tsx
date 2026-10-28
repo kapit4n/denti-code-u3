@@ -31,7 +31,8 @@ import {
   CardTitle,
   Label,
 } from '@denti-code-u3/ui';
-import { formatClinicDayTime, READING_THE_CLINIC_CLOCK } from '../../clinic/format-clinic-time.js';
+import { formatClinicDayTime } from '../../clinic/format-clinic-time.js';
+import { enumLabel, useTranslation } from '../../../i18n/index.js';
 import { describeOdontogramFailure } from '../describe-odontogram-failure.js';
 import { useRecordOdontogramEntry } from '../mutations/use-record-odontogram-entry.js';
 import { usePatientOdontogram } from '../hooks/use-patients.js';
@@ -50,6 +51,7 @@ export function PatientOdontogramSection({
   patientId,
   clinicTimeZone,
 }: PatientOdontogramSectionProps) {
+  const { t } = useTranslation();
   const odontogramQuery = usePatientOdontogram(patientId);
   const recordEntry = useRecordOdontogramEntry();
   const [selectedTooth, setSelectedTooth] = useState<string | null>(null);
@@ -57,7 +59,10 @@ export function PatientOdontogramSection({
   const [surfaces, setSurfaces] = useState<readonly SurfaceState[]>([]);
   const [notes, setNotes] = useState('');
 
-  const failure = describeOdontogramFailure(recordEntry.error, 'The tooth could not be charted.');
+  const failure = describeOdontogramFailure(recordEntry.error, t('patients.odontogram.failure'), {
+    notFound: t('patients.odontogram.failure.notFound'),
+    network: t('patients.odontogram.failure.network'),
+  });
 
   const toggleSurface = (surface: SurfaceState) => {
     setSurfaces((current) =>
@@ -92,15 +97,15 @@ export function PatientOdontogramSection({
   return (
     <Card data-testid="patient-odontogram">
       <CardHeader>
-        <CardTitle>Odontogram</CardTitle>
-        <CardDescription>The per-tooth clinical map</CardDescription>
+        <CardTitle>{t('patients.odontogram.title')}</CardTitle>
+        <CardDescription>{t('patients.odontogram.description')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {odontogramQuery.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading the chart…</p>
+          <p className="text-sm text-muted-foreground">{t('patients.odontogram.loading')}</p>
         ) : odontogramQuery.error ? (
           <p className="text-sm text-destructive" role="alert">
-            The chart could not be loaded.
+            {t('patients.odontogram.loadError')}
           </p>
         ) : (
           <>
@@ -113,7 +118,7 @@ export function PatientOdontogramSection({
             <form className="space-y-3" onSubmit={handleSubmit}>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
-                  <Label htmlFor="odontogram-condition">Condition</Label>
+                  <Label htmlFor="odontogram-condition">{t('patients.odontogram.condition')}</Label>
                   <select
                     id="odontogram-condition"
                     data-testid="odontogram-condition"
@@ -124,14 +129,14 @@ export function PatientOdontogramSection({
                   >
                     {ODONTOGRAM_CONDITIONS.map((option) => (
                       <option key={option} value={option}>
-                        {option.replaceAll('_', ' ')}
+                        {enumLabel(t, 'common.condition', option)}
                       </option>
                     ))}
                   </select>
                 </div>
 
                 <div className="space-y-1">
-                  <Label>Surfaces</Label>
+                  <Label>{t('patients.odontogram.surfaces')}</Label>
                   <div className="flex flex-wrap gap-2">
                     {ODONTOGRAM_SURFACES.map((surface) => (
                       <label
@@ -147,7 +152,7 @@ export function PatientOdontogramSection({
                           disabled={recordEntry.isPending}
                           className="size-3.5 accent-primary"
                         />
-                        {surface}
+                        {enumLabel(t, 'common.surface', surface)}
                       </label>
                     ))}
                   </div>
@@ -155,7 +160,7 @@ export function PatientOdontogramSection({
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="odontogram-notes">Notes (optional)</Label>
+                <Label htmlFor="odontogram-notes">{t('patients.odontogram.notes')}</Label>
                 <textarea
                   id="odontogram-notes"
                   data-testid="odontogram-notes"
@@ -165,7 +170,7 @@ export function PatientOdontogramSection({
                   rows={2}
                   maxLength={2_000}
                   className="w-full rounded-md border bg-background p-2 text-sm"
-                  placeholder="e.g. composite patch scheduled"
+                  placeholder={t('patients.odontogram.notesPlaceholder')}
                 />
               </div>
 
@@ -175,12 +180,14 @@ export function PatientOdontogramSection({
                   data-testid="record-odontogram-entry"
                   disabled={recordEntry.isPending || !selectedTooth}
                 >
-                  {selectedTooth ? `Chart tooth ${selectedTooth}` : 'Select a tooth to chart'}
+                  {selectedTooth
+                    ? t('patients.odontogram.chartTooth', { tooth: selectedTooth })
+                    : t('patients.odontogram.selectTooth')}
                 </Button>
                 {recordEntry.isPending ? (
                   <p className="text-sm text-muted-foreground" role="status">
                     <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
-                    Saving…
+                    {t('patients.form.saving')}
                   </p>
                 ) : null}
               </div>
@@ -195,9 +202,15 @@ export function PatientOdontogramSection({
                     data-testid="odontogram-entry"
                   >
                     <span>
-                      <span className="font-medium">Tooth {entry.tooth}</span> ·{' '}
-                      {entry.condition.replaceAll('_', ' ')}
-                      {entry.surfaces.length > 0 ? ` · ${entry.surfaces.join(', ')}` : ''}
+                      <span className="font-medium">
+                        {t('patients.odontogram.tooth', { tooth: entry.tooth })}
+                      </span>{' '}
+                      · {enumLabel(t, 'common.condition', entry.condition)}
+                      {entry.surfaces.length > 0
+                        ? ` · ${entry.surfaces
+                            .map((surface) => enumLabel(t, 'common.surface', surface))
+                            .join(', ')}`
+                        : ''}
                       {entry.notes ? (
                         <span className="text-muted-foreground"> — {entry.notes}</span>
                       ) : null}
@@ -206,14 +219,16 @@ export function PatientOdontogramSection({
                       {clinicTimeZone ? (
                         formatClinicDayTime(entry.recordedAt, clinicTimeZone)
                       ) : (
-                        <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+                        <span className="text-muted-foreground">
+                          {t('patients.odontogram.readingClock')}
+                        </span>
                       )}
                     </span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">No teeth charted yet.</p>
+              <p className="text-sm text-muted-foreground">{t('patients.odontogram.empty')}</p>
             )}
 
             {failure ? (

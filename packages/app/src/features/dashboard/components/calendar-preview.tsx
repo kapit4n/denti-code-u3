@@ -16,11 +16,13 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@denti-code-u3/ui';
 
+import { useTranslation } from '../../../i18n/index.js';
 import { useCalendarPreview } from '../hooks/use-dashboard-stats.js';
 
 const WINDOW_DAYS = 14;
 
 export function CalendarPreview() {
+  const { t } = useTranslation();
   const { data, isPending, error } = useCalendarPreview(WINDOW_DAYS);
 
   const busiest = data ? Math.max(1, ...data.items.map((day) => day.total)) : 1;
@@ -28,22 +30,28 @@ export function CalendarPreview() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Calendar Preview</CardTitle>
-        <CardDescription>Bookings per day, next {WINDOW_DAYS} days</CardDescription>
+        <CardTitle>{t('dashboard.calendar.title')}</CardTitle>
+        <CardDescription>
+          {t('dashboard.calendar.description', { days: WINDOW_DAYS })}
+        </CardDescription>
       </CardHeader>
 
       <CardContent>
         {isPending ? (
           <div aria-hidden className="h-24 animate-pulse rounded bg-muted" />
         ) : error ? (
-          <p className="text-sm text-destructive">The calendar preview could not be loaded.</p>
+          <p className="text-sm text-destructive">{t('dashboard.calendar.error')}</p>
         ) : data && data.items.length > 0 ? (
           <ul className="flex items-end gap-1.5" style={{ height: '7rem' }}>
             {data.items.map((day) => (
               <li
                 key={day.day}
                 className="group flex flex-1 flex-col justify-end gap-1"
-                title={`${day.day}: ${day.total} bookings, ${day.completed} completed`}
+                title={t('dashboard.calendar.barTitle', {
+                  date: day.day,
+                  total: day.total,
+                  completed: day.completed,
+                })}
               >
                 <div
                   className="w-full rounded-t bg-primary/80 transition-colors group-hover:bg-primary"
@@ -57,7 +65,7 @@ export function CalendarPreview() {
           </ul>
         ) : (
           <p className="text-sm text-muted-foreground">
-            No bookings in the next {WINDOW_DAYS} days.
+            {t('dashboard.calendar.empty', { days: WINDOW_DAYS })}
           </p>
         )}
       </CardContent>

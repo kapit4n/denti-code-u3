@@ -14,10 +14,12 @@ import { Link } from '@tanstack/react-router';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, cn } from '@denti-code-u3/ui';
 import { CalendarDays, Pill, Users, type LucideIcon } from 'lucide-react';
 
+import { useTranslation, type TranslationKey } from '../../../i18n/index.js';
+
 interface ActionTile {
   readonly key: string;
-  readonly label: string;
-  readonly description: string;
+  readonly labelKey: TranslationKey;
+  readonly descriptionKey: TranslationKey;
   readonly Icon: LucideIcon;
   readonly to: string;
   readonly chip: string;
@@ -26,24 +28,24 @@ interface ActionTile {
 const tiles: readonly ActionTile[] = [
   {
     key: 'agenda',
-    label: 'Open agenda',
-    description: 'See and book the day',
+    labelKey: 'dashboard.quickActionsPanel.agenda.label',
+    descriptionKey: 'dashboard.quickActionsPanel.agenda.description',
     Icon: CalendarDays,
     to: '/agenda',
     chip: 'bg-metric-blue-soft text-metric-blue',
   },
   {
     key: 'patients',
-    label: 'Patient records',
-    description: 'Search the whole clinic',
+    labelKey: 'dashboard.quickActionsPanel.patients.label',
+    descriptionKey: 'dashboard.quickActionsPanel.patients.description',
     Icon: Users,
     to: '/patients',
     chip: 'bg-metric-green-soft text-metric-green',
   },
   {
     key: 'treatments',
-    label: 'Treatment catalogue',
-    description: 'Procedures and prices',
+    labelKey: 'dashboard.quickActionsPanel.treatments.label',
+    descriptionKey: 'dashboard.quickActionsPanel.treatments.description',
     Icon: Pill,
     to: '/treatments',
     chip: 'bg-metric-violet-soft text-metric-violet',
@@ -51,15 +53,17 @@ const tiles: readonly ActionTile[] = [
 ];
 
 export function QuickActionsPanel() {
+  const { t } = useTranslation();
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Quick Actions</CardTitle>
-        <CardDescription>Jump to the screens you use most</CardDescription>
+        <CardTitle>{t('dashboard.quickActionsPanel.title')}</CardTitle>
+        <CardDescription>{t('dashboard.quickActionsPanel.description')}</CardDescription>
       </CardHeader>
 
       <CardContent className="grid gap-3 sm:grid-cols-3">
-        {tiles.map(({ key, label, description, Icon, to, chip }) => (
+        {tiles.map(({ key, labelKey, descriptionKey, Icon, to, chip }) => (
           <Link
             key={key}
             to={to}
@@ -71,8 +75,10 @@ export function QuickActionsPanel() {
               <Icon aria-hidden className="h-5 w-5" />
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-sm font-medium">{label}</span>
-              <span className="block truncate text-xs text-muted-foreground">{description}</span>
+              <span className="block truncate text-sm font-medium">{t(labelKey)}</span>
+              <span className="block truncate text-xs text-muted-foreground">
+                {t(descriptionKey)}
+              </span>
             </span>
           </Link>
         ))}

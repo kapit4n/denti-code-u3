@@ -22,6 +22,7 @@ afterEach(() => {
 });
 
 function seedSession(): void {
+  window.localStorage.setItem('denti-code-locale', 'en');
   window.localStorage.setItem(
     'denti-code-session',
     JSON.stringify({

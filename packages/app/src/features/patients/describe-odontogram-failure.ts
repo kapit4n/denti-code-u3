@@ -21,7 +21,16 @@ import { ApiClientError } from '@denti-code-u3/api-client';
  * gives: its messages were written for a person by the API, and anything else is
  * developer noise in front of the clinician.
  */
-export function describeOdontogramFailure(error: unknown, fallback: string): string | undefined {
+export interface ToothFailureMessages {
+  readonly notFound?: string;
+  readonly network?: string;
+}
+
+export function describeOdontogramFailure(
+  error: unknown,
+  fallback: string,
+  messages?: ToothFailureMessages,
+): string | undefined {
   if (!error) {
     return undefined;
   }
@@ -38,9 +47,9 @@ export function describeOdontogramFailure(error: unknown, fallback: string): str
       return message;
     case 'NOT_FOUND':
       // The patient was on screen when the tooth was charted and is not there now.
-      return 'This patient no longer exists in the current clinic.';
+      return messages?.notFound ?? 'This patient no longer exists in the current clinic.';
     case 'NETWORK_ERROR':
-      return 'Could not reach the server. The tooth was not charted.';
+      return messages?.network ?? 'Could not reach the server. The tooth was not charted.';
     default:
       return message;
   }

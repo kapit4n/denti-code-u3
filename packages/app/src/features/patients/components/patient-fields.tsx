@@ -15,6 +15,7 @@
 import { Input, Label } from '@denti-code-u3/ui';
 import type { UseFormRegisterReturn } from 'react-hook-form';
 import type { CreatePatientFormValues, UpdatePatientFormValues } from '@denti-code-u3/validation';
+import { useTranslation } from '../../../i18n/index.js';
 
 /**
  * Both form schemas accept the same seven fields, so one component type covers
@@ -40,47 +41,48 @@ export function PatientFields<T extends PatientFieldValues>({
   form,
   disabled,
 }: PatientFieldsProps<T>) {
+  const { t } = useTranslation();
   const error = (name: keyof T & string) => form.formState.errors[name]?.message;
 
   return (
     <>
       <fieldset className="space-y-6" disabled={disabled}>
-        <legend className="sr-only">Identity</legend>
+        <legend className="sr-only">{t('patients.fields.identityLegend')}</legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
             id="firstName"
-            label="First name"
+            label={t('patients.fields.firstName')}
             autoComplete="given-name"
             registration={form.register('firstName')}
             error={error('firstName')}
           />
           <Field
             id="lastName"
-            label="Last name"
+            label={t('patients.fields.lastName')}
             autoComplete="family-name"
             registration={form.register('lastName')}
             error={error('lastName')}
           />
           <Field
             id="preferredName"
-            label="Preferred name"
-            hint="How they would like to be addressed"
+            label={t('patients.fields.preferredName')}
+            hint={t('patients.fields.preferredNameHint')}
             registration={form.register('preferredName')}
             error={error('preferredName')}
           />
           <Field
             id="identificationNumber"
-            label="Identification number"
+            label={t('patients.fields.identificationNumber')}
             registration={form.register('identificationNumber')}
             error={error('identificationNumber')}
           />
         </div>
 
-        <legend className="sr-only">Contact and birth date</legend>
+        <legend className="sr-only">{t('patients.fields.contactLegend')}</legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
             id="phone"
-            label="Phone"
+            label={t('patients.fields.phone')}
             type="tel"
             autoComplete="tel"
             registration={form.register('phone')}
@@ -88,7 +90,7 @@ export function PatientFields<T extends PatientFieldValues>({
           />
           <Field
             id="email"
-            label="Email"
+            label={t('patients.fields.email')}
             type="email"
             autoComplete="email"
             registration={form.register('email')}
@@ -96,7 +98,7 @@ export function PatientFields<T extends PatientFieldValues>({
           />
           <Field
             id="birthDate"
-            label="Date of birth"
+            label={t('patients.fields.birthDate')}
             type="date"
             registration={form.register('birthDate')}
             error={error('birthDate')}

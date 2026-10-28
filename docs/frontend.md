@@ -206,3 +206,21 @@ appears only inside `features/agenda`, behind `adapters/to-calendar-event.ts` an
 - MSW-style HTTP stubbing is avoided in Phase 1; the api-client is mocked at the
   module boundary until a real HTTP stubbing layer is introduced (see
   `docs/testing.md`).
+
+## 14. Language
+
+UI copy comes from `packages/app/src/i18n`, a typed catalogue with Spanish as
+the default and English as the first-class fallback ([ADR 0032](./decisions/0032-ui-language-is-a-typed-catalogue.md)).
+Components use `useTranslation()` / `t(key, params)`; the provider is mounted
+once in the root route, and its context fallback is English so isolated component
+tests keep working. The English catalogue defines `TranslationKey`, and the
+Spanish catalogue is checked against it with `satisfies`, so a missing string is
+a typecheck failure.
+
+The header switch persists the choice under `denti-code-locale` and updates
+`document.documentElement.lang`. Interpolation is limited to `{name}`; plural
+sentences use explicit `.one` / `.other` keys. Domain enum values go through
+`enumLabel(t, prefix, value)` rather than a per-component label map. The shell,
+dashboard and patient pages are translated so far; the remaining screens keep
+their English copy until their own slice. Browser specs pin English unless they
+are testing the Spanish flow.

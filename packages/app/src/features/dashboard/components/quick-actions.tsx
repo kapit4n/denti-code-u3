@@ -12,9 +12,11 @@ import { Link } from '@tanstack/react-router';
 import { Button } from '@denti-code-u3/ui';
 import { CalendarPlus, UserPlus, type LucideIcon } from 'lucide-react';
 
+import { useTranslation } from '../../../i18n/index.js';
+
 interface QuickAction {
   readonly key: string;
-  readonly label: string;
+  readonly labelKey: 'dashboard.quickActions.newVisit' | 'dashboard.quickActions.newPatient';
   readonly Icon: LucideIcon;
   /** A page to go to. */
   readonly to?: string;
@@ -23,6 +25,7 @@ interface QuickAction {
 }
 
 export function QuickActions({ onNewVisit }: { readonly onNewVisit: () => void }) {
+  const { t } = useTranslation();
   /**
    * Declared here rather than at module scope because one of them is this component's
    * prop. That is also the honest shape: the dashboard owns *when* the booking dialog
@@ -38,24 +41,34 @@ export function QuickActions({ onNewVisit }: { readonly onNewVisit: () => void }
    * find the right empty slot on.
    */
   const actions: readonly QuickAction[] = [
-    { key: 'new-visit', label: 'New Visit', Icon: CalendarPlus, onClick: onNewVisit },
-    { key: 'new-patient', label: 'New Patient', Icon: UserPlus, to: '/patients/new' },
+    {
+      key: 'new-visit',
+      labelKey: 'dashboard.quickActions.newVisit',
+      Icon: CalendarPlus,
+      onClick: onNewVisit,
+    },
+    {
+      key: 'new-patient',
+      labelKey: 'dashboard.quickActions.newPatient',
+      Icon: UserPlus,
+      to: '/patients/new',
+    },
   ];
 
   return (
     <div className="flex gap-2">
-      {actions.map(({ key, label, Icon, to, onClick }) =>
+      {actions.map(({ key, labelKey, Icon, to, onClick }) =>
         to ? (
           <Button key={key} asChild>
             <Link to={to}>
               <Icon aria-hidden className="mr-2 h-4 w-4" />
-              {label}
+              {t(labelKey)}
             </Link>
           </Button>
         ) : (
           <Button key={key} onClick={onClick} data-testid="new-visit">
             <Icon aria-hidden className="mr-2 h-4 w-4" />
-            {label}
+            {t(labelKey)}
           </Button>
         ),
       )}

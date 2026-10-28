@@ -1,5 +1,6 @@
 import { cn } from '@denti-code-u3/ui';
 import type { PlatformCapabilities } from './platform/index.js';
+import { useTranslation } from './i18n/index.js';
 import { PlatformProvider, usePlatform } from './providers.js';
 
 export interface AppRootProps {
@@ -30,6 +31,8 @@ function RuntimeBadge(): React.ReactNode {
  * for both targets and neither shell leaks inward.
  */
 export function AppRoot({ capabilities, children }: AppRootProps): React.ReactNode {
+  const { t } = useTranslation();
+
   return (
     <PlatformProvider capabilities={capabilities}>
       <div className="flex min-h-screen flex-col bg-background text-foreground antialiased">
@@ -38,7 +41,7 @@ export function AppRoot({ capabilities, children }: AppRootProps): React.ReactNo
             <div className="flex flex-col">
               <span className="text-lg font-semibold tracking-tight">Denti-Code U3</span>
               <span className={cn('text-xs', 'text-muted-foreground')}>
-                Dental clinic management
+                {t('common.shell.dentalClinicManagement')}
               </span>
             </div>
             <RuntimeBadge />
@@ -50,8 +53,7 @@ export function AppRoot({ capabilities, children }: AppRootProps): React.ReactNo
             <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
               <h1 className="text-2xl font-semibold tracking-tight">Denti-Code U3</h1>
               <p className="max-w-prose text-sm text-muted-foreground">
-                The application foundation is in place. Clinical features arrive in later
-                milestones; no business logic runs in this shell.
+                {t('common.shell.foundationBody')}
               </p>
             </div>
           )}
@@ -59,7 +61,7 @@ export function AppRoot({ capabilities, children }: AppRootProps): React.ReactNo
 
         <footer className="border-t bg-card">
           <div className="mx-auto w-full max-w-7xl px-4 py-2 text-xs text-muted-foreground sm:px-6 lg:px-8">
-            Denti-Code U3 · Milestone 2 · application shell
+            {t('common.shell.footer')}
           </div>
         </footer>
       </div>

@@ -17,16 +17,18 @@ import {
 } from '@denti-code-u3/ui';
 import { CalendarClock } from 'lucide-react';
 
+import { enumLabel, useTranslation } from '../../../i18n/index.js';
 import { useUpcomingVisits } from '../hooks/use-dashboard-stats.js';
 
 export function UpcomingVisits() {
+  const { t } = useTranslation();
   const { data, isPending, error } = useUpcomingVisits();
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Upcoming Visits</CardTitle>
-        <CardDescription>Next scheduled appointments</CardDescription>
+        <CardTitle>{t('dashboard.upcomingVisits.title')}</CardTitle>
+        <CardDescription>{t('dashboard.upcomingVisits.description')}</CardDescription>
       </CardHeader>
 
       <CardContent>
@@ -37,7 +39,7 @@ export function UpcomingVisits() {
             ))}
           </ul>
         ) : error ? (
-          <p className="text-sm text-destructive">Upcoming visits could not be loaded.</p>
+          <p className="text-sm text-destructive">{t('dashboard.upcomingVisits.error')}</p>
         ) : data && data.items.length > 0 ? (
           <ul className="space-y-2">
             {data.items.map((visit) => (
@@ -60,7 +62,7 @@ export function UpcomingVisits() {
                     STATUS_TONE_CLASS[toneForStatus(visit.status)],
                   )}
                 >
-                  {visit.status}
+                  {enumLabel(t, 'common.status', visit.status)}
                 </span>
               </li>
             ))}
@@ -70,7 +72,7 @@ export function UpcomingVisits() {
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-metric-violet-soft text-metric-violet">
               <CalendarClock aria-hidden className="h-6 w-6" />
             </span>
-            <p className="text-sm text-muted-foreground">No upcoming visits.</p>
+            <p className="text-sm text-muted-foreground">{t('dashboard.upcomingVisits.empty')}</p>
           </div>
         )}
       </CardContent>

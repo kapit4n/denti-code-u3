@@ -1,9 +1,14 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 55 (wider shell and a full demo dataset)
+> Last updated: session 56 (typed English/Spanish catalogues, Spanish default)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
+
+> **Session 56** added the typed English/Spanish UI catalogue (ADR 0032). Spanish is the
+> default, the header switches language and persists the choice, and the shell, dashboard
+> and patient pages are translated. Agenda, visits, treatments, inventory, reports,
+> settings and the login screen still render English until their own slice.
 
 ## Phase
 
@@ -3259,3 +3264,35 @@ appointments in _today_.
 **Verification.** `typecheck` 12/12 · `lint` 12/12 + guard · `test` 12/12 tasks (domain 376,
 app 351, desktop 4) · `build` 5/5 · seed span twice, counts stable (10/10/10/10, six today).
 No migration or schema change.
+
+---
+
+Session 56: the application now has a **typed English/Spanish catalogue**, with Spanish as
+the product default (ADR 0032). `packages/app/src/i18n` holds the locale contract, the
+translator, an `I18nProvider` mounted once in the root route, the `enumLabel` door for domain
+values and three feature catalogues (`common`, `dashboard`, `patients`). The English
+catalogue defines `TranslationKey`; the Spanish catalogue is checked with
+`satisfies Record<TranslationKey, string>`, so a missing sibling fails typecheck. There is no
+i18n dependency: interpolation is only `{name}`, plurals are explicit `.one`/`.other` keys,
+and the provider's fallback is English so isolated component tests keep their assertions.
+
+The header gained a language switch. The choice persists under `denti-code-locale`, opens in
+Spanish when nothing is stored, and updates `<html lang>`. Translated in this slice: the app
+frame, header/sidebar/global search, the dashboard and all its widgets, the patient list,
+registration, profile, edit form, picker, treatment plans, balance, invoices, statement and
+odontogram. Failure describers accept optional translated messages while keeping their
+English defaults.
+
+The existing browser suite was written in English, so its shared fixture pins the locale;
+`i18n.spec.ts` overrides it for the Spanish flow (dashboard + switch back, patient list,
+profile sections). Two first-run e2e failures were selector drift rather than product bugs
+(`Pacientes` matched both the nav link and a dashboard quick action; `Saldo` matched the
+profile card and balance card), and one was a real copy regression: `patients.profile.tooth`
+and `.quantity` had lost their leading space when moved into the catalogue, so an outstanding
+treatment rendered `Restorative plan· tooth 26` instead of `Restorative plan · tooth 26`.
+Both catalogues now keep the separator.
+
+**Verification.** Typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing React
+Compiler warning) · format clean · build 5/5 · domain 376, app **355**, desktop 4, API unit
+128, API integration **46 passed / 273 skipped** (PG skips without `TEST_DATABASE_URL`) ·
+e2e **154/154**. Docs: ADR 0032, `frontend.md` §14, open question #9.

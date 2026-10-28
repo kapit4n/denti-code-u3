@@ -35,7 +35,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@denti-code-u3/ui';
-import { formatClinicDay, READING_THE_CLINIC_CLOCK } from '../../clinic/format-clinic-time.js';
+import { formatClinicDay } from '../../clinic/format-clinic-time.js';
+import { enumLabel, useTranslation } from '../../../i18n/index.js';
 import { describePlanItemFailure } from '../describe-plan-item-failure.js';
 import { usePatientTreatmentPlans } from '../hooks/use-patients.js';
 import { useCompleteTreatmentPlanItem } from '../mutations/use-complete-treatment-plan-item.js';
@@ -51,6 +52,7 @@ export function PatientTreatmentPlansSection({
   patientId,
   clinicTimeZone,
 }: PatientTreatmentPlansSectionProps) {
+  const { t } = useTranslation();
   const plansQuery = usePatientTreatmentPlans(patientId);
   const completeItem = useCompleteTreatmentPlanItem();
   const [isProposing, setIsProposing] = useState(false);
@@ -58,22 +60,26 @@ export function PatientTreatmentPlansSection({
   const plans = plansQuery.data?.items ?? [];
   const completeFailure = describePlanItemFailure(
     completeItem.error,
-    'The item could not be marked done. Try again.',
+    t('patients.plans.completeError'),
+    {
+      notFound: t('patients.plans.failure.notFound'),
+      network: t('patients.plans.failure.network'),
+    },
   );
   const pendingItemId = completeItem.isPending ? completeItem.variables?.itemId : undefined;
 
   return (
     <Card data-testid="patient-treatment-plans">
       <CardHeader>
-        <CardTitle>Treatment plans</CardTitle>
-        <CardDescription>What has been offered for this patient</CardDescription>
+        <CardTitle>{t('patients.plans.title')}</CardTitle>
+        <CardDescription>{t('patients.plans.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         {plansQuery.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading the plans…</p>
+          <p className="text-sm text-muted-foreground">{t('patients.plans.loading')}</p>
         ) : plansQuery.error ? (
           <p role="alert" className="text-sm text-destructive">
-            The treatment plans could not be loaded.
+            {t('patients.plans.loadError')}
           </p>
         ) : plans.length > 0 ? (
           <ul className="space-y-3">
@@ -85,26 +91,40 @@ export function PatientTreatmentPlansSection({
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="font-medium">
-                    {plan.title ?? 'Treatment plan'}
+                    {plan.title ?? t('patients.plans.fallbackTitle')}
                     <span className="ml-2 text-xs font-normal uppercase tracking-wide text-muted-foreground">
-                      {plan.status.replaceAll('_', ' ')}
+                      {enumLabel(t, 'common.status', plan.status)}
                     </span>
                   </span>
                   <span className="text-xs text-muted-foreground" data-testid="plan-progress">
-                    {plan.progress.total} item{plan.progress.total === 1 ? '' : 's'} ·{' '}
-                    {plan.progress.completed} complete · {plan.progress.percentComplete}%
+                    {t(
+                      plan.progress.total === 1
+                        ? 'patients.plans.progress.one'
+                        : 'patients.plans.progress.other',
+                      {
+                        total: plan.progress.total,
+                        completed: plan.progress.completed,
+                        percent: plan.progress.percentComplete,
+                      },
+                    )}
                   </span>
                 </div>
 
                 {plan.presentedAt && clinicTimeZone ? (
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Presented {formatClinicDay(plan.presentedAt, clinicTimeZone)}
+                    {t('patients.plans.presented', {
+                      date: formatClinicDay(plan.presentedAt, clinicTimeZone),
+                    })}
                     {plan.acceptedAt
-                      ? ` · accepted ${formatClinicDay(plan.acceptedAt, clinicTimeZone)}`
+                      ? t('patients.plans.accepted', {
+                          date: formatClinicDay(plan.acceptedAt, clinicTimeZone),
+                        })
                       : ''}
                   </p>
                 ) : plan.presentedAt && !clinicTimeZone ? (
-                  <p className="mt-1 text-xs text-muted-foreground">{READING_THE_CLINIC_CLOCK}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t('patients.plans.readingClock')}
+                  </p>
                 ) : null}
 
                 <ul className="mt-2 space-y-1">
@@ -120,9 +140,13 @@ export function PatientTreatmentPlansSection({
                             ✓
                           </span>
                         ) : null}
-                        {item.tooth ? `Tooth ${item.tooth} · ` : ''}
-                        {item.treatmentName ?? item.treatmentCode ?? 'Treatment'}
-                        {item.quantity > 1 ? ` × ${item.quantity}` : ''}
+                        {item.tooth ? t('patients.plans.tooth', { tooth: item.tooth }) : ''}
+                        {item.treatmentName ??
+                          item.treatmentCode ??
+                          t('patients.plans.itemFallback')}
+                        {item.quantity > 1
+                          ? t('patients.plans.quantity', { count: item.quantity })
+                          : ''}
                       </span>
                       <span className="flex shrink-0 items-center gap-2">
                         <span className="text-muted-foreground">
@@ -146,10 +170,10 @@ export function PatientTreatmentPlansSection({
                             {pendingItemId === item.id ? (
                               <>
                                 <Loader2 aria-hidden className="size-3 animate-spin" />
-                                Marking done
+                                {t('patients.plans.markingDone')}
                               </>
                             ) : (
-                              'Mark done'
+                              t('patients.plans.markDone')
                             )}
                           </Button>
                         ) : null}
@@ -163,7 +187,7 @@ export function PatientTreatmentPlansSection({
         ) : (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <ClipboardList aria-hidden className="size-4" />
-            No treatment plans for this patient yet.
+            {t('patients.plans.empty')}
           </p>
         )}
 
@@ -187,7 +211,7 @@ export function PatientTreatmentPlansSection({
             data-testid="new-plan-open"
           >
             <Plus aria-hidden className="size-4" />
-            New plan
+            {t('patients.plans.newPlan')}
           </Button>
         ) : (
           <NewTreatmentPlanForm

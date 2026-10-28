@@ -14,8 +14,21 @@ import type { ApiClientError } from '@denti-code-u3/api-client';
  * because the server already knows what is wrong.
  *
  * @param fallback Used when the API sent no message of its own.
+ * @param messages Optional translated sentences; the English defaults keep this
+ *   helper usable from a component test that renders without an i18n provider.
  */
-export function describePatientFailure(error: unknown, fallback: string): string | undefined {
+export interface PatientFailureMessages {
+  readonly validation?: string;
+  readonly notFound?: string;
+  readonly conflict?: string;
+  readonly network?: string;
+}
+
+export function describePatientFailure(
+  error: unknown,
+  fallback: string,
+  messages?: PatientFailureMessages,
+): string | undefined {
   if (!error) {
     return undefined;
   }
@@ -29,13 +42,13 @@ export function describePatientFailure(error: unknown, fallback: string): string
   switch (apiError.code) {
     case 'VALIDATION_ERROR':
     case 'DOMAIN_RULE_VIOLATION':
-      return apiError.message || 'Some of these details are not valid.';
+      return apiError.message || (messages?.validation ?? 'Some of these details are not valid.');
     case 'NOT_FOUND':
-      return 'That patient no longer exists, or is not in this clinic.';
+      return messages?.notFound ?? 'That patient no longer exists, or is not in this clinic.';
     case 'SCHEDULING_CONFLICT':
-      return apiError.message || 'That record already exists.';
+      return apiError.message || (messages?.conflict ?? 'That record already exists.');
     case 'NETWORK_ERROR':
-      return 'Could not reach the server. Check the connection and try again.';
+      return messages?.network ?? 'Could not reach the server. Check the connection and try again.';
     default:
       return apiError.message || fallback;
   }

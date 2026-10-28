@@ -29,7 +29,8 @@ import {
   CardTitle,
 } from '@denti-code-u3/ui';
 
-import { formatClinicDay, READING_THE_CLINIC_CLOCK } from '../../clinic/format-clinic-time.js';
+import { formatClinicDay } from '../../clinic/format-clinic-time.js';
+import { useTranslation, type Translate } from '../../../i18n/index.js';
 import { usePatientStatement } from '../hooks/use-patients.js';
 
 interface PatientStatementSectionProps {
@@ -38,23 +39,31 @@ interface PatientStatementSectionProps {
   readonly clinicTimeZone: string | undefined;
 }
 
-function describeLine(line: {
-  readonly kind: 'INVOICE' | 'PAYMENT';
-  readonly reference: string | null;
-  readonly method: string | null;
-}): string {
+function describeLine(
+  line: {
+    readonly kind: 'INVOICE' | 'PAYMENT';
+    readonly reference: string | null;
+    readonly method: string | null;
+  },
+  t: Translate,
+): string {
   if (line.kind === 'INVOICE') {
-    return line.reference ? `Invoice ${line.reference}` : 'Invoice';
+    return line.reference
+      ? t('patients.statement.invoiceRef', { reference: line.reference })
+      : t('patients.statement.invoice');
   }
 
-  const method = line.method ?? 'Payment';
-  return line.reference ? `Payment · ${method} · ${line.reference}` : `Payment · ${method}`;
+  const method = line.method ?? t('patients.statement.paymentFallback');
+  return line.reference
+    ? t('patients.statement.paymentRef', { method, reference: line.reference })
+    : t('patients.statement.payment', { method });
 }
 
 export function PatientStatementSection({
   patientId,
   clinicTimeZone,
 }: PatientStatementSectionProps) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const statementQuery = usePatientStatement(patientId, isOpen);
   const statement = statementQuery.data;
@@ -62,16 +71,13 @@ export function PatientStatementSection({
   return (
     <Card data-testid="patient-statement">
       <CardHeader>
-        <CardTitle>Statement</CardTitle>
-        <CardDescription>Every invoice and payment, oldest first</CardDescription>
+        <CardTitle>{t('patients.statement.title')}</CardTitle>
+        <CardDescription>{t('patients.statement.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         {!isOpen ? (
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Open the statement to see the documents and payments in order, with the balance after
-              each line.
-            </p>
+            <p className="text-sm text-muted-foreground">{t('patients.statement.intro')}</p>
             <Button
               type="button"
               variant="outline"
@@ -80,14 +86,14 @@ export function PatientStatementSection({
               onClick={() => setIsOpen(true)}
             >
               <FileText aria-hidden className="mr-1 size-4" />
-              Show statement
+              {t('patients.statement.show')}
             </Button>
           </div>
         ) : statementQuery.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading the statement…</p>
+          <p className="text-sm text-muted-foreground">{t('patients.statement.loading')}</p>
         ) : statementQuery.error ? (
           <p role="alert" className="text-sm text-destructive">
-            The statement could not be loaded.
+            {t('patients.statement.loadError')}
           </p>
         ) : statement && statement.entries.length > 0 ? (
           <>
@@ -99,7 +105,7 @@ export function PatientStatementSection({
                   className="rounded-lg border p-3 text-sm"
                 >
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="font-medium">{describeLine(line)}</span>
+                    <span className="font-medium">{describeLine(line, t)}</span>
                     <span className="tabular-nums" data-testid="statement-entry-amount">
                       {line.kind === 'INVOICE'
                         ? formatMinorUnits(line.debitMinor)
@@ -111,10 +117,13 @@ export function PatientStatementSection({
                     <span>
                       {clinicTimeZone
                         ? formatClinicDay(line.occurredAt, clinicTimeZone)
-                        : READING_THE_CLINIC_CLOCK}
+                        : t('patients.profile.readingClock')}
                     </span>
                     <span className="tabular-nums" data-testid="statement-entry-balance">
-                      Balance {formatMinorUnits(line.balanceMinor)} {statement.currency}
+                      {t('patients.statement.balance', {
+                        amount: formatMinorUnits(line.balanceMinor),
+                        currency: statement.currency,
+                      })}
                     </span>
                   </div>
                 </li>
@@ -123,19 +132,19 @@ export function PatientStatementSection({
 
             <dl className="mt-4 space-y-1 border-t pt-3 text-sm">
               <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">Billed</dt>
+                <dt className="text-muted-foreground">{t('patients.statement.billed')}</dt>
                 <dd className="tabular-nums" data-testid="statement-billed">
                   {formatMinorUnits(statement.billedMinor)} {statement.currency}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">Paid</dt>
+                <dt className="text-muted-foreground">{t('patients.statement.paid')}</dt>
                 <dd className="tabular-nums" data-testid="statement-paid">
                   {formatMinorUnits(statement.paidMinor)} {statement.currency}
                 </dd>
               </div>
               <div className="flex justify-between gap-4 font-medium">
-                <dt>Closing balance</dt>
+                <dt>{t('patients.statement.closing')}</dt>
                 <dd className="tabular-nums" data-testid="statement-closing">
                   {formatMinorUnits(statement.closingBalanceMinor)} {statement.currency}
                 </dd>
@@ -143,7 +152,7 @@ export function PatientStatementSection({
             </dl>
           </>
         ) : (
-          <p className="text-sm text-muted-foreground">Nothing has been billed or paid yet.</p>
+          <p className="text-sm text-muted-foreground">{t('patients.statement.empty')}</p>
         )}
       </CardContent>
     </Card>

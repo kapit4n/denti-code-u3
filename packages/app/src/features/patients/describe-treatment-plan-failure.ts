@@ -21,7 +21,16 @@ import { ApiClientError } from '@denti-code-u3/api-client';
  * gives: its messages were written for a person by the API, and anything else is
  * developer noise in front of the clinician.
  */
-export function describeTreatmentPlanFailure(error: unknown, fallback: string): string | undefined {
+export interface TreatmentPlanFailureMessages {
+  readonly notFound?: string;
+  readonly network?: string;
+}
+
+export function describeTreatmentPlanFailure(
+  error: unknown,
+  fallback: string,
+  messages?: TreatmentPlanFailureMessages,
+): string | undefined {
   if (!error) {
     return undefined;
   }
@@ -37,9 +46,9 @@ export function describeTreatmentPlanFailure(error: unknown, fallback: string): 
     case 'DOMAIN_RULE_VIOLATION':
       return message;
     case 'NOT_FOUND':
-      return 'This patient no longer exists in the current clinic.';
+      return messages?.notFound ?? 'This patient no longer exists in the current clinic.';
     case 'NETWORK_ERROR':
-      return 'Could not reach the server. The plan was not saved.';
+      return messages?.network ?? 'Could not reach the server. The plan was not saved.';
     default:
       return message;
   }

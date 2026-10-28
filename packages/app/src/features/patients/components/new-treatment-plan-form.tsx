@@ -33,6 +33,7 @@ import { AlertCircle, Loader2, Plus, Trash2 } from 'lucide-react';
 import { useTreatments } from '../../treatments/queries/catalogue-query.js';
 import { parseMajorUnitsToMinor } from '../../visits/charge-presentation.js';
 import { describeTreatmentPlanFailure } from '../describe-treatment-plan-failure.js';
+import { useTranslation } from '../../../i18n/index.js';
 import {
   useCreatePatientTreatmentPlan,
   type TreatmentPlanDraftItem,
@@ -115,6 +116,7 @@ export function NewTreatmentPlanForm({
   onCreated,
   onCancel,
 }: NewTreatmentPlanFormProps) {
+  const { t } = useTranslation();
   const createPlan = useCreatePatientTreatmentPlan();
   const catalogueQuery = useTreatments();
   const catalogue = catalogueQuery.data?.items ?? [];
@@ -127,10 +129,10 @@ export function NewTreatmentPlanForm({
   const rowsAreValid = keptRows.every((row) => quantityIsValid(row) && priceIsValid(row));
   const canSubmit = keptRows.length > 0 && rowsAreValid && !createPlan.isPending;
 
-  const failure = describeTreatmentPlanFailure(
-    createPlan.error,
-    'The plan could not be saved. Try again.',
-  );
+  const failure = describeTreatmentPlanFailure(createPlan.error, t('patients.newPlan.failure'), {
+    notFound: t('patients.newPlan.failure.notFound'),
+    network: t('patients.newPlan.failure.network'),
+  });
 
   function updateRow(key: number, patch: Partial<Omit<DraftRow, 'key'>>) {
     setRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));
@@ -177,7 +179,7 @@ export function NewTreatmentPlanForm({
       ) : null}
 
       <div className="space-y-1">
-        <Label htmlFor="new-plan-title">Title (optional)</Label>
+        <Label htmlFor="new-plan-title">{t('patients.newPlan.titleLabel')}</Label>
         <input
           id="new-plan-title"
           data-testid="new-plan-title"
@@ -185,12 +187,14 @@ export function NewTreatmentPlanForm({
           onChange={(event) => setTitle(event.target.value)}
           disabled={createPlan.isPending}
           className="w-full rounded-md border bg-background p-2 text-sm"
-          placeholder="e.g. Restorative plan"
+          placeholder={t('patients.newPlan.titlePlaceholder')}
         />
       </div>
 
       <div className="space-y-2">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Items</p>
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {t('patients.newPlan.items')}
+        </p>
 
         {rows.map((row) => (
           <div
@@ -199,7 +203,9 @@ export function NewTreatmentPlanForm({
             className="space-y-2 rounded-md border bg-muted/30 p-2"
           >
             <div className="space-y-1">
-              <Label htmlFor={`new-plan-treatment-${row.key}`}>Treatment (optional)</Label>
+              <Label htmlFor={`new-plan-treatment-${row.key}`}>
+                {t('patients.newPlan.treatment')}
+              </Label>
               <Select
                 value={row.treatmentId}
                 onValueChange={(value) => updateRow(row.key, { treatmentId: value })}
@@ -209,7 +215,7 @@ export function NewTreatmentPlanForm({
                   id={`new-plan-treatment-${row.key}`}
                   data-testid="new-plan-treatment"
                 >
-                  <SelectValue placeholder="Choose a treatment" />
+                  <SelectValue placeholder={t('patients.newPlan.treatmentPlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
                   {catalogue.map((treatment) => (
@@ -223,7 +229,7 @@ export function NewTreatmentPlanForm({
 
             <div className="flex flex-wrap gap-2">
               <div className="space-y-1">
-                <Label htmlFor={`new-plan-tooth-${row.key}`}>Tooth</Label>
+                <Label htmlFor={`new-plan-tooth-${row.key}`}>{t('patients.newPlan.tooth')}</Label>
                 <input
                   id={`new-plan-tooth-${row.key}`}
                   data-testid="new-plan-tooth"
@@ -238,7 +244,9 @@ export function NewTreatmentPlanForm({
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor={`new-plan-quantity-${row.key}`}>Qty</Label>
+                <Label htmlFor={`new-plan-quantity-${row.key}`}>
+                  {t('patients.newPlan.quantity')}
+                </Label>
                 <input
                   id={`new-plan-quantity-${row.key}`}
                   data-testid="new-plan-quantity"
@@ -252,7 +260,7 @@ export function NewTreatmentPlanForm({
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor={`new-plan-price-${row.key}`}>Price</Label>
+                <Label htmlFor={`new-plan-price-${row.key}`}>{t('patients.newPlan.price')}</Label>
                 <input
                   id={`new-plan-price-${row.key}`}
                   data-testid="new-plan-price"
@@ -267,7 +275,7 @@ export function NewTreatmentPlanForm({
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor={`new-plan-notes-${row.key}`}>Note (optional)</Label>
+              <Label htmlFor={`new-plan-notes-${row.key}`}>{t('patients.newPlan.note')}</Label>
               <input
                 id={`new-plan-notes-${row.key}`}
                 data-testid="new-plan-notes"
@@ -288,7 +296,7 @@ export function NewTreatmentPlanForm({
                 data-testid="new-plan-remove-item"
               >
                 <Trash2 aria-hidden className="size-4" />
-                Remove item
+                {t('patients.newPlan.remove')}
               </Button>
             ) : null}
           </div>
@@ -303,13 +311,12 @@ export function NewTreatmentPlanForm({
           data-testid="new-plan-add-item"
         >
           <Plus aria-hidden className="size-4" />
-          Add item
+          {t('patients.newPlan.add')}
         </Button>
 
         {!rowsAreValid ? (
           <p className="text-xs text-destructive" role="status">
-            Check the quantity and price — a quantity is a whole number from 1, and a price has at
-            most two decimals.
+            {t('patients.newPlan.invalid')}
           </p>
         ) : null}
       </div>
@@ -319,10 +326,10 @@ export function NewTreatmentPlanForm({
           {createPlan.isPending ? (
             <>
               <Loader2 aria-hidden className="size-4 animate-spin" />
-              Saving
+              {t('patients.newPlan.saving')}
             </>
           ) : (
-            'Save plan'
+            t('patients.newPlan.save')
           )}
         </Button>
         <Button
@@ -332,7 +339,7 @@ export function NewTreatmentPlanForm({
           disabled={createPlan.isPending}
           data-testid="new-plan-cancel"
         >
-          Cancel
+          {t('patients.newPlan.cancel')}
         </Button>
       </div>
     </form>

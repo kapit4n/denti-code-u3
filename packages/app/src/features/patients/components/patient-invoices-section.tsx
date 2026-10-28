@@ -19,7 +19,8 @@ import { formatMinorUnits } from '@denti-code-u3/domain';
 import { ReceiptText } from 'lucide-react';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@denti-code-u3/ui';
-import { formatClinicDay, READING_THE_CLINIC_CLOCK } from '../../clinic/format-clinic-time.js';
+import { formatClinicDay } from '../../clinic/format-clinic-time.js';
+import { enumLabel, useTranslation } from '../../../i18n/index.js';
 import { usePatientInvoices } from '../hooks/use-patients.js';
 
 interface PatientInvoicesSectionProps {
@@ -29,6 +30,7 @@ interface PatientInvoicesSectionProps {
 }
 
 export function PatientInvoicesSection({ patientId, clinicTimeZone }: PatientInvoicesSectionProps) {
+  const { t } = useTranslation();
   const invoicesQuery = usePatientInvoices(patientId);
 
   const invoices = invoicesQuery.data?.items ?? [];
@@ -36,15 +38,15 @@ export function PatientInvoicesSection({ patientId, clinicTimeZone }: PatientInv
   return (
     <Card data-testid="patient-invoices">
       <CardHeader>
-        <CardTitle>Invoices</CardTitle>
-        <CardDescription>The documents issued for this patient</CardDescription>
+        <CardTitle>{t('patients.invoices.title')}</CardTitle>
+        <CardDescription>{t('patients.invoices.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         {invoicesQuery.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading the invoices…</p>
+          <p className="text-sm text-muted-foreground">{t('patients.invoices.loading')}</p>
         ) : invoicesQuery.error ? (
           <p role="alert" className="text-sm text-destructive">
-            The invoices could not be loaded.
+            {t('patients.invoices.loadError')}
           </p>
         ) : invoices.length > 0 ? (
           <ul className="space-y-3">
@@ -58,7 +60,7 @@ export function PatientInvoicesSection({ patientId, clinicTimeZone }: PatientInv
                   <span className="font-medium">
                     {invoice.number ?? '—'}
                     <span className="ml-2 text-xs font-normal uppercase tracking-wide text-muted-foreground">
-                      {invoice.status.replaceAll('_', ' ')}
+                      {enumLabel(t, 'common.status', invoice.status)}
                     </span>
                   </span>
                   <span className="text-muted-foreground" data-testid="invoice-total">
@@ -67,21 +69,31 @@ export function PatientInvoicesSection({ patientId, clinicTimeZone }: PatientInv
                 </div>
 
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {invoice.chargeCount} charge{invoice.chargeCount === 1 ? '' : 's'}
+                  {t(
+                    invoice.chargeCount === 1
+                      ? 'patients.invoices.chargeCount.one'
+                      : 'patients.invoices.chargeCount.other',
+                    { count: invoice.chargeCount },
+                  )}
                   {invoice.issuedAt
                     ? clinicTimeZone
-                      ? ` · issued ${formatClinicDay(invoice.issuedAt, clinicTimeZone)}`
-                      : ` · ${READING_THE_CLINIC_CLOCK}`
+                      ? t('patients.invoices.issued', {
+                          date: formatClinicDay(invoice.issuedAt, clinicTimeZone),
+                        })
+                      : ` · ${t('patients.profile.readingClock')}`
                     : ''}
                 </p>
 
                 {invoice.balanceMinor > 0 ? (
                   <p className="mt-1 text-xs" data-testid="invoice-balance">
-                    {formatMinorUnits(invoice.balanceMinor)} {invoice.currency} outstanding
+                    {t('patients.invoices.outstanding', {
+                      amount: formatMinorUnits(invoice.balanceMinor),
+                      currency: invoice.currency,
+                    })}
                   </p>
                 ) : (
                   <p className="mt-1 text-xs text-muted-foreground" data-testid="invoice-balance">
-                    Paid in full
+                    {t('patients.invoices.paidFull')}
                   </p>
                 )}
               </li>
@@ -90,7 +102,7 @@ export function PatientInvoicesSection({ patientId, clinicTimeZone }: PatientInv
         ) : (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <ReceiptText aria-hidden className="size-4" />
-            No invoices for this patient yet.
+            {t('patients.invoices.empty')}
           </p>
         )}
       </CardContent>

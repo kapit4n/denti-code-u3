@@ -44,12 +44,14 @@ import { StatCard } from '../features/dashboard/components/stat-card.js';
 import { TodayAppointments } from '../features/dashboard/components/today-appointments.js';
 import { UpcomingVisits } from '../features/dashboard/components/upcoming-visits.js';
 import { useDashboardStats } from '../features/dashboard/hooks/use-dashboard-stats.js';
+import { useTranslation } from '../i18n/index.js';
 
 export const Route = createFileRoute('/dashboard')({
   component: Dashboard,
 });
 
 function Dashboard() {
+  const { t } = useTranslation();
   const { data, isPending, error } = useDashboardStats();
   // The booking dialog needs the clinic, and nothing else on this page does — so this is
   // the first time the dashboard asks who the clinic is. It was answered on the agenda
@@ -68,72 +70,78 @@ function Dashboard() {
   // own name is real data and reads as a welcome rather than an assertion about
   // who is logged in.
   const subtitle = clinicRecord?.name
-    ? `Here’s what’s happening at ${clinicRecord.name} today.`
-    : 'Here’s what’s happening at your clinic today.';
+    ? t('dashboard.subtitle.withClinic', { clinic: clinicRecord.name })
+    : t('dashboard.subtitle.withoutClinic');
 
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">{greeting()}</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{greeting(t)}</h1>
           <p className="mt-1 text-muted-foreground">{subtitle}</p>
         </div>
         <QuickActions onNewVisit={() => setIsBooking(true)} />
       </header>
 
       <section
-        aria-label="Today's appointments"
+        aria-label={t('dashboard.section.todayAppointments')}
         className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6"
       >
         <StatCard
-          title="Appointments"
+          title={t('dashboard.stats.appointments.title')}
+          testId="Appointments"
           value={today?.appointments ?? 0}
-          description="Booked today"
+          description={t('dashboard.stats.appointments.description')}
           icon={CalendarDays}
           accent="blue"
           isLoading={loading}
           error={failed}
         />
         <StatCard
-          title="Completed"
+          title={t('dashboard.stats.completed.title')}
+          testId="Completed"
           value={today?.completed ?? 0}
-          description="Finished today"
+          description={t('dashboard.stats.completed.description')}
           icon={CheckCircle2}
           accent="green"
           isLoading={loading}
           error={failed}
         />
         <StatCard
-          title="Pending"
+          title={t('dashboard.stats.pending.title')}
+          testId="Pending"
           value={today?.pending ?? 0}
-          description="Awaiting the patient"
+          description={t('dashboard.stats.pending.description')}
           icon={Clock}
           accent="amber"
           isLoading={loading}
           error={failed}
         />
         <StatCard
-          title="In treatment"
+          title={t('dashboard.stats.inTreatment.title')}
+          testId="In treatment"
           value={today?.inTreatment ?? 0}
-          description="Currently in the chair"
+          description={t('dashboard.stats.inTreatment.description')}
           icon={Stethoscope}
           accent="violet"
           isLoading={loading}
           error={failed}
         />
         <StatCard
-          title="Cancelled"
+          title={t('dashboard.stats.cancelled.title')}
+          testId="Cancelled"
           value={today?.cancelled ?? 0}
-          description="Today"
+          description={t('dashboard.stats.cancelled.description')}
           icon={CircleSlash}
           accent="rose"
           isLoading={loading}
           error={failed}
         />
         <StatCard
-          title="No-show"
+          title={t('dashboard.stats.noShow.title')}
+          testId="No-show"
           value={today?.noShow ?? 0}
-          description="Today"
+          description={t('dashboard.stats.noShow.description')}
           icon={CircleDashed}
           accent="slate"
           isLoading={loading}
@@ -141,18 +149,23 @@ function Dashboard() {
         />
       </section>
 
-      <section aria-label="Clinic statistics" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section
+        aria-label={t('dashboard.section.clinicStatistics')}
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+      >
         <StatCard
-          title="Active patients"
+          title={t('dashboard.stats.activePatients.title')}
+          testId="Active patients"
           value={clinic?.activePatients ?? 0}
-          description="Registered in this clinic"
+          description={t('dashboard.stats.activePatients.description')}
           icon={Users}
           accent="blue"
           isLoading={loading}
           error={failed}
         />
         <StatCard
-          title="Collected this month"
+          title={t('dashboard.stats.collected.title')}
+          testId="Collected this month"
           value={
             clinic
               ? `${formatMinorUnits(clinic.collectedThisMonthMinor)}${
@@ -160,23 +173,25 @@ function Dashboard() {
                 }`
               : '0.00'
           }
-          description="Payments received"
+          description={t('dashboard.stats.collected.description')}
           icon={DollarSign}
           accent="green"
           isLoading={loading}
           error={failed}
         />
         <StatCard
-          title="Pending treatments"
+          title={t('dashboard.stats.pendingTreatments.title')}
+          testId="Pending treatments"
           value={clinic?.pendingTreatmentItems ?? 0}
-          description="Items not yet completed"
+          description={t('dashboard.stats.pendingTreatments.description')}
           icon={ClipboardList}
           accent="amber"
           isLoading={loading}
           error={failed}
         />
         <StatCard
-          title="Occupancy"
+          title={t('dashboard.stats.occupancy.title')}
+          testId="Occupancy"
           // `null` means the API could not determine today's capacity, which is
           // not the same as an empty clinic.
           value={
@@ -184,7 +199,7 @@ function Dashboard() {
               ? '—'
               : `${clinic.occupancyRate}%`
           }
-          description="Booked share of today's capacity"
+          description={t('dashboard.stats.occupancy.description')}
           icon={Gauge}
           accent="violet"
           isLoading={loading}
@@ -193,7 +208,7 @@ function Dashboard() {
         />
       </section>
 
-      <section aria-label="Schedule" className="grid gap-6 lg:grid-cols-3">
+      <section aria-label={t('dashboard.section.schedule')} className="grid gap-6 lg:grid-cols-3">
         <div className="flex flex-col gap-6 lg:col-span-2">
           <TodayAppointments />
           <CalendarPreview />
@@ -217,9 +232,9 @@ function Dashboard() {
 }
 
 /** Time-of-day greeting. Cosmetic only; drives no behaviour. */
-function greeting(): string {
+function greeting(t: ReturnType<typeof useTranslation>['t']): string {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
+  if (hour < 12) return t('dashboard.greeting.morning');
+  if (hour < 18) return t('dashboard.greeting.afternoon');
+  return t('dashboard.greeting.evening');
 }

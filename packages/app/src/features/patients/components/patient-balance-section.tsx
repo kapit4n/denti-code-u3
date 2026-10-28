@@ -21,27 +21,29 @@ import { formatMinorUnits } from '@denti-code-u3/domain';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@denti-code-u3/ui';
 import { usePatientBalance } from '../hooks/use-patients.js';
+import { useTranslation } from '../../../i18n/index.js';
 
 interface PatientBalanceSectionProps {
   readonly patientId: string;
 }
 
 export function PatientBalanceSection({ patientId }: PatientBalanceSectionProps) {
+  const { t } = useTranslation();
   const balanceQuery = usePatientBalance(patientId);
   const balance = balanceQuery.data;
 
   return (
     <Card data-testid="patient-balance">
       <CardHeader>
-        <CardTitle>Balance</CardTitle>
-        <CardDescription>What this patient owes this clinic</CardDescription>
+        <CardTitle>{t('patients.balance.title')}</CardTitle>
+        <CardDescription>{t('patients.balance.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         {balanceQuery.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading the balance…</p>
+          <p className="text-sm text-muted-foreground">{t('patients.balance.loading')}</p>
         ) : balanceQuery.error ? (
           <p role="alert" className="text-sm text-destructive">
-            The balance could not be loaded.
+            {t('patients.balance.loadError')}
           </p>
         ) : balance ? (
           <>
@@ -59,27 +61,27 @@ export function PatientBalanceSection({ patientId }: PatientBalanceSectionProps)
             </p>
             <p className="mt-1 text-sm text-muted-foreground" data-testid="patient-balance-state">
               {balance.balanceMinor > 0
-                ? 'Outstanding'
+                ? t('patients.balance.outstanding')
                 : balance.balanceMinor < 0
-                  ? 'Credit on account'
-                  : 'Nothing owed'}
+                  ? t('patients.balance.credit')
+                  : t('patients.balance.nothing')}
             </p>
 
             <dl className="mt-4 space-y-1 text-sm">
               <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">Billed</dt>
+                <dt className="text-muted-foreground">{t('patients.balance.billed')}</dt>
                 <dd className="tabular-nums" data-testid="patient-balance-billed">
                   {formatMinorUnits(balance.billedMinor)} {balance.currency}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">Already paid</dt>
+                <dt className="text-muted-foreground">{t('patients.balance.paid')}</dt>
                 <dd className="tabular-nums" data-testid="patient-balance-allocated">
                   {formatMinorUnits(balance.allocatedMinor)} {balance.currency}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">Still to collect</dt>
+                <dt className="text-muted-foreground">{t('patients.balance.stillToCollect')}</dt>
                 <dd className="tabular-nums" data-testid="patient-balance-outstanding">
                   {formatMinorUnits(balance.outstandingMinor)} {balance.currency}
                 </dd>
@@ -88,7 +90,7 @@ export function PatientBalanceSection({ patientId }: PatientBalanceSectionProps)
                   on is the one figure in the five a settled ledger would hide. */}
               {balance.unallocatedPaymentsMinor !== 0 ? (
                 <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground">Unapplied payments</dt>
+                  <dt className="text-muted-foreground">{t('patients.balance.unapplied')}</dt>
                   <dd className="tabular-nums" data-testid="patient-balance-unallocated">
                     {formatMinorUnits(balance.unallocatedPaymentsMinor)} {balance.currency}
                   </dd>

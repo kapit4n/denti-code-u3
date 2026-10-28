@@ -32,6 +32,7 @@ import {
 
 import { useRegisterPatient } from '../hooks/use-register-patient.js';
 import { describePatientFailure } from '../describe-patient-failure.js';
+import { useTranslation } from '../../../i18n/index.js';
 import { PatientFields } from './patient-fields.js';
 
 export interface PatientFormProps {
@@ -40,6 +41,7 @@ export interface PatientFormProps {
 }
 
 export function PatientForm({ onRegistered }: PatientFormProps) {
+  const { t } = useTranslation();
   const register = useRegisterPatient();
   const form = useForm<CreatePatientFormValues, unknown, CreatePatientFormOutput>({
     resolver: zodResolver(createPatientFormSchema),
@@ -65,19 +67,19 @@ export function PatientForm({ onRegistered }: PatientFormProps) {
     });
   });
 
-  const failure = describePatientFailure(
-    register.error,
-    'The patient could not be registered. Try again.',
-  );
+  const failure = describePatientFailure(register.error, t('patients.form.failure'), {
+    validation: t('patients.failure.validation'),
+    notFound: t('patients.failure.notFound'),
+    conflict: t('patients.failure.conflict'),
+    network: t('patients.failure.network'),
+  });
 
   return (
     <form onSubmit={onSubmit} noValidate aria-labelledby="patient-form-heading">
       <Card>
         <CardHeader>
-          <CardTitle id="patient-form-heading">Patient details</CardTitle>
-          <CardDescription>
-            First and last name are required. The rest can be added later.
-          </CardDescription>
+          <CardTitle id="patient-form-heading">{t('patients.form.title')}</CardTitle>
+          <CardDescription>{t('patients.form.description')}</CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-6">
@@ -103,15 +105,15 @@ export function PatientForm({ onRegistered }: PatientFormProps) {
               {register.isPending ? (
                 <>
                   <Loader2 aria-hidden className="size-4 animate-spin" />
-                  Registering
+                  {t('patients.form.registering')}
                 </>
               ) : (
-                'Register patient'
+                t('patients.form.register')
               )}
             </Button>
             {register.isPending ? (
               <p className="text-sm text-muted-foreground" role="status">
-                Saving…
+                {t('patients.form.saving')}
               </p>
             ) : null}
           </div>

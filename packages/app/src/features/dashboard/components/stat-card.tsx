@@ -26,6 +26,7 @@
 
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@denti-code-u3/ui';
+import { useTranslation } from '../../../i18n/index.js';
 
 /** The six accents the dashboard metrics are drawn from. */
 export type StatAccent = 'blue' | 'green' | 'amber' | 'violet' | 'rose' | 'slate';
@@ -59,6 +60,11 @@ export interface StatCardProps {
   /** Rendered in a muted tone when the metric is unknown rather than zero. */
   readonly isUnknown?: boolean;
   readonly className?: string;
+  /**
+   * Stable test id segment. Defaults to the visible title so existing reports
+   * specs keep working; translated dashboards pass an English id instead.
+   */
+  readonly testId?: string;
 }
 
 export function StatCard({
@@ -71,7 +77,11 @@ export function StatCard({
   error = null,
   isUnknown = false,
   className,
+  testId,
 }: StatCardProps) {
+  const { t } = useTranslation();
+  const id = testId ?? title;
+
   return (
     <div
       className={cn(
@@ -95,14 +105,14 @@ export function StatCard({
 
       <div className="mt-3">
         {error ? (
-          <p className="text-sm text-destructive" data-testid={`stat-card-error-${title}`}>
-            Unavailable
+          <p className="text-sm text-destructive" data-testid={`stat-card-error-${id}`}>
+            {t('common.unavailable')}
           </p>
         ) : isLoading ? (
           <div
             aria-hidden
             className="h-8 w-20 animate-pulse rounded bg-muted"
-            data-testid={`stat-card-skeleton-${title}`}
+            data-testid={`stat-card-skeleton-${id}`}
           />
         ) : (
           <p
@@ -110,7 +120,7 @@ export function StatCard({
               'text-3xl font-bold tracking-tight',
               isUnknown && 'text-muted-foreground',
             )}
-            data-testid={`stat-card-value-${title}`}
+            data-testid={`stat-card-value-${id}`}
           >
             {isUnknown ? '—' : value}
           </p>

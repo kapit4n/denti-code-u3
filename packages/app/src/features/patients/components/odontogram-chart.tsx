@@ -19,6 +19,8 @@
 
 import type { OdontogramCondition, PatientOdontogramEntry } from '@denti-code-u3/domain';
 
+import { useTranslation } from '../../../i18n/index.js';
+
 /** FDI upper-right then upper-left, patient-facing rows. */
 const PERMANENT_UPPER = [
   '18',
@@ -85,33 +87,34 @@ interface OdontogramChartProps {
 }
 
 export function OdontogramChart({ entries, selectedTooth, onSelectTooth }: OdontogramChartProps) {
+  const { t } = useTranslation();
   const entryByTooth = new Map(entries.map((entry) => [entry.tooth, entry]));
 
   return (
     <div className="space-y-4" data-testid="odontogram-chart">
       <ToothRow
-        title="Primary upper"
+        title={t('patients.chart.primaryUpper')}
         teeth={PRIMARY_UPPER}
         entryByTooth={entryByTooth}
         selectedTooth={selectedTooth}
         onSelectTooth={onSelectTooth}
       />
       <ToothRow
-        title="Primary lower"
+        title={t('patients.chart.primaryLower')}
         teeth={PRIMARY_LOWER}
         entryByTooth={entryByTooth}
         selectedTooth={selectedTooth}
         onSelectTooth={onSelectTooth}
       />
       <ToothRow
-        title="Upper permanent"
+        title={t('patients.chart.upperPermanent')}
         teeth={PERMANENT_UPPER}
         entryByTooth={entryByTooth}
         selectedTooth={selectedTooth}
         onSelectTooth={onSelectTooth}
       />
       <ToothRow
-        title="Lower permanent"
+        title={t('patients.chart.lowerPermanent')}
         teeth={PERMANENT_LOWER}
         entryByTooth={entryByTooth}
         selectedTooth={selectedTooth}

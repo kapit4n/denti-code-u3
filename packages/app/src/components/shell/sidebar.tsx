@@ -1,5 +1,6 @@
 import { Link, useRouterState } from '@tanstack/react-router';
 import { cn } from '@denti-code-u3/ui';
+import { useTranslation, type TranslationKey } from '../../i18n/index.js';
 import {
   BarChart3,
   Calendar,
@@ -14,55 +15,55 @@ import {
 } from 'lucide-react';
 
 interface NavItem {
-  title: string;
+  titleKey: TranslationKey;
   href: string;
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
 }
 
 const navItems: NavItem[] = [
   {
-    title: 'Dashboard',
+    titleKey: 'common.nav.dashboard',
     // The dashboard lives at its own route; `/` stays the foundation-status page.
     href: '/dashboard',
     icon: Home,
   },
   {
-    title: 'Patients',
+    titleKey: 'common.nav.patients',
     href: '/patients',
     icon: Users,
   },
   {
-    title: 'Agenda',
+    titleKey: 'common.nav.agenda',
     href: '/agenda',
     icon: Calendar,
   },
   {
-    title: 'Visits',
+    titleKey: 'common.nav.visits',
     href: '/visits',
     icon: Stethoscope,
   },
   {
-    title: 'Odontogram',
+    titleKey: 'common.nav.odontogram',
     href: '/odontogram',
     icon: FileText,
   },
   {
-    title: 'Treatments',
+    titleKey: 'common.nav.treatments',
     href: '/treatments',
     icon: Pill,
   },
   {
-    title: 'Payments',
+    titleKey: 'common.nav.payments',
     href: '/payments',
     icon: Receipt,
   },
   {
-    title: 'Inventory',
+    titleKey: 'common.nav.inventory',
     href: '/inventory',
     icon: Warehouse,
   },
   {
-    title: 'Reports',
+    titleKey: 'common.nav.reports',
     href: '/reports',
     icon: BarChart3,
   },
@@ -70,7 +71,7 @@ const navItems: NavItem[] = [
 
 const bottomNavItems: NavItem[] = [
   {
-    title: 'Settings',
+    titleKey: 'common.nav.settings',
     href: '/settings',
     icon: Settings,
   },
@@ -78,6 +79,7 @@ const bottomNavItems: NavItem[] = [
 
 export function Sidebar() {
   const { location } = useRouterState();
+  const { t } = useTranslation();
 
   return (
     <div className="flex h-full w-64 flex-col border-r border-sidebar-border bg-sidebar-background text-sidebar-foreground">
@@ -87,11 +89,16 @@ export function Sidebar() {
         </span>
         <div className="flex min-w-0 flex-col">
           <span className="truncate text-sm font-semibold tracking-tight">Denti-Code U3</span>
-          <span className="truncate text-xs text-sidebar-muted">Clinic management</span>
+          <span className="truncate text-xs text-sidebar-muted">
+            {t('common.shell.clinicManagement')}
+          </span>
         </div>
       </div>
 
-      <nav aria-label="Primary" className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+      <nav
+        aria-label={t('common.nav.primary')}
+        className="flex-1 space-y-1 overflow-y-auto px-3 py-4"
+      >
         {navItems.map((item) => (
           <NavLink key={item.href} item={item} isActive={location.pathname === item.href} />
         ))}
@@ -107,6 +114,8 @@ export function Sidebar() {
 }
 
 function NavLink({ item, isActive }: { readonly item: NavItem; readonly isActive: boolean }) {
+  const { t } = useTranslation();
+
   return (
     <Link
       to={item.href}
@@ -127,7 +136,7 @@ function NavLink({ item, isActive }: { readonly item: NavItem; readonly isActive
             : 'text-sidebar-muted group-hover:text-sidebar-accent-foreground',
         )}
       />
-      <span className="truncate">{item.title}</span>
+      <span className="truncate">{t(item.titleKey)}</span>
     </Link>
   );
 }

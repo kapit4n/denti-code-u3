@@ -23,6 +23,7 @@ import { ArrowLeft } from 'lucide-react';
 
 import { usePatient } from '../features/patients/hooks/use-patients.js';
 import { PatientEditForm } from '../features/patients/components/patient-edit-form.js';
+import { useTranslation } from '../i18n/index.js';
 
 export const Route = createFileRoute('/patients_/$patientId_/edit')({
   component: PatientEditPage,
@@ -30,11 +31,12 @@ export const Route = createFileRoute('/patients_/$patientId_/edit')({
 
 function PatientEditPage() {
   const { patientId } = Route.useParams();
+  const { t } = useTranslation();
   const router = useRouter();
   const { data: patient, isPending, error } = usePatient(patientId);
 
   if (isPending) {
-    return <p className="text-sm text-muted-foreground">Loading patient…</p>;
+    return <p className="text-sm text-muted-foreground">{t('patients.edit.loading')}</p>;
   }
 
   if (error) {
@@ -42,8 +44,8 @@ function PatientEditPage() {
       <div role="alert" className="space-y-2">
         <p className="text-sm text-destructive">
           {error instanceof Error && 'status' in error && error.status === 404
-            ? 'This patient does not exist in the current clinic.'
-            : 'The patient record could not be loaded.'}
+            ? t('patients.edit.notFound')
+            : t('patients.edit.loadError')}
         </p>
         <BackButton />
       </div>
@@ -51,7 +53,7 @@ function PatientEditPage() {
   }
 
   if (!patient) {
-    return <p className="text-sm text-muted-foreground">No patient selected.</p>;
+    return <p className="text-sm text-muted-foreground">{t('patients.edit.none')}</p>;
   }
 
   return (
@@ -59,7 +61,9 @@ function PatientEditPage() {
       <header className="space-y-1">
         <BackButton />
         <h1 className="text-3xl font-bold tracking-tight">
-          Edit {patient.preferredName ?? `${patient.firstName} ${patient.lastName}`}
+          {t('patients.edit.title', {
+            name: patient.preferredName ?? `${patient.firstName} ${patient.lastName}`,
+          })}
         </h1>
       </header>
 
@@ -94,12 +98,13 @@ function PatientEditPage() {
 
 function BackButton() {
   const { patientId } = Route.useParams();
+  const { t } = useTranslation();
 
   return (
     <Button asChild variant="ghost" size="sm" className="-ml-2">
       <Link to="/patients/$patientId" params={{ patientId }} data-testid="edit-back">
         <ArrowLeft aria-hidden className="size-4" />
-        Back to patient
+        {t('patients.edit.back')}
       </Link>
     </Button>
   );

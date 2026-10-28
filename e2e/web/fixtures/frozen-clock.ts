@@ -74,6 +74,13 @@ export const test = base.extend({
     await page.addInitScript((session) => {
       window.localStorage.setItem('denti-code-session', JSON.stringify(session));
     }, TEST_SESSION);
+    // The product defaults to Spanish. The existing specs were written in
+    // English, so pin the language rather than translating every assertion in
+    // the same change that introduced the catalogue. `i18n.spec.ts` overrides
+    // this with Spanish and covers the translated flow.
+    await page.addInitScript(() => {
+      window.localStorage.setItem('denti-code-locale', 'en');
+    });
     await use(page);
   },
 });

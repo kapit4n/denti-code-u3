@@ -45,11 +45,7 @@ import {
 import { ArrowLeft, CalendarPlus } from 'lucide-react';
 
 import { AppointmentBookingDialog } from '../features/agenda/components/appointment-booking-dialog.js';
-import {
-  formatClinicDay,
-  formatClinicDayTime,
-  READING_THE_CLINIC_CLOCK,
-} from '../features/clinic/format-clinic-time.js';
+import { formatClinicDay, formatClinicDayTime } from '../features/clinic/format-clinic-time.js';
 import { useClinicSettings } from '../features/clinic/queries/clinic-settings-query.js';
 import { usePatient } from '../features/patients/hooks/use-patients.js';
 import { PatientTreatmentPlansSection } from '../features/patients/components/patient-treatment-plans-section.js';
@@ -57,6 +53,7 @@ import { PatientInvoicesSection } from '../features/patients/components/patient-
 import { PatientStatementSection } from '../features/patients/components/patient-statement-section.js';
 import { PatientBalanceSection } from '../features/patients/components/patient-balance-section.js';
 import { PatientOdontogramSection } from '../features/patients/components/patient-odontogram-section.js';
+import { enumLabel, useTranslation } from '../i18n/index.js';
 
 export const Route = createFileRoute('/patients_/$patientId')({
   component: PatientProfile,
@@ -64,13 +61,14 @@ export const Route = createFileRoute('/patients_/$patientId')({
 
 function PatientProfile() {
   const { patientId } = Route.useParams();
+  const { t } = useTranslation();
   const { data: patient, isPending, error } = usePatient(patientId);
   // The clinic, for the booking dialog and for every time drawn on this page.
   const { data: clinic } = useClinicSettings();
   const [isBooking, setIsBooking] = useState(false);
 
   if (isPending) {
-    return <p className="text-sm text-muted-foreground">Loading patient…</p>;
+    return <p className="text-sm text-muted-foreground">{t('patients.profile.loading')}</p>;
   }
 
   if (error) {
@@ -78,8 +76,8 @@ function PatientProfile() {
       <div role="alert" className="space-y-2">
         <p className="text-sm text-destructive">
           {error instanceof Error && 'status' in error && error.status === 404
-            ? 'This patient does not exist in the current clinic.'
-            : 'The patient record could not be loaded.'}
+            ? t('patients.profile.notFound')
+            : t('patients.profile.loadError')}
         </p>
         <BackToList />
       </div>
@@ -87,7 +85,7 @@ function PatientProfile() {
   }
 
   if (!patient) {
-    return <p className="text-sm text-muted-foreground">No patient selected.</p>;
+    return <p className="text-sm text-muted-foreground">{t('patients.profile.none')}</p>;
   }
 
   const timeZone = clinic?.timeZone;
@@ -101,7 +99,7 @@ function PatientProfile() {
         </h1>
         <p className="text-muted-foreground">
           {patient.recordNumber ? `${patient.recordNumber} · ` : ''}
-          {patient.isActive ? 'Active patient' : 'Inactive patient'}
+          {patient.isActive ? t('patients.profile.active') : t('patients.profile.inactive')}
         </p>
         {/*
           Two actions, side by side: the one that fills the book and the one that fixes
@@ -122,7 +120,7 @@ function PatientProfile() {
             data-testid="book-appointment"
           >
             <CalendarPlus aria-hidden className="mr-2 h-4 w-4" />
-            Book appointment
+            {t('patients.profile.book')}
           </Button>
           {/*
             A link, not a button that swaps in a form. Editing is a separate page
@@ -131,7 +129,7 @@ function PatientProfile() {
           */}
           <Button asChild variant="outline" size="sm">
             <Link to="/patients/$patientId/edit" params={{ patientId }} data-testid="edit-patient">
-              Edit details
+              {t('patients.profile.edit')}
             </Link>
           </Button>
         </div>
@@ -140,16 +138,28 @@ function PatientProfile() {
       <div className="grid gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle>Contact</CardTitle>
+            <CardTitle>{t('patients.profile.contact')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 text-sm">
-            <p>Phone: {patient.phone ?? '—'}</p>
-            <p>Email: {patient.email ?? '—'}</p>
-            <p>Born: {patient.birthDate ?? '—'}</p>
+            <p>
+              {t('patients.profile.phone', { value: patient.phone ?? t('common.notProvided') })}
+            </p>
+            <p>
+              {t('patients.profile.email', { value: patient.email ?? t('common.notProvided') })}
+            </p>
+            <p>
+              {t('patients.profile.born', { value: patient.birthDate ?? t('common.notProvided') })}
+            </p>
             {/* A day with no time on it, still the clinic's day. '—' while the clinic
                 loads, like the phone and email above it: the same "not known yet"
                 rather than a date the browser's zone invented. */}
-            <p>Record created: {timeZone ? formatClinicDay(patient.createdAt, timeZone) : '—'}</p>
+            <p>
+              {t('patients.profile.created', {
+                value: timeZone
+                  ? formatClinicDay(patient.createdAt, timeZone)
+                  : t('common.notProvided'),
+              })}
+            </p>
           </CardContent>
         </Card>
 
@@ -157,22 +167,22 @@ function PatientProfile() {
             never collapsed into a generic "medical history" line. */}
         <Card className={patient.allergies ? 'border-destructive/50' : undefined}>
           <CardHeader>
-            <CardTitle>Allergies</CardTitle>
-            <CardDescription>Read before any treatment</CardDescription>
+            <CardTitle>{t('patients.profile.allergies')}</CardTitle>
+            <CardDescription>{t('patients.profile.allergiesDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="text-sm">
             {patient.allergies ? (
               <p className="font-medium text-destructive">{patient.allergies}</p>
             ) : (
-              <p className="text-muted-foreground">None recorded.</p>
+              <p className="text-muted-foreground">{t('patients.profile.allergiesNone')}</p>
             )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Balance</CardTitle>
-            <CardDescription>Billed minus paid</CardDescription>
+            <CardTitle>{t('patients.profile.balance')}</CardTitle>
+            <CardDescription>{t('patients.profile.balanceDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-1 text-sm">
             {/*
@@ -182,10 +192,12 @@ function PatientProfile() {
             */}
             {patient.financialBalance.outstandingMinor < 0 ? (
               <p className="text-lg font-semibold">
-                Credit {formatMinorUnits(Math.abs(patient.financialBalance.outstandingMinor))}
-                {patient.financialBalance.currencyCode
-                  ? ` ${patient.financialBalance.currencyCode}`
-                  : ''}
+                {t('patients.profile.credit', {
+                  amount: formatMinorUnits(Math.abs(patient.financialBalance.outstandingMinor)),
+                  currency: patient.financialBalance.currencyCode
+                    ? ` ${patient.financialBalance.currencyCode}`
+                    : '',
+                })}
               </p>
             ) : (
               <p className="text-lg font-semibold">
@@ -196,8 +208,12 @@ function PatientProfile() {
               </p>
             )}
             <p className="text-muted-foreground">
-              {patient.financialBalance.chargeCount} charge
-              {patient.financialBalance.chargeCount === 1 ? '' : 's'} on record
+              {t(
+                patient.financialBalance.chargeCount === 1
+                  ? 'patients.profile.chargeCount.one'
+                  : 'patients.profile.chargeCount.other',
+                { count: patient.financialBalance.chargeCount },
+              )}
             </p>
           </CardContent>
         </Card>
@@ -205,7 +221,7 @@ function PatientProfile() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Next appointment</CardTitle>
+          <CardTitle>{t('patients.profile.nextAppointment')}</CardTitle>
         </CardHeader>
         <CardContent className="text-sm">
           {patient.upcomingAppointment ? (
@@ -216,13 +232,16 @@ function PatientProfile() {
               {timeZone ? (
                 formatClinicDayTime(patient.upcomingAppointment.startsAt, timeZone)
               ) : (
-                <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+                <span className="text-muted-foreground">{t('patients.profile.readingClock')}</span>
               )}{' '}
-              · {patient.upcomingAppointment.durationMinutes} min ·{' '}
-              {patient.upcomingAppointment.status}
+              ·{' '}
+              {t('patients.profile.duration', {
+                count: patient.upcomingAppointment.durationMinutes,
+              })}{' '}
+              · {enumLabel(t, 'common.status', patient.upcomingAppointment.status)}
             </p>
           ) : (
-            <p className="text-muted-foreground">Nothing booked.</p>
+            <p className="text-muted-foreground">{t('patients.profile.nothingBooked')}</p>
           )}
         </CardContent>
       </Card>
@@ -230,7 +249,7 @@ function PatientProfile() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Recent visits</CardTitle>
+            <CardTitle>{t('patients.profile.recentVisits')}</CardTitle>
           </CardHeader>
           <CardContent>
             {patient.recentVisits.length > 0 ? (
@@ -252,9 +271,11 @@ function PatientProfile() {
                         {timeZone ? (
                           formatClinicDayTime(visit.startedAt ?? visit.createdAt, timeZone)
                         ) : (
-                          <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+                          <span className="text-muted-foreground">
+                            {t('patients.profile.readingClock')}
+                          </span>
                         )}{' '}
-                        · {visit.status}
+                        · {enumLabel(t, 'common.status', visit.status)}
                       </p>
                       {visit.reason ? (
                         <p className="text-muted-foreground">{visit.reason}</p>
@@ -264,14 +285,14 @@ function PatientProfile() {
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">No visits recorded.</p>
+              <p className="text-sm text-muted-foreground">{t('patients.profile.noVisits')}</p>
             )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Outstanding treatments</CardTitle>
+            <CardTitle>{t('patients.profile.outstandingTreatments')}</CardTitle>
           </CardHeader>
           <CardContent>
             {patient.outstandingTreatments.length > 0 ? (
@@ -282,9 +303,11 @@ function PatientProfile() {
                     className="flex items-center justify-between rounded-lg border p-3 text-sm"
                   >
                     <span>
-                      {item.title ?? 'Treatment plan item'}
-                      {item.tooth ? ` · tooth ${item.tooth}` : ''}
-                      {item.quantity > 1 ? ` ×${item.quantity}` : ''}
+                      {item.title ?? t('patients.profile.planItemFallback')}
+                      {item.tooth ? t('patients.profile.tooth', { tooth: item.tooth }) : ''}
+                      {item.quantity > 1
+                        ? t('patients.profile.quantity', { count: item.quantity })
+                        : ''}
                     </span>
                     <span className="text-muted-foreground">
                       {formatMinorUnits(item.estimatedPriceMinor)}
@@ -293,7 +316,9 @@ function PatientProfile() {
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">Nothing outstanding.</p>
+              <p className="text-sm text-muted-foreground">
+                {t('patients.profile.nothingOutstanding')}
+              </p>
             )}
           </CardContent>
         </Card>
@@ -353,11 +378,13 @@ function PatientProfile() {
 }
 
 function BackToList() {
+  const { t } = useTranslation();
+
   return (
     <Button asChild variant="ghost" size="sm" className="-ml-2">
       <Link to="/patients">
         <ArrowLeft aria-hidden className="mr-2 h-4 w-4" />
-        All patients
+        {t('patients.profile.backToAll')}
       </Link>
     </Button>
   );

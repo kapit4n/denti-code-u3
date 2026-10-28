@@ -5,10 +5,11 @@
  * client-side filter over a wider fetch, a locally computed "now" line, and a
  * hard-coded empty state. The empty state is whatever the API says it is.
  *
- * The status badge prints the payload's own status string ("CONFIRMED"), not a
- * prettified label: the e2e spec reads that string straight off the panel to prove
- * the value came from the server, and a "Confirmed" that looked nicer would be a
- * second, unverified source of truth for the same fact.
+ * The status badge goes through `enumLabel`, so the API's own status code stays the
+ * source of truth. The English catalogue deliberately keeps that code's existing
+ * uppercase presentation ("CONFIRMED"), which is also what the e2e spec reads to
+ * prove the value came from the server; Spanish may translate it without inventing
+ * a second status vocabulary.
  */
 
 import { Link } from '@tanstack/react-router';
@@ -25,9 +26,11 @@ import {
 } from '@denti-code-u3/ui';
 import { CalendarDays } from 'lucide-react';
 
+import { enumLabel, useTranslation } from '../../../i18n/index.js';
 import { useTodayAppointments } from '../hooks/use-dashboard-stats.js';
 
 export function TodayAppointments() {
+  const { t } = useTranslation();
   const { data, isPending, error } = useTodayAppointments();
 
   return (
@@ -46,10 +49,10 @@ export function TodayAppointments() {
           size="sm"
           className="absolute right-4 top-4 text-muted-foreground"
         >
-          <Link to="/agenda">Open agenda</Link>
+          <Link to="/agenda">{t('dashboard.todayAppointments.openAgenda')}</Link>
         </Button>
-        <CardTitle>Today&apos;s Appointments</CardTitle>
-        <CardDescription>Times in this device&apos;s timezone</CardDescription>
+        <CardTitle>{t('dashboard.todayAppointments.title')}</CardTitle>
+        <CardDescription>{t('dashboard.todayAppointments.description')}</CardDescription>
       </CardHeader>
 
       <CardContent>
@@ -60,7 +63,7 @@ export function TodayAppointments() {
             ))}
           </ul>
         ) : error ? (
-          <p className="text-sm text-destructive">Today&apos;s appointments could not be loaded.</p>
+          <p className="text-sm text-destructive">{t('dashboard.todayAppointments.error')}</p>
         ) : data && data.items.length > 0 ? (
           <ul className="space-y-2">
             {data.items.map((appointment) => (
@@ -77,7 +80,11 @@ export function TodayAppointments() {
                   <p className="truncate text-sm font-medium">
                     {appointment.firstName} {appointment.lastName}
                   </p>
-                  <p className="text-xs text-muted-foreground">{appointment.durationMinutes} min</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t('dashboard.todayAppointments.duration', {
+                      count: appointment.durationMinutes,
+                    })}
+                  </p>
                 </div>
                 <span
                   className={cn(
@@ -85,7 +92,7 @@ export function TodayAppointments() {
                     STATUS_TONE_CLASS[toneForStatus(appointment.status)],
                   )}
                 >
-                  {appointment.status}
+                  {enumLabel(t, 'common.status', appointment.status)}
                 </span>
               </li>
             ))}
@@ -97,7 +104,7 @@ export function TodayAppointments() {
             </span>
             <p className="text-sm text-muted-foreground">No appointments scheduled for today.</p>
             <Button asChild variant="outline" size="sm">
-              <Link to="/agenda">Open agenda</Link>
+              <Link to="/agenda">{t('dashboard.todayAppointments.openAgenda')}</Link>
             </Button>
           </div>
         )}

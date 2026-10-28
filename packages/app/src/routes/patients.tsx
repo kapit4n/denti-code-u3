@@ -15,6 +15,7 @@ import { Button, Card, CardContent, CardHeader, CardTitle, Input } from '@denti-
 import { Search, UserPlus } from 'lucide-react';
 
 import { usePatientList } from '../features/patients/hooks/use-patients.js';
+import { useTranslation } from '../i18n/index.js';
 
 const PAGE_SIZE = 20;
 
@@ -26,6 +27,7 @@ export const Route = createFileRoute('/patients')({
 });
 
 function PatientList() {
+  const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
 
@@ -53,22 +55,29 @@ function PatientList() {
     <div className="flex flex-col gap-6">
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Patients</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{t('patients.list.title')}</h1>
           <p className="text-muted-foreground">
-            {pagination ? `${pagination.total} registered` : 'Loading records'}
+            {pagination
+              ? t(
+                  pagination.total === 1
+                    ? 'patients.list.registered.one'
+                    : 'patients.list.registered.other',
+                  { count: pagination.total },
+                )
+              : t('patients.list.loading')}
           </p>
         </div>
         <Button asChild>
           <Link to="/patients/new">
             <UserPlus aria-hidden className="mr-2 h-4 w-4" />
-            New Patient
+            {t('patients.list.newPatient')}
           </Link>
         </Button>
       </header>
 
       <Card>
         <CardHeader>
-          <CardTitle>Search</CardTitle>
+          <CardTitle>{t('patients.list.searchTitle')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="relative">
@@ -82,8 +91,8 @@ function PatientList() {
                 setSearch(event.target.value);
                 setPage(1);
               }}
-              placeholder="Search by name or record number…"
-              aria-label="Search patients"
+              placeholder={t('patients.list.searchPlaceholder')}
+              aria-label={t('patients.list.searchAria')}
               className="pl-8"
             />
           </div>
@@ -96,7 +105,7 @@ function PatientList() {
             </ul>
           ) : error ? (
             <p role="alert" className="text-sm text-destructive">
-              The patient list could not be loaded.
+              {t('patients.list.loadError')}
             </p>
           ) : rows.length > 0 ? (
             <>
@@ -113,12 +122,16 @@ function PatientList() {
                           {patient.preferredName ?? `${patient.firstName} ${patient.lastName}`}
                         </p>
                         <p className="truncate text-xs text-muted-foreground">
-                          {patient.recordNumber ?? 'No record number'}
-                          {patient.birthDate ? ` · born ${patient.birthDate}` : ''}
+                          {patient.recordNumber ?? t('patients.list.noRecordNumber')}
+                          {patient.birthDate
+                            ? ` · ${t('patients.list.born', { date: patient.birthDate })}`
+                            : ''}
                         </p>
                       </div>
                       {!patient.isActive ? (
-                        <span className="shrink-0 text-xs text-muted-foreground">Inactive</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {t('patients.list.inactive')}
+                        </span>
                       ) : null}
                     </Link>
                   </li>
@@ -126,19 +139,25 @@ function PatientList() {
               </ul>
 
               {pagination && pagination.totalPages > 1 ? (
-                <nav aria-label="Pagination" className="flex items-center justify-between">
+                <nav
+                  aria-label={t('patients.list.paginationAria')}
+                  className="flex items-center justify-between"
+                >
                   <Button variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                    Previous
+                    {t('patients.list.previous')}
                   </Button>
                   <p className="text-sm text-muted-foreground">
-                    Page {pagination.page} of {pagination.totalPages}
+                    {t('patients.list.pageOf', {
+                      page: pagination.page,
+                      totalPages: pagination.totalPages,
+                    })}
                   </p>
                   <Button
                     variant="outline"
                     disabled={page >= pagination.totalPages}
                     onClick={() => setPage(page + 1)}
                   >
-                    Next
+                    {t('patients.list.next')}
                   </Button>
                 </nav>
               ) : null}
@@ -146,8 +165,8 @@ function PatientList() {
           ) : (
             <p className="text-sm text-muted-foreground">
               {debouncedSearch.length > 0
-                ? `No patient matches “${debouncedSearch}”.`
-                : 'No patients registered yet.'}
+                ? t('patients.list.noMatch', { query: debouncedSearch })
+                : t('patients.list.empty')}
             </p>
           )}
         </CardContent>

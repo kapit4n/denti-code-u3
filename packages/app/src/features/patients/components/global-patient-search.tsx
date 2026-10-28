@@ -15,12 +15,14 @@ import { Link } from '@tanstack/react-router';
 import { Input } from '@denti-code-u3/ui';
 import { Search } from 'lucide-react';
 
+import { useTranslation } from '../../../i18n/index.js';
 import { usePatientList } from '../hooks/use-patients.js';
 
 const MIN_QUERY_LENGTH = 2;
 const MAX_RESULTS = 5;
 
 export function GlobalPatientSearch() {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -68,8 +70,8 @@ export function GlobalPatientSearch() {
           setIsOpen(true);
         }}
         onFocus={() => setIsOpen(true)}
-        placeholder="Search patients…"
-        aria-label="Search patients"
+        placeholder={t('patients.global.placeholder')}
+        aria-label={t('patients.global.searchAria')}
         role="combobox"
         aria-expanded={isOpen && results.length > 0}
         aria-controls="global-patient-search-results"
@@ -80,7 +82,7 @@ export function GlobalPatientSearch() {
         <ul
           id="global-patient-search-results"
           role="listbox"
-          aria-label="Patient results"
+          aria-label={t('patients.global.resultsAria')}
           className="absolute right-0 z-50 mt-1 w-full overflow-hidden rounded-lg border bg-popover shadow-md"
         >
           {results.slice(0, MAX_RESULTS).map((patient) => (
@@ -95,7 +97,7 @@ export function GlobalPatientSearch() {
                   {patient.preferredName ?? `${patient.firstName} ${patient.lastName}`}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {patient.recordNumber ?? 'No record number'}
+                  {patient.recordNumber ?? t('patients.global.noRecordNumber')}
                   {patient.phone ? ` · ${patient.phone}` : ''}
                 </span>
               </Link>
@@ -106,7 +108,7 @@ export function GlobalPatientSearch() {
 
       {isOpen && trimmed.length >= MIN_QUERY_LENGTH && data && results.length === 0 ? (
         <p className="absolute right-0 z-50 mt-1 w-full rounded-lg border bg-popover p-3 text-sm text-muted-foreground shadow-md">
-          No patient matches “{trimmed}”.
+          {t('patients.global.noMatch', { query: trimmed })}
         </p>
       ) : null}
     </div>

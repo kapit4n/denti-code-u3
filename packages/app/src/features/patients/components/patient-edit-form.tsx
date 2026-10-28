@@ -36,6 +36,7 @@ import type { PatientProfile } from '@denti-code-u3/domain';
 
 import { useUpdatePatient } from '../hooks/use-update-patient.js';
 import { describePatientFailure } from '../describe-patient-failure.js';
+import { useTranslation } from '../../../i18n/index.js';
 import { PatientFields } from './patient-fields.js';
 
 export interface PatientEditFormProps {
@@ -46,6 +47,7 @@ export interface PatientEditFormProps {
 }
 
 export function PatientEditForm({ patient, onSaved, onCancel }: PatientEditFormProps) {
+  const { t } = useTranslation();
   const update = useUpdatePatient(patient.id);
   const form = useForm<UpdatePatientFormValues, unknown, UpdatePatientFormOutput>({
     resolver: zodResolver(updatePatientFormSchema),
@@ -67,20 +69,24 @@ export function PatientEditForm({ patient, onSaved, onCancel }: PatientEditFormP
     update.mutate(values, { onSuccess: onSaved });
   });
 
-  const failure = describePatientFailure(
-    update.error,
-    'The changes could not be saved. Try again.',
-  );
+  const failure = describePatientFailure(update.error, t('patients.editForm.failure'), {
+    validation: t('patients.failure.validation'),
+    notFound: t('patients.failure.notFound'),
+    conflict: t('patients.failure.conflict'),
+    network: t('patients.failure.network'),
+  });
 
   return (
     <form onSubmit={onSubmit} noValidate aria-labelledby="patient-edit-heading">
       <Card>
         <CardHeader>
-          <CardTitle id="patient-edit-heading">Edit patient details</CardTitle>
+          <CardTitle id="patient-edit-heading">{t('patients.editForm.title')}</CardTitle>
           <CardDescription>
-            Clear a field to remove it from the record. The record number
-            {patient.recordNumber ? ` (${patient.recordNumber})` : ''} is assigned by the clinic and
-            cannot be changed here.
+            {patient.recordNumber
+              ? t('patients.editForm.descriptionWithNumber', {
+                  recordNumber: patient.recordNumber,
+                })
+              : t('patients.editForm.descriptionWithoutNumber')}
           </CardDescription>
         </CardHeader>
 
@@ -103,10 +109,10 @@ export function PatientEditForm({ patient, onSaved, onCancel }: PatientEditFormP
               {update.isPending ? (
                 <>
                   <Loader2 aria-hidden className="size-4 animate-spin" />
-                  Saving
+                  {t('patients.editForm.saving')}
                 </>
               ) : (
-                'Save changes'
+                t('patients.editForm.save')
               )}
             </Button>
             <Button
@@ -116,11 +122,11 @@ export function PatientEditForm({ patient, onSaved, onCancel }: PatientEditFormP
               disabled={update.isPending}
               data-testid="update-cancel"
             >
-              Cancel
+              {t('patients.editForm.cancel')}
             </Button>
             {update.isPending ? (
               <p className="text-sm text-muted-foreground" role="status">
-                Saving…
+                {t('patients.editForm.savingStatus')}
               </p>
             ) : null}
           </div>

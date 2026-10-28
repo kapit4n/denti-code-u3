@@ -27,6 +27,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Input, Label } from '@denti-code-u3/ui';
 import { Search } from 'lucide-react';
 
+import { useTranslation } from '../../../i18n/index.js';
 import { usePatientList } from '../hooks/use-patients.js';
 
 /** Below this the query matches most of the clinic and answers nothing useful. */
@@ -57,6 +58,7 @@ export interface PatientPickerProps {
 }
 
 export function PatientPicker({ id, value, onChange, disabled, describedBy }: PatientPickerProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   /** Which option the arrow keys are on. `-1` is "none", which is the closed state. */
@@ -129,7 +131,8 @@ export function PatientPicker({ id, value, onChange, disabled, describedBy }: Pa
   return (
     <div ref={containerRef} className="relative space-y-1">
       <Label htmlFor={id}>
-        Patient<span aria-hidden> *</span>
+        {t('patients.picker.label')}
+        <span aria-hidden> *</span>
       </Label>
       <Search aria-hidden className="absolute left-2 top-8 h-4 w-4 text-muted-foreground" />
       <Input
@@ -149,7 +152,7 @@ export function PatientPicker({ id, value, onChange, disabled, describedBy }: Pa
         // uuid in a text box helps nobody. `query` wins while it is non-empty, which
         // is what lets a user keep typing to narrow a selection they have made.
         value={query.length > 0 ? query : (value?.label ?? '')}
-        placeholder="Search by name…"
+        placeholder={t('patients.picker.placeholder')}
         onChange={(event) => {
           setQuery(event.target.value);
           setIsOpen(true);
@@ -174,13 +177,15 @@ export function PatientPicker({ id, value, onChange, disabled, describedBy }: Pa
         <ul
           id={listId}
           role="listbox"
-          aria-label="Patients"
+          aria-label={t('patients.picker.results')}
           data-testid="patient-picker-results"
           className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border bg-popover shadow-md"
         >
           {results.length === 0 ? (
             <li className="px-3 py-2 text-sm text-muted-foreground" role="presentation">
-              {isFetching ? 'Searching…' : `No patient matches “${trimmed}”.`}
+              {isFetching
+                ? t('patients.picker.searching')
+                : t('patients.list.noMatch', { query: trimmed })}
             </li>
           ) : (
             results.map((patient, index) => (
