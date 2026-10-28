@@ -1051,6 +1051,14 @@ export interface UserRepository {
    */
   findByEmailForLogin(clinicId: ClinicId, email: string): Promise<UserWithCredentials | undefined>;
   findById(clinicId: ClinicId, userId: UserId): Promise<AuthenticatedUser | undefined>;
+  /**
+   * Every user in the clinic, active or not, ordered by name.
+   *
+   * Exists for the development-only "sign in as" chooser (ADR 0030). It returns
+   * `AuthenticatedUser`, which has no password hash, so the development surface
+   * cannot accidentally serve one.
+   */
+  listByClinic(clinicId: ClinicId): Promise<readonly AuthenticatedUser[]>;
   /** Stamps `last_login_at` after a successful login. */
   recordLogin(clinicId: ClinicId, userId: UserId, at: IsoDateTime): Promise<void>;
   save(user: AuthenticatedUser & { readonly passwordHash: string }): Promise<void>;

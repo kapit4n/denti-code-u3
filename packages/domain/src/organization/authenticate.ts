@@ -85,8 +85,7 @@ export async function login(
   input: LoginInput,
   dependencies: AuthDependencies,
 ): Promise<LoginResult> {
-  const { users, sessions, passwordHasher, tokenGenerator, clock, ids } = dependencies;
-  const now = clock.now();
+  const { users, passwordHasher } = dependencies;
 
   const found = await users.findByEmailForLogin(clinicId, input.email);
 
@@ -103,7 +102,38 @@ export async function login(
 
   // Checked after the password, not before, so a deactivated account is
   // indistinguishable from a wrong password to someone guessing.
-  const user = assertUserActive(found.user);
+  return issueSession(clinicId, assertUserActive(found.user), dependencies);
+}
+
+/**
+ * Issue a session for a user who has already been identified, with no password.
+ *
+ * This exists for the development-only "sign in as" affordance (ADR 0030). The
+ * HTTP route that calls it is registered only when the process is not production;
+ * the rule "the user must exist and be active" still lives here so the shortcut
+ * cannot invent a principal the normal login would refuse.
+ */
+export async function startSessionForUser(
+  clinicId: ClinicId,
+  userId: UserId,
+  dependencies: AuthDependencies,
+): Promise<LoginResult> {
+  const user = await dependencies.users.findById(clinicId, userId);
+  if (!user) {
+    throw new DomainError('UNAUTHENTICATED', 'The account no longer exists');
+  }
+
+  return issueSession(clinicId, assertUserActive(user), dependencies);
+}
+
+/** One place that mints a token, stores its hash and stamps the login. */
+async function issueSession(
+  clinicId: ClinicId,
+  user: AuthenticatedUser,
+  dependencies: AuthDependencies,
+): Promise<LoginResult> {
+  const { users, sessions, tokenGenerator, clock, ids } = dependencies;
+  const now = clock.now();
 
   const token = tokenGenerator.nextToken();
   const session: Session = {

@@ -13,7 +13,7 @@
  *    route that hands a user back to a client cannot leak the hash by accident.
  */
 
-import { and, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 
 import { users } from '@denti-code-u3/database/schema';
 import type { AuthenticatedUser, UserRepository, UserWithCredentials } from '@denti-code-u3/domain';
@@ -63,6 +63,16 @@ export class DrizzleUserRepository implements UserRepository {
       .limit(1);
 
     return row ? toUser(row) : undefined;
+  }
+
+  async listByClinic(clinicId: ClinicId): Promise<readonly AuthenticatedUser[]> {
+    const rows = await this.db
+      .select()
+      .from(users)
+      .where(eq(users.clinicId, clinicId))
+      .orderBy(asc(users.fullName));
+
+    return rows.map(toUser);
   }
 
   async recordLogin(clinicId: ClinicId, userId: UserId, at: IsoDateTime): Promise<void> {

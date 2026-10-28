@@ -19,9 +19,11 @@ import { Button, Input, Label } from '@denti-code-u3/ui';
 import { Stethoscope } from 'lucide-react';
 
 import { useSession } from '../session-provider.js';
+import { useDevUsers } from '../queries/use-dev-users.js';
 
 export function LoginPage(): React.ReactNode {
-  const { signIn } = useSession();
+  const { signIn, signInAs } = useSession();
+  const devUsers = useDevUsers();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | undefined>();
@@ -44,6 +46,20 @@ export function LoginPage(): React.ReactNode {
       setSubmitting(false);
     }
   }
+
+  async function onDevLogin(userId: string): Promise<void> {
+    setError(undefined);
+    setSubmitting(true);
+    try {
+      await signInAs(userId);
+    } catch {
+      setError('The development sign-in failed.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const devUserList = devUsers.data?.items ?? [];
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
@@ -91,7 +107,42 @@ export function LoginPage(): React.ReactNode {
             {submitting ? 'Signing in…' : 'Sign in'}
           </Button>
         </form>
+
+        {devUserList.length > 0 ? (
+          <>
+            <div className="my-6 flex items-center gap-3" aria-hidden>
+              <span className="h-px flex-1 bg-border" />
+              <span className="text-xs tracking-wide text-muted-foreground uppercase">
+                Development
+              </span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
+            <div className="flex flex-col gap-2" data-testid="dev-login">
+              <p className="text-xs text-muted-foreground">
+                Sign in as a seeded user, without a password.
+              </p>
+              {devUserList.map((user) => (
+                <Button
+                  key={user.id}
+                  type="button"
+                  variant="outline"
+                  disabled={submitting}
+                  onClick={() => void onDevLogin(user.id)}
+                  className="w-full justify-between"
+                >
+                  <span className="truncate">Sign in as {user.fullName}</span>
+                  <span className="text-xs text-muted-foreground">{roleLabel(user.role)}</span>
+                </Button>
+              ))}
+            </div>
+          </>
+        ) : null}
       </div>
     </div>
   );
+}
+
+/** `ADMINISTRATOR` → `Administrator`, without a second table to drift. */
+function roleLabel(role: string): string {
+  return role.charAt(0) + role.slice(1).toLowerCase();
 }

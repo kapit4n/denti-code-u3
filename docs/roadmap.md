@@ -423,7 +423,9 @@ collections are clinic-wide, and work with no visit is shown as "Unassigned". Se
   auth, a domain role/permission matrix enforced on every route, and a login
   screen with a session gate in `packages/app`. Per-clinician clinic membership
   is one clinic by construction (a session's clinic must equal the configured
-  clinic); multi-clinic membership is a future milestone.
+  clinic); multi-clinic membership is a future milestone. A development-only
+  sign-in chooser (`/auth/dev-users`, `/auth/dev-login`) makes role testing fast
+  and is absent when `NODE_ENV=production` (ADR 0030, session 50).
 - Login rate limiting — **done, session 49** (ADR 0029): failed attempts counted
   per email and client address in process (5 per 15 minutes by default),
   `429 RATE_LIMITED` with `Retry-After`, cleared by a successful login. Per

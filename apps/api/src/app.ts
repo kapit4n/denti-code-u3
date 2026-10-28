@@ -17,6 +17,7 @@ import {
 import { registerCors } from './http/plugins/cors.js';
 import { registerAuth } from './http/plugins/auth.js';
 import { registerAuthRoutes } from './http/routes/auth.js';
+import { registerDevAuthRoutes } from './http/routes/dev-auth.js';
 import { registerHealthRoutes } from './http/routes/health.js';
 import { registerDashboardRoutes } from './http/routes/dashboard.js';
 import { registerReportsRoutes } from './http/routes/reports.js';
@@ -113,6 +114,12 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     windowMs: config.loginWindowMinutes * 60_000,
   });
   await registerAuthRoutes(app, { auth, clinicId: config.clinicId, loginRateLimiter });
+
+  // Testing affordance, absent in production: no flag to forget, no route to
+  // disable (ADR 0030).
+  if (config.nodeEnv !== 'production') {
+    await registerDevAuthRoutes(app, { auth, clinicId: config.clinicId });
+  }
 
   // Every reader and writer shares one repository per port, so "today" and "the
   // book" each have one implementation — the connection builds them once, behind

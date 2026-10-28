@@ -7,7 +7,7 @@
  * SQLite, so the fold is the same one the index-free comparison PostgreSQL uses.
  */
 
-import { and, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 
 import { users } from '@denti-code-u3/database/schema/sqlite';
 import type { AuthenticatedUser, UserRepository, UserWithCredentials } from '@denti-code-u3/domain';
@@ -55,6 +55,16 @@ export class SQLiteUserRepository implements UserRepository {
       .limit(1);
 
     return row ? toUser(row) : undefined;
+  }
+
+  async listByClinic(clinicId: ClinicId): Promise<readonly AuthenticatedUser[]> {
+    const rows = await this.db
+      .select()
+      .from(users)
+      .where(eq(users.clinicId, clinicId))
+      .orderBy(asc(users.fullName));
+
+    return rows.map(toUser);
   }
 
   async recordLogin(clinicId: ClinicId, userId: UserId, at: IsoDateTime): Promise<void> {

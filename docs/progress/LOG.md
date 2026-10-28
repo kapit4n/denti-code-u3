@@ -3434,3 +3434,65 @@ pnpm run db:seed          complete; four development logins unchanged
 - A multi-instance deployment must move the counter to shared storage or enable proxy
   rate limiting.
 - The token is still in `localStorage`; ADR 0028's token-storage follow-up stands.
+
+---
+
+## Session 50 — Milestone 12 convenience: development "sign in as" (ADR 0030) — 2026-10-26
+
+**Goal.** Make role testing cheap: the seeded password is fine for a smoke test, but
+switching administrator → receptionist → dentist while checking the permission matrix is
+friction, and a suite that only signs in as the administrator never exercises the matrix.
+
+**Decision.** A password-free sign-in door for non-production processes, gated by **route
+existence** rather than a flag. `buildServer` calls `registerDevAuthRoutes` only when
+`NODE_ENV !== 'production'`; there is no `AUTH_DEV_LOGIN` env var that a copied `.env`
+could leave on.
+
+**Implementation**
+
+- `GET /api/v1/auth/dev-users` — active users of the clinic as `AuthenticatedUser`
+  (no hash field), ordered by name.
+- `POST /api/v1/auth/dev-login` — `{ userId }` (UUID-validated), returns the normal
+  `{ token, expiresAt, user }`.
+- `startSessionForUser` (domain) finds the user, refuses unknown/inactive, then calls the
+  same private `issueSession` as `login`. A dev session is a real row: `resolvePrincipal`,
+  expiry, logout and permission checks all treat it normally. Use logs a warning with the
+  request id and user id.
+- `UserRepository.listByClinic` added on both engines (ADR 0025), safe projection.
+- Auth hook: unmatched paths now return early, so a route absent in production answers
+  **404**, not 401. Previously the login page's `dev-users` request would dispatch
+  `denti-code:unauthorized` for a route that does not exist in production.
+- Client: `useDevUsers` (`retry: false`, one expected 404 in production) feeds a
+  Development panel under the login form; `SessionProvider.signInAs` stores the result
+  through the same `acceptSession` path as the password form.
+
+**Tests.** Domain 368 → **371** (`startSessionForUser`: active, inactive, unknown), app
+345 → **346** (chooser lists and signs in; refused login hides the chooser), API
+integration 40 → **44 passed / 273 skipped** (list, sign in + use token, inactive and
+malformed, and a production server asserting both routes 404), e2e 144 → **145** (mock
+API chooser). One e2e fix fell out: the login screen's first test now sees the real dev
+API's chooser buttons, so `getByRole('button', { name: 'Sign in' })` was ambiguous —
+all four "Sign in" locators are now `exact: true`.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (one pre-existing warning)
+pnpm run format:check     clean
+pnpm run test             12/12 tasks successful (domain 371, app 346, API unit 122)
+API integration           44 passed / 273 skipped (SQLite auth + smoke)
+pnpm run build            5/5 successful
+pnpm run test:e2e         145/145 passed
+```
+
+**Notes / follow-ups**
+
+- A deployment that sets `NODE_ENV=development` (or omits it) exposes password-free
+  sign-in for every active user; running as production is required, already for JSON
+  logs and generic 500s. Recorded in `security.md`.
+- The chooser reveals active staff names and emails on a non-production API. It is test
+  data; the route does not exist in production.
+- Production login pages still make one `GET /auth/dev-users` request (404, hidden). It
+  is retry-disabled and stale forever, but a future `/auth/config` probe would make the
+  absence explicit if the 404 ever becomes noisy.

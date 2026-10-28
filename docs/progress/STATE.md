@@ -1,9 +1,9 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 49 (Milestone 12 — login rate limiting)
+> Last updated: session 50 (Milestone 12 — development sign-in chooser)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
-> **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
+> **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
 
 ## Phase
 
@@ -243,8 +243,8 @@ number that drifts, and the invoices already carry everything needed to add one 
   own total, plus the new reports block), e2e 135 → 139. Typecheck 12/12, lint 12/12 +
   `BOUNDARY GUARD OK` (one pre-existing warning), format clean, build 5/5, e2e 139/139.
 
-**Status: Milestones 5–11 complete; Milestone 12 in progress (authentication and
-login throttling delivered, sessions 48–49).
+**Status: Milestones 5–11 complete; Milestone 12 in progress (authentication,
+login throttling and the development sign-in chooser delivered, sessions 48–50).
 (`docs/roadmap.md`).
 dashboard UI/UX redesign delivered (session 42, presentation only).
 Milestone 8 (treatments) now has its catalogue, its
@@ -3136,3 +3136,42 @@ format clean · root test 12/12 tasks · build 5/5 · e2e **144/144** · db:migr
 re-verified (the development logins are unchanged).
 Docs: ADR 0029 (and ADR 0028's "not rate-limited" bullet updated), `security.md`,
 `roadmap.md`, `.env.example`.
+
+---
+
+Session 50: a **development-only "sign in as" chooser** (ADR 0030). Testing a
+permission matrix by retyping the seeded password is friction, and a suite that only
+ever runs as the administrator never sees the differences. The login screen now lists
+the clinic's active users and starts a session as one, with no password.
+
+**The gate is route existence.** `buildServer` registers `registerDevAuthRoutes` only
+when `NODE_ENV !== 'production'`; there is no env flag to leave on and no handler to
+forget. Both routes are public because they exist to be reached before a session.
+`GET /api/v1/auth/dev-users` returns the safe `AuthenticatedUser` projection (no hash,
+active only); `POST /api/v1/auth/dev-login` takes `{ userId }` and returns the normal
+login body. The domain's `startSessionForUser` refuses unknown/inactive users and then
+calls the same private `issueSession` as the password login, so storage, hashing, TTL
+and `last_login_at` have one implementation. A dev session is a real session: it is
+revocable, expires and is permission-checked like any other. Every use logs a warning
+with the request id and user id.
+
+**One side fix.** The auth hook now returns early when no route matched
+(`routeOptions.url === undefined`), so an absent development route answers **404**, not 401. Answering 401 meant the production login page would dispatch
+`denti-code:unauthorized` for a route that simply does not exist; "no such route" is not
+an authentication failure.
+
+**Client.** `useDevUsers` (retry disabled: one expected 404 in production) feeds a
+Development panel under the form. Selecting a user calls `SessionProvider.signInAs`,
+which stores the session through the same `acceptSession` path as the password form.
+
+**Tests.** +3 domain (`startSessionForUser`: active issues and records, inactive refused
+without a session, unknown refused), +1 app component (chooser lists and signs in; the
+refused-login test now asserts the chooser is hidden), +3 API integration (list without
+credentials, sign in as a chosen user and use its token, inactive/malformed refused) and
++a production-server assertion that both routes answer 404 under
+`NODE_ENV=production`, +1 e2e (chooser signs in).
+
+**Verification:** domain **371** · app **346** · API unit **122** · API integration
+**44 passed / 273 skipped** · typecheck 12/12 · lint 12/12 + guard · format clean · root
+test 12/12 tasks · build 5/5 · e2e **145/145** · db unchanged (no migration).
+Docs: ADR 0030, `security.md`, `roadmap.md`.

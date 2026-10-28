@@ -42,6 +42,8 @@ export interface SessionContextValue {
   readonly user: SessionUser | undefined;
   readonly isAuthenticated: boolean;
   signIn(credentials: SignInCredentials): Promise<void>;
+  /** Development-only "sign in as": skips the password (ADR 0030). */
+  signInAs(userId: string): Promise<void>;
   signOut(): Promise<void>;
   /** The header value for `ApiClient`, or `undefined` when signed out. */
   getAuthorizationHeader(): string | undefined;
@@ -69,6 +71,22 @@ export function SessionProvider({ children }: SessionProviderProps): ReactNode {
     return () => client.setAuthorizationHeaderGetter?.(undefined);
   }, [client, getAuthorizationHeader]);
 
+  /**
+   * Keep a session the API just issued.
+   *
+   * Both doors — the password form and the development chooser — land here, so
+   * storage and state cannot disagree about what a signed-in session is.
+   */
+  const acceptSession = useCallback((result: StoredSession) => {
+    const next: StoredSession = {
+      token: result.token,
+      expiresAt: result.expiresAt,
+      user: result.user,
+    };
+    writeStoredSession(next);
+    setSession(next);
+  }, []);
+
   const signIn = useCallback(
     async ({ email, password }: SignInCredentials) => {
       // The response is validated by the client against the login schema, so a
@@ -77,15 +95,19 @@ export function SessionProvider({ children }: SessionProviderProps): ReactNode {
         email,
         password,
       });
-      const next: StoredSession = {
-        token: result.token,
-        expiresAt: result.expiresAt,
-        user: result.user,
-      };
-      writeStoredSession(next);
-      setSession(next);
+      acceptSession(result);
     },
-    [client],
+    [client, acceptSession],
+  );
+
+  const signInAs = useCallback(
+    async (userId: string) => {
+      const result = await client.post<StoredSession, { userId: string }>('/auth/dev-login', {
+        userId,
+      });
+      acceptSession(result);
+    },
+    [client, acceptSession],
   );
 
   const signOut = useCallback(async () => {
@@ -138,10 +160,11 @@ export function SessionProvider({ children }: SessionProviderProps): ReactNode {
       user: session?.user,
       isAuthenticated: session !== undefined,
       signIn,
+      signInAs,
       signOut,
       getAuthorizationHeader,
     }),
-    [session, signIn, signOut, getAuthorizationHeader],
+    [session, signIn, signInAs, signOut, getAuthorizationHeader],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

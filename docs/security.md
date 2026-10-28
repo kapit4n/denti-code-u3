@@ -53,6 +53,12 @@ details?, requestId } }`); unknown errors become a generic 500. Database driver
   is computed. The counter is in process, so it is per instance and resets on restart.
   Behind a reverse proxy, either trust the proxy's forwarded address per deployment or
   let the proxy do the limiting, otherwise every client shares the proxy's address.
+- **Development sign-in is absent from production (ADR 0030).** When `NODE_ENV` is not
+  `production`, two public routes exist for testing: `GET /auth/dev-users` (active users,
+  no credentials) and `POST /auth/dev-login` (start a real session as one of them,
+  without a password). They are **not registered** in production, so there is no flag to
+  leave on; the normal login, inactivity, expiry, revocation and permissions all still
+  apply. The client asks the API and hides the chooser when the route is absent.
 - **Desktop capability restriction.** Tauri's capability grants are minimal; no
   shell plugin, no filesystem-wide access, no remote code loading; CSP restricts
   script sources in release builds.
@@ -69,6 +75,10 @@ details?, requestId } }`); unknown errors become a generic 500. Database driver
 - **The login limiter is per instance and in memory.** A multi-instance deployment
   needs a shared counter or proxy-level limiting, and a restart clears it. It does not
   stop an attacker who varies both email and address.
+- **The development login-as door is gated by `NODE_ENV`.** A deployment that labels
+  itself `development` (or omits `NODE_ENV`) exposes password-free sign-in for every
+  active user. Running as `production` is a deployment requirement, already needed for
+  JSON logs and generic error responses.
 - **The bearer token is held in `localStorage`** on the web target, so it is readable
   by page script (XSS). Mitigations are short-lived, revocable tokens and clearing
   the session on logout/401; an `HttpOnly` cookie would be a new ADR and would need

@@ -29,6 +29,7 @@ const PASSWORD = 'a-good-password';
 describe('authentication (SQLite)', () => {
   let dir: string;
   let app: DentiApiServer;
+  let productionApp: DentiApiServer;
 
   beforeAll(async () => {
     dir = mkdtempSync(path.join(tmpdir(), 'denti-auth-'));
@@ -41,7 +42,7 @@ describe('authentication (SQLite)', () => {
     await seed(db);
     client.close();
 
-    app = await buildServer({
+    const environment = {
       NODE_ENV: 'test',
       API_HOST: '127.0.0.1',
       API_PORT: '4001',
@@ -53,10 +54,14 @@ describe('authentication (SQLite)', () => {
       SESSION_TTL_HOURS: '12',
       AUTH_LOGIN_MAX_ATTEMPTS: '2',
       AUTH_LOGIN_WINDOW_MINUTES: '15',
-    });
+    };
+
+    app = await buildServer(environment);
+    productionApp = await buildServer({ ...environment, NODE_ENV: 'production' });
   });
 
   afterAll(async () => {
+    await productionApp?.close();
     await app?.close();
     if (dir) {
       rmSync(dir, { recursive: true, force: true });
@@ -215,6 +220,74 @@ describe('authentication (SQLite)', () => {
     expect((await login(email, PASSWORD)).statusCode).toBe(429);
   });
 
+  it('does not expose the development doors in production', async () => {
+    const users = await productionApp.inject({
+      method: 'GET',
+      url: '/api/v1/auth/dev-users',
+    });
+    const login = await productionApp.inject({
+      method: 'POST',
+      url: '/api/v1/auth/dev-login',
+      payload: { userId },
+    });
+
+    expect(users.statusCode).toBe(404);
+    expect(login.statusCode).toBe(404);
+  });
+
+  it('lists the clinic users for development without credentials', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/v1/auth/dev-users' });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    const emails = body.items.map((user: { email: string }) => user.email);
+    expect(emails).toContain('admin@auth.test');
+    expect(emails).not.toContain('inactive@auth.test');
+    expect(JSON.stringify(body)).not.toContain('scrypt$');
+  });
+
+  it('issues a session as a chosen user without a password', async () => {
+    const list = (await app.inject({ method: 'GET', url: '/api/v1/auth/dev-users' })).json();
+    const target = list.items.find(
+      (user: { email: string }) => user.email === 'reception@auth.test',
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/dev-login',
+      payload: { userId: target.id },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const { token, user } = response.json();
+    expect(user.email).toBe('reception@auth.test');
+
+    // The token is a real session, not a dev-only bypass downstream.
+    const me = await app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(me.statusCode).toBe(200);
+    expect(me.json().user.email).toBe('reception@auth.test');
+  });
+
+  it('refuses an inactive user and a malformed dev sign-in', async () => {
+    const malformed = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/dev-login',
+      payload: { userId: 'not-a-uuid' },
+    });
+    expect(malformed.statusCode).toBe(422);
+
+    const inactive = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/dev-login',
+      payload: { userId: 'b0b0b0b0-0000-4000-8000-000000000007' },
+    });
+    expect(inactive.statusCode).toBe(401);
+  });
+
   it('lets an administrator past the same permission check', async () => {
     // The administrator holds every permission, so the same route is reachable —
     // it then fails on the body, which proves authorization was not the obstacle.
@@ -267,6 +340,16 @@ async function seed(db: BetterSQLite3Database<typeof sqliteSchema>) {
     fullName: 'Rate Limited',
     role: 'RECEPTIONIST',
     isActive: true,
+  });
+
+  await db.insert(sqliteSchema.users).values({
+    id: 'b0b0b0b0-0000-4000-8000-000000000007',
+    clinicId,
+    email: 'inactive@auth.test',
+    passwordHash: await new ScryptPasswordHasher().hash(PASSWORD),
+    fullName: 'Inactive User',
+    role: 'ASSISTANT',
+    isActive: false,
   });
 
   await db.insert(sqliteSchema.users).values({

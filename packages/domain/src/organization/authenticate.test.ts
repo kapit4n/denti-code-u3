@@ -13,6 +13,7 @@ import type { ClinicId, IsoDateTime, UserId } from '@denti-code-u3/types';
 import {
   login,
   logout,
+  startSessionForUser,
   resolvePrincipal,
   isSessionExpired,
   assertSessionUsable,
@@ -86,6 +87,9 @@ function fakeUsers(): FakeUsers {
     },
     async findById() {
       return this.byId;
+    },
+    async listByClinic() {
+      return this.byId ? [this.byId] : [];
     },
     async recordLogin(_clinicId, userId, at) {
       loggedIn.push({ userId, at });
@@ -222,6 +226,43 @@ describe('login', () => {
     await expect(
       login(CLINIC, { email: 'admin@clinic.test', password: 'secret' }, deps({ users })),
     ).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
+  });
+});
+
+describe('startSessionForUser', () => {
+  it('issues a session for an active user without a password', async () => {
+    const users = fakeUsers();
+    users.byId = activeUser();
+    const sessions = fakeSessions();
+
+    const result = await startSessionForUser(CLINIC, USER_ID, deps({ users, sessions }));
+
+    expect(result.token).toBe('token-abc');
+    expect(result.user.id).toBe(USER_ID);
+    expect(result.expiresAt).toBe('2026-10-22T22:00:00.000Z');
+    expect(sessions.saved).toHaveLength(1);
+    expect(sessions.saved[0]?.tokenHash).toBe('hash(token-abc)');
+    expect(users.loggedIn).toEqual([{ userId: USER_ID, at: '2026-10-22T10:00:00.000Z' }]);
+  });
+
+  it('refuses an inactive user', async () => {
+    const users = fakeUsers();
+    users.byId = activeUser({ isActive: false });
+    const sessions = fakeSessions();
+
+    await expect(
+      startSessionForUser(CLINIC, USER_ID, deps({ users, sessions })),
+    ).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
+    expect(sessions.saved).toHaveLength(0);
+  });
+
+  it('refuses a user the clinic does not know', async () => {
+    const sessions = fakeSessions();
+
+    await expect(
+      startSessionForUser(CLINIC, USER_ID, deps({ users: fakeUsers(), sessions })),
+    ).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
+    expect(sessions.saved).toHaveLength(0);
   });
 });
 

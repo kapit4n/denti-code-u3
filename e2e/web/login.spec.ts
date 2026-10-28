@@ -35,7 +35,7 @@ test.describe('Authentication', () => {
 
     await expect(page.getByLabel('Email')).toBeVisible();
     await expect(page.getByLabel('Password')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
     // The shell is not rendered without a session.
     await expect(page.getByRole('heading', { name: 'Foundation is mounted' })).toHaveCount(0);
   });
@@ -50,7 +50,7 @@ test.describe('Authentication', () => {
     await page.goto('/');
     await page.getByLabel('Email').fill('admin@denti-code.test');
     await page.getByLabel('Password').fill('denti-code-dev');
-    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
     await expect(page.getByRole('heading', { name: 'Foundation is mounted' })).toBeVisible();
   });
@@ -67,7 +67,7 @@ test.describe('Authentication', () => {
     await page.goto('/');
     await page.getByLabel('Email').fill('admin@denti-code.test');
     await page.getByLabel('Password').fill('wrong');
-    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
     await expect(page.getByRole('alert')).toHaveText('The email or password is incorrect.');
   });
@@ -90,9 +90,24 @@ test.describe('Authentication', () => {
     await page.goto('/');
     await page.getByLabel('Email').fill('admin@denti-code.test');
     await page.getByLabel('Password').fill('denti-code-dev');
-    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
     await expect(page.getByRole('alert')).toHaveText('Too many sign-in attempts. Try again later.');
+  });
+
+  test('offers the development users and signs in as one', async ({ page }) => {
+    await startLoggedOut(page);
+    await installApi(page, {
+      'GET /api/v1/auth/dev-users': {
+        body: { items: [{ ...LOGIN_BODY.user, fullName: 'E2E Admin' }] },
+      },
+      'POST /api/v1/auth/dev-login': { body: LOGIN_BODY },
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: /sign in as e2e admin/i }).click();
+
+    await expect(page.getByRole('heading', { name: 'Foundation is mounted' })).toBeVisible();
   });
 
   test('signs out and returns to the login screen', async ({ page }) => {

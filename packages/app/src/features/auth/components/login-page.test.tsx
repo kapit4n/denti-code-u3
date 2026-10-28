@@ -114,5 +114,32 @@ describe('LoginPage', () => {
       'Too many sign-in attempts. Try again later.',
     );
     expect(window.localStorage.getItem('denti-code-session')).toBeNull();
+    // A production API has no development chooser; a refused request hides it.
+    expect(screen.queryByTestId('dev-login')).toBeNull();
+  });
+
+  it('offers the seeded users and signs in as one without a password', async () => {
+    const devUser = { ...successBody.user, fullName: 'Dev Admin' };
+    const fetchImplementation = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith('/auth/dev-users')) {
+        return new Response(JSON.stringify({ items: [devUser] }), { status: 200 });
+      }
+      if (url.endsWith('/auth/dev-login')) {
+        return new Response(
+          JSON.stringify({ token: 'dev-token', expiresAt: successBody.expiresAt, user: devUser }),
+          { status: 200 },
+        );
+      }
+      return new Response('{}', { status: 500 });
+    }) as unknown as typeof fetch;
+
+    renderLogin(fetchImplementation);
+
+    fireEvent.click(await screen.findByRole('button', { name: /sign in as dev admin/i }));
+
+    await waitFor(() => {
+      expect(window.localStorage.getItem('denti-code-session')).toContain('dev-token');
+    });
   });
 });

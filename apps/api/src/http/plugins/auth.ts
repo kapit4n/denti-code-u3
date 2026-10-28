@@ -89,6 +89,14 @@ export async function registerAuth(
   app.decorateRequest('principal', null as unknown as Principal);
 
   app.addHook('onRequest', async (request, reply) => {
+    // No matched route: the answer is 404, and it must not depend on whether the
+    // caller happens to hold a token. This also keeps a route that exists only in
+    // development (ADR 0030) answering 404 in production rather than 401, which
+    // would look like an expired session to the client.
+    if (request.routeOptions.url === undefined) {
+      return;
+    }
+
     if (request.routeOptions.config.public === true) {
       return;
     }

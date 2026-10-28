@@ -21,6 +21,18 @@ export const loginSchema = z.object({
 export type LoginBody = z.infer<typeof loginSchema>;
 
 /**
+ * The development-only "sign in as" request (ADR 0030).
+ *
+ * It names a user, never a password: the route exists only outside production and
+ * the domain still refuses an inactive or unknown user.
+ */
+export const devLoginSchema = z.object({
+  userId: z.uuid(),
+});
+
+export type DevLoginBody = z.infer<typeof devLoginSchema>;
+
+/**
  * The authenticated caller, as returned to a client.
  *
  * No password hash, ever: the shape a route sends is this one, and it has no
