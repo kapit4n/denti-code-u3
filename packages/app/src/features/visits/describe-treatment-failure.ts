@@ -25,7 +25,16 @@ import { ApiClientError } from '@denti-code-u3/api-client';
  * messages were written for a person by the API, and anything else is developer
  * noise in front of a clinician.
  */
-export function describeTreatmentFailure(error: unknown, fallback: string): string | undefined {
+export interface TreatmentFailureMessages {
+  readonly notFound?: string;
+  readonly network?: string;
+}
+
+export function describeTreatmentFailure(
+  error: unknown,
+  fallback: string,
+  messages?: TreatmentFailureMessages,
+): string | undefined {
   if (!error) {
     return undefined;
   }
@@ -44,9 +53,9 @@ export function describeTreatmentFailure(error: unknown, fallback: string): stri
       // The visit was on screen when the treatment was recorded and is not there
       // now — closed and deleted on another screen, or a clinic that no longer
       // holds it.
-      return 'This visit no longer exists in the current clinic.';
+      return messages?.notFound ?? 'This visit no longer exists in the current clinic.';
     case 'NETWORK_ERROR':
-      return 'Could not reach the server. The treatment was not recorded.';
+      return messages?.network ?? 'Could not reach the server. The treatment was not recorded.';
     default:
       return message;
   }

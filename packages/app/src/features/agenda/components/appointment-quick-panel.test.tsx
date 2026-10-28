@@ -24,6 +24,7 @@ import {
 import { asAppointmentId, asChairId, asDentistId, asPatientId } from '@denti-code-u3/types';
 
 import { ApiClientProvider } from '../../../query/api-client-provider.js';
+import { I18nProvider, type Locale } from '../../../i18n/index.js';
 import { AppointmentQuickPanel } from './appointment-quick-panel.js';
 
 const BASE_URL = 'http://api.test/api/v1';
@@ -61,10 +62,12 @@ function renderPanel({
   entry = ENTRY,
   reply,
   onClose = vi.fn(),
+  locale = 'en',
 }: {
   readonly entry?: AgendaEntry;
   readonly reply?: () => Promise<Response>;
   readonly onClose?: () => void;
+  readonly locale?: Locale;
 } = {}) {
   const fetchImplementation = vi.fn<typeof fetch>(
     reply ??
@@ -82,7 +85,9 @@ function renderPanel({
   render(
     <QueryClientProvider client={queryClient}>
       <ApiClientProvider baseUrl={BASE_URL} client={client}>
-        <AppointmentQuickPanel entry={entry} clinic={CLINIC} onClose={onClose} />
+        <I18nProvider initialLocale={locale}>
+          <AppointmentQuickPanel entry={entry} clinic={CLINIC} onClose={onClose} />
+        </I18nProvider>
       </ApiClientProvider>
     </QueryClientProvider>,
   );
@@ -98,6 +103,17 @@ function sentBody(fetchImplementation: ReturnType<typeof vi.fn>, index = 0): unk
 }
 
 describe('AppointmentQuickPanel', () => {
+  it('names the status, the moves and the times in Spanish', () => {
+    renderPanel({ locale: 'es' });
+
+    expect(screen.getByText('Confirmada')).toBeTruthy();
+    expect(screen.getByText(/09:00 – 10:00/)).toBeTruthy();
+    expect(screen.getByText('Odontólogo')).toBeTruthy();
+    expect(screen.getByText('Sillón')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Registrar llegada' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeTruthy();
+  });
+
   it('says who is coming, when, and for how long — in the clinic timezone', () => {
     renderPanel();
 

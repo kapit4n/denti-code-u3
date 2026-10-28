@@ -84,6 +84,7 @@ import { describeAppointmentFailure } from '../describe-appointment-failure.js';
 import { PatientPicker, type SelectedPatient } from '../../patients/components/patient-picker.js';
 import { formatClinicDayTime, formatClinicTimeRange } from '../../clinic/format-clinic-time.js';
 import { instantToZonedWallClock, zonedWallClockToInstant } from '../../clinic/zoned-wall-clock.js';
+import { useTranslation } from '../../../i18n/index.js';
 
 /**
  * The lengths a booking is offered at, in minutes.
@@ -146,6 +147,7 @@ export function AppointmentBookingDialog({
   onClose,
   onBooked,
 }: AppointmentBookingDialogProps) {
+  const { locale, t } = useTranslation();
   const create = useCreateAppointment();
   // Active rows only: a clinician or chair that cannot be booked should not be
   // offered here. The agenda's filters ask for the other list — see
@@ -206,7 +208,7 @@ export function AppointmentBookingDialog({
    * when it was opened without a slot: the summary says what to do instead of
    * formatting nothing.
    */
-  const span = formatChosenSpan(localStartsAt, durationMinutes, clinic.timeZone);
+  const span = formatChosenSpan(localStartsAt, durationMinutes, clinic.timeZone, locale);
 
   const onSubmit = form.handleSubmit((values) => {
     // The one field that cannot be settled by the schema alone. The form schema knows
@@ -218,7 +220,7 @@ export function AppointmentBookingDialog({
     if (startsAtInstant === undefined) {
       form.setError('localStartsAt', {
         type: 'value',
-        message: `That time does not exist on that date in ${clinic.timeZone} — the clocks change then. Choose another time.`,
+        message: t('agenda.booking.invalidTime', { timeZone: clinic.timeZone }),
       });
       return;
     }
@@ -246,7 +248,15 @@ export function AppointmentBookingDialog({
 
   const failure = describeAppointmentFailure(create.error, {
     timeZone: clinic.timeZone,
-    fallback: 'The appointment could not be booked.',
+    fallback: t('agenda.booking.error'),
+    locale,
+    messages: {
+      conflict: t('agenda.failure.conflict'),
+      conflictOne: t('agenda.failure.conflictOne'),
+      conflictMany: t('agenda.failure.conflictMany'),
+      notFound: t('agenda.failure.notFound'),
+      network: t('agenda.failure.network'),
+    },
   });
 
   const loadingResources = dentists.isPending || chairs.isPending;
@@ -266,7 +276,9 @@ export function AppointmentBookingDialog({
       >
         <DialogHeader>
           <DialogTitle id="booking-dialog-title">
-            {patient ? `New appointment for ${patient.label}` : 'New appointment'}
+            {patient
+              ? t('agenda.booking.newForPatient', { patient: patient.label })
+              : t('agenda.booking.new')}
           </DialogTitle>
           <DialogDescription>
             {/* The span, once there is a time to describe it from. Before that it says
@@ -274,7 +286,7 @@ export function AppointmentBookingDialog({
                 Invalid DateTime" for the normal state of a dialog opened without a
                 slot. The zone itself is not repeated here; it says so once, under the
                 field that needs it. */}
-            {span ?? 'Choose the date and time the patient is coming.'}
+            {span ?? t('agenda.booking.chooseTime')}
           </DialogDescription>
         </DialogHeader>
 
@@ -291,7 +303,7 @@ export function AppointmentBookingDialog({
 
         <form onSubmit={onSubmit} noValidate className="space-y-4">
           <div className="space-y-1">
-            <Label htmlFor="booking-starts-at">Date and time</Label>
+            <Label htmlFor="booking-starts-at">{t('agenda.booking.dateTime')}</Label>
             <input
               id="booking-starts-at"
               type="datetime-local"
@@ -311,8 +323,8 @@ export function AppointmentBookingDialog({
                 and the zone matters most when the hour is theirs to change. */}
             <p id="booking-starts-at-hint" className="text-xs text-muted-foreground">
               {slotWallClock !== undefined
-                ? `From the slot you clicked on the agenda, in the clinic's own time, ${clinic.timeZone}.`
-                : `The clinic's own time, ${clinic.timeZone}.`}
+                ? t('agenda.booking.hintFromSlot', { timeZone: clinic.timeZone })
+                : t('agenda.booking.hintTyped', { timeZone: clinic.timeZone })}
             </p>
             <FieldError error={form.formState.errors.localStartsAt} />
           </div>
@@ -331,7 +343,8 @@ export function AppointmentBookingDialog({
 
           <div className="space-y-1">
             <Label htmlFor="booking-dentist">
-              Clinician<span aria-hidden> *</span>
+              {t('agenda.booking.clinician')}
+              <span aria-hidden> *</span>
             </Label>
             <Select
               // Radix's root is uncontrolled with a value, or controlled with
@@ -342,7 +355,7 @@ export function AppointmentBookingDialog({
               disabled={create.isPending}
             >
               <SelectTrigger id="booking-dentist" data-testid="booking-dentist">
-                <SelectValue placeholder="Choose a clinician" />
+                <SelectValue placeholder={t('agenda.booking.chooseClinician')} />
               </SelectTrigger>
               <SelectContent>
                 {(dentists.data?.items ?? []).map((dentist) => (
@@ -357,22 +370,20 @@ export function AppointmentBookingDialog({
             <FieldError error={form.formState.errors.dentistId} />
             {dentists.isPending ? (
               <p className="text-xs text-muted-foreground" role="status">
-                Loading clinicians…
+                {t('agenda.booking.loadingClinicians')}
               </p>
             ) : null}
             {!dentists.isPending && (dentists.data?.items.length ?? 0) === 0 ? (
               // Said out loud rather than showing an empty dropdown: a clinic with no
               // active clinician cannot book anything, and a silent select looks like a
               // form that has not loaded.
-              <p className="text-xs text-muted-foreground">
-                This clinic has no active clinician, so nothing can be booked yet.
-              </p>
+              <p className="text-xs text-muted-foreground">{t('agenda.booking.noClinician')}</p>
             ) : null}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label htmlFor="booking-duration">Duration</Label>
+              <Label htmlFor="booking-duration">{t('agenda.booking.duration')}</Label>
               <Select
                 value={String(durationMinutes)}
                 onValueChange={(value) =>
@@ -386,7 +397,7 @@ export function AppointmentBookingDialog({
                 <SelectContent>
                   {BOOKABLE_DURATIONS.map((minutes) => (
                     <SelectItem key={minutes} value={String(minutes)}>
-                      {minutes} min
+                      {t('agenda.booking.minutes', { minutes })}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -394,7 +405,7 @@ export function AppointmentBookingDialog({
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="booking-chair">Chair</Label>
+              <Label htmlFor="booking-chair">{t('agenda.booking.chair')}</Label>
               <Select
                 // An empty form value means "no chair", which the dropdown shows as
                 // its own first item. Going from a chair back to none works because
@@ -405,10 +416,10 @@ export function AppointmentBookingDialog({
                 disabled={create.isPending}
               >
                 <SelectTrigger id="booking-chair" data-testid="booking-chair">
-                  <SelectValue placeholder="No chair" />
+                  <SelectValue placeholder={t('agenda.booking.noChairOption')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NO_CHAIR}>No chair</SelectItem>
+                  <SelectItem value={NO_CHAIR}>{t('agenda.booking.noChairOption')}</SelectItem>
                   {(chairs.data?.items ?? []).map((chair) => (
                     <SelectItem key={chair.id} value={chair.id}>
                       {chair.roomName ? `${chair.name} (${chair.roomName})` : chair.name}
@@ -421,13 +432,13 @@ export function AppointmentBookingDialog({
           </div>
 
           <div className="space-y-1">
-            <Label htmlFor="booking-notes">Notes</Label>
+            <Label htmlFor="booking-notes">{t('agenda.booking.notes')}</Label>
             <textarea
               id="booking-notes"
               rows={2}
               disabled={create.isPending}
               className="w-full rounded-md border bg-background p-2 text-sm"
-              placeholder="What the clinician should know before the patient arrives"
+              placeholder={t('agenda.booking.notesPlaceholder')}
               {...form.register('notes')}
             />
             <FieldError error={form.formState.errors.notes} />
@@ -438,21 +449,21 @@ export function AppointmentBookingDialog({
               {create.isPending ? (
                 <>
                   <Loader2 aria-hidden className="size-4 animate-spin" />
-                  Booking…
+                  {t('agenda.booking.booking')}
                 </>
               ) : (
-                'Book appointment'
+                t('agenda.booking.book')
               )}
             </Button>
             <Button type="button" variant="outline" onClick={onClose} disabled={create.isPending}>
-              Cancel
+              {t('common.cancel')}
             </Button>
           </DialogFooter>
         </form>
 
         {loadingResources ? (
           <p className="text-xs text-muted-foreground" role="status">
-            Loading the clinicians and chairs…
+            {t('agenda.booking.loadingResources')}
           </p>
         ) : null}
       </DialogContent>
@@ -513,6 +524,7 @@ function formatChosenSpan(
   localStartsAt: string,
   durationMinutes: number,
   timeZone: string,
+  locale: string,
 ): string | undefined {
   const startsAt = zonedWallClockToInstant(localStartsAt, timeZone);
   if (startsAt === undefined) {
@@ -521,5 +533,5 @@ function formatChosenSpan(
 
   const endsAt = new Date(new Date(startsAt).getTime() + durationMinutes * 60_000).toISOString();
 
-  return `${formatClinicDayTime(startsAt, timeZone)} · ${formatClinicTimeRange(startsAt, endsAt, timeZone)}`;
+  return `${formatClinicDayTime(startsAt, timeZone, locale)} · ${formatClinicTimeRange(startsAt, endsAt, timeZone, locale)}`;
 }

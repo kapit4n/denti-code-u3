@@ -25,6 +25,8 @@ export { requiresTransitionReason };
 import type { AppointmentStatus } from '@denti-code-u3/domain';
 import { requiresTransitionReason } from '@denti-code-u3/domain';
 import { STATUS_TONE_CLASS, type StatusTone } from '@denti-code-u3/ui';
+import type { TranslationKey } from '../../i18n/index.js';
+import type { Translate } from '../../i18n/index.js';
 
 /**
  * Status → tone.
@@ -44,14 +46,14 @@ const APPOINTMENT_STATUS_TONE: Readonly<Record<AppointmentStatus, StatusTone>> =
 };
 
 /** The state, as a noun. Used in the panel and in the grid's accessible name. */
-const APPOINTMENT_STATUS_LABEL: Readonly<Record<AppointmentStatus, string>> = {
-  SCHEDULED: 'Scheduled',
-  CONFIRMED: 'Confirmed',
-  ARRIVED: 'Arrived',
-  IN_TREATMENT: 'In treatment',
-  COMPLETED: 'Completed',
-  CANCELLED: 'Cancelled',
-  NO_SHOW: 'No-show',
+const APPOINTMENT_STATUS_KEY: Readonly<Record<AppointmentStatus, TranslationKey>> = {
+  SCHEDULED: 'agenda.status.SCHEDULED',
+  CONFIRMED: 'agenda.status.CONFIRMED',
+  ARRIVED: 'agenda.status.ARRIVED',
+  IN_TREATMENT: 'agenda.status.IN_TREATMENT',
+  COMPLETED: 'agenda.status.COMPLETED',
+  CANCELLED: 'agenda.status.CANCELLED',
+  NO_SHOW: 'agenda.status.NO_SHOW',
 };
 
 /**
@@ -63,21 +65,31 @@ const APPOINTMENT_STATUS_LABEL: Readonly<Record<AppointmentStatus, string>> = {
  * all three, so the label follows the *source* as well — which is why this is a
  * function and not a table.
  */
-const TRANSITION_LABEL: Readonly<
-  Record<AppointmentStatus, Readonly<Partial<Record<AppointmentStatus, string>>>>
+const TRANSITION_KEY: Readonly<
+  Record<AppointmentStatus, Readonly<Partial<Record<AppointmentStatus, TranslationKey>>>>
 > = {
-  SCHEDULED: { CANCELLED: 'Cancel', NO_SHOW: 'Mark as no-show' },
-  CONFIRMED: {
-    SCHEDULED: 'Unconfirm',
-    ARRIVED: 'Check in',
-    CANCELLED: 'Cancel',
-    NO_SHOW: 'Mark as no-show',
+  SCHEDULED: {
+    CANCELLED: 'agenda.transition.cancel',
+    NO_SHOW: 'agenda.transition.markNoShow',
   },
-  ARRIVED: { IN_TREATMENT: 'Start treatment', CANCELLED: 'Cancel', NO_SHOW: 'Mark as no-show' },
-  IN_TREATMENT: { COMPLETED: 'Complete', CANCELLED: 'Cancel' },
+  CONFIRMED: {
+    SCHEDULED: 'agenda.transition.unconfirm',
+    ARRIVED: 'agenda.transition.checkIn',
+    CANCELLED: 'agenda.transition.cancel',
+    NO_SHOW: 'agenda.transition.markNoShow',
+  },
+  ARRIVED: {
+    IN_TREATMENT: 'agenda.transition.startTreatment',
+    CANCELLED: 'agenda.transition.cancel',
+    NO_SHOW: 'agenda.transition.markNoShow',
+  },
+  IN_TREATMENT: {
+    COMPLETED: 'agenda.transition.complete',
+    CANCELLED: 'agenda.transition.cancel',
+  },
   COMPLETED: {},
-  CANCELLED: { SCHEDULED: 'Put back to scheduled' },
-  NO_SHOW: { SCHEDULED: 'Put back to scheduled' },
+  CANCELLED: { SCHEDULED: 'agenda.transition.putBack' },
+  NO_SHOW: { SCHEDULED: 'agenda.transition.putBack' },
 };
 
 export function appointmentStatusTone(status: AppointmentStatus): StatusTone {
@@ -88,8 +100,8 @@ export function appointmentStatusClassName(status: AppointmentStatus): string {
   return STATUS_TONE_CLASS[APPOINTMENT_STATUS_TONE[status]];
 }
 
-export function appointmentStatusLabel(status: AppointmentStatus): string {
-  return APPOINTMENT_STATUS_LABEL[status];
+export function appointmentStatusLabel(t: Translate, status: AppointmentStatus): string {
+  return t(APPOINTMENT_STATUS_KEY[status]);
 }
 
 /**
@@ -99,6 +111,10 @@ export function appointmentStatusLabel(status: AppointmentStatus): string {
  * status added to the domain gets a button that says what it does rather than no
  * button at all.
  */
-export function appointmentTransitionLabel(from: AppointmentStatus, to: AppointmentStatus): string {
-  return TRANSITION_LABEL[from][to] ?? APPOINTMENT_STATUS_LABEL[to];
+export function appointmentTransitionLabel(
+  t: Translate,
+  from: AppointmentStatus,
+  to: AppointmentStatus,
+): string {
+  return t(TRANSITION_KEY[from][to] ?? APPOINTMENT_STATUS_KEY[to]);
 }

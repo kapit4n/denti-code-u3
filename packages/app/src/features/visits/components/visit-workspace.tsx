@@ -73,7 +73,8 @@ import {
   cn,
 } from '@denti-code-u3/ui';
 
-import { formatClinicDayTime, READING_THE_CLINIC_CLOCK } from '../../clinic/format-clinic-time.js';
+import { useTranslation, type Translate, type TranslationKey } from '../../../i18n/index.js';
+import { formatClinicDayTime } from '../../clinic/format-clinic-time.js';
 import { useClinicSettings } from '../../clinic/queries/clinic-settings-query.js';
 import { usePatient, usePatientTreatmentPlans } from '../../patients/hooks/use-patients.js';
 import { useChairs, useDentists } from '../../agenda/queries/bookable-resources-query.js';
@@ -94,10 +95,10 @@ import { useCreatePrescription } from '../mutations/use-create-prescription.js';
 import { useCreateVisitAttachment } from '../mutations/use-create-visit-attachment.js';
 import { useRecordVisitTreatment } from '../mutations/use-record-visit-treatment.js';
 import { useVisitClosure } from '../mutations/use-visit-closure.js';
-import { MEDICATION_ROUTE_OPTIONS, medicationRouteLabel } from '../prescription-presentation.js';
+import { medicationRouteLabel, medicationRouteOptions } from '../prescription-presentation.js';
 import {
-  PAYMENT_METHOD_OPTIONS,
   paymentMethodLabel,
+  paymentMethodOptions,
   paymentsTotal,
   stillToPayMinor,
 } from '../payment-presentation.js';
@@ -130,17 +131,21 @@ export interface VisitWorkspaceProps {
 type VisitSectionId =
   'summary' | 'notes' | 'treatments' | 'prescriptions' | 'charges' | 'payments' | 'attachments';
 
-const VISIT_SECTIONS: readonly { readonly id: VisitSectionId; readonly label: string }[] = [
-  { id: 'summary', label: 'Summary' },
-  { id: 'notes', label: 'Notes' },
-  { id: 'treatments', label: 'Treatments' },
-  { id: 'prescriptions', label: 'Prescriptions' },
-  { id: 'charges', label: 'Charges' },
-  { id: 'payments', label: 'Payments' },
-  { id: 'attachments', label: 'Files' },
+const VISIT_SECTIONS: readonly {
+  readonly id: VisitSectionId;
+  readonly labelKey: TranslationKey;
+}[] = [
+  { id: 'summary', labelKey: 'visits.section.summary' },
+  { id: 'notes', labelKey: 'visits.section.notes' },
+  { id: 'treatments', labelKey: 'visits.section.treatments' },
+  { id: 'prescriptions', labelKey: 'visits.section.prescriptions' },
+  { id: 'charges', labelKey: 'visits.section.charges' },
+  { id: 'payments', labelKey: 'visits.section.payments' },
+  { id: 'attachments', labelKey: 'visits.section.attachments' },
 ];
 
 export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
+  const { t } = useTranslation();
   const visitQuery = useVisit(visitId);
   const { data: clinic } = useClinicSettings();
   // The profile arrives after the visit (its key needs the patient id), so this
@@ -153,7 +158,7 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
   const [section, setSection] = useState<VisitSectionId>('summary');
 
   if (visitQuery.isPending) {
-    return <p className="text-sm text-muted-foreground">Loading the visit…</p>;
+    return <p className="text-sm text-muted-foreground">{t('visits.workspace.loading')}</p>;
   }
 
   if (visitQuery.error) {
@@ -165,13 +170,13 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
               that never existed answer alike (ADR 0014), so the screen must not
               claim to know which one it got. */}
           {error instanceof Error && 'status' in error && error.status === 404
-            ? 'This visit does not exist in the current clinic.'
-            : 'The visit could not be loaded.'}
+            ? t('visits.workspace.notFound')
+            : t('visits.workspace.loadError')}
         </p>
         <Button asChild variant="ghost" size="sm" className="-ml-2">
           <Link to="/patients">
             <ArrowLeft aria-hidden className="mr-2 h-4 w-4" />
-            All patients
+            {t('visits.workspace.allPatients')}
           </Link>
         </Button>
       </div>
@@ -179,7 +184,7 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
   }
 
   if (!visitQuery.data) {
-    return <p className="text-sm text-muted-foreground">The visit could not be loaded.</p>;
+    return <p className="text-sm text-muted-foreground">{t('visits.workspace.loadError')}</p>;
   }
 
   const visit = visitQuery.data;
@@ -188,7 +193,10 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
     ? (patient.preferredName ?? `${patient.firstName} ${patient.lastName}`)
     : undefined;
 
-  const failure = describeVisitFailure(closure.error, 'The visit could not be updated.');
+  const failure = describeVisitFailure(closure.error, t('visits.workspace.updateError'), {
+    notFound: t('visits.failure.notFound'),
+    network: t('visits.failure.visitNetwork'),
+  });
   const closable = visitClosureTransitions(visit.status);
 
   return (
@@ -201,7 +209,9 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
             data-testid="back-to-patient"
           >
             <ArrowLeft aria-hidden className="mr-2 h-4 w-4" />
-            {patientName ? `${patientName}’s record` : 'Patient record'}
+            {patientName
+              ? t('visits.workspace.patientRecordFor', { patient: patientName })
+              : t('visits.workspace.patientRecord')}
           </Link>
         </Button>
 
@@ -209,14 +219,18 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
           <div className="space-y-1">
             <h1 className="text-3xl font-bold tracking-tight">
               {patientName ??
-                (patientQuery.isPending ? 'Loading patient…' : 'Patient record unavailable')}
+                (patientQuery.isPending
+                  ? t('visits.workspace.loadingPatient')
+                  : t('visits.workspace.patientUnavailable'))}
             </h1>
             <p className="text-muted-foreground">
               {patient?.recordNumber ? `${patient.recordNumber} · ` : ''}
               {/* Said here rather than left to be inferred from the chip below: a
                   walk-in and a booking are both visits, and only one of them has an
                   appointment behind it. */}
-              {visit.appointmentId ? 'Started from a booking' : 'Walk-in'}
+              {visit.appointmentId
+                ? t('visits.workspace.fromBooking')
+                : t('visits.workspace.walkIn')}
             </p>
             <span
               className={cn(
@@ -225,7 +239,7 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
               )}
               data-testid="visit-status"
             >
-              {visitStatusLabel(visit.status)}
+              {visitStatusLabel(t, visit.status)}
             </span>
           </div>
 
@@ -234,9 +248,7 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
               // Said out loud rather than shown as an empty row of buttons: a
               // cancelled visit is history, and silence here reads as a panel that
               // failed to load.
-              <p className="text-sm text-muted-foreground">
-                This visit cannot be reopened. Its record is kept as it is.
-              </p>
+              <p className="text-sm text-muted-foreground">{t('visits.workspace.cannotReopen')}</p>
             ) : (
               closable.map((to) => (
                 <Button
@@ -246,14 +258,14 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
                   data-testid={to === 'COMPLETED' ? 'complete-visit' : 'reopen-visit'}
                   onClick={() => closure.mutate({ visitId: visit.id, to })}
                 >
-                  {visitClosureLabel(to)}
+                  {visitClosureLabel(t, to)}
                 </Button>
               ))
             )}
             {closure.isPending ? (
               <p className="text-sm text-muted-foreground" role="status">
                 <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
-                Saving…
+                {t('common.saving')}
               </p>
             ) : null}
           </div>
@@ -271,7 +283,7 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[13rem_minmax(0,1fr)]">
-        <nav aria-label="Visit sections" className="self-start">
+        <nav aria-label={t('visits.workspace.sectionNav')} className="self-start">
           <ul className="flex gap-2 lg:flex-col">
             {VISIT_SECTIONS.map((entry) => (
               <li key={entry.id}>
@@ -287,7 +299,7 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
                       : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground',
                   )}
                 >
-                  {entry.label}
+                  {t(entry.labelKey)}
                 </button>
               </li>
             ))}
@@ -305,8 +317,8 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
             <VisitSummarySection
               visit={visit}
               clinicTimeZone={clinic?.timeZone}
-              clinicianName={resolveClinician(visit, dentistsQuery)}
-              chairLabel={resolveChair(visit, chairsQuery)}
+              clinicianName={resolveClinician(visit, dentistsQuery, t)}
+              chairLabel={resolveChair(visit, chairsQuery, t)}
             />
           ) : null}
           {section === 'notes' ? (
@@ -355,42 +367,44 @@ function VisitSummarySection({
   clinicianName,
   chairLabel,
 }: VisitSummarySectionProps) {
+  const { t } = useTranslation();
+
   return (
     <>
       <Card>
         <CardHeader>
-          <CardTitle>Visit</CardTitle>
+          <CardTitle>{t('visits.summary.title')}</CardTitle>
         </CardHeader>
         <CardContent>
           <dl className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-2 text-sm">
-            <dt className="text-muted-foreground">Started</dt>
+            <dt className="text-muted-foreground">{t('visits.summary.started')}</dt>
             <dd>
               {visit.startedAt && clinicTimeZone ? (
                 formatClinicDayTime(visit.startedAt, clinicTimeZone)
               ) : (
                 <span className="text-muted-foreground">
-                  {visit.startedAt ? READING_THE_CLINIC_CLOCK : '—'}
+                  {visit.startedAt ? t('common.readingClinicClock') : '—'}
                 </span>
               )}
             </dd>
 
-            <dt className="text-muted-foreground">Ended</dt>
+            <dt className="text-muted-foreground">{t('visits.summary.ended')}</dt>
             <dd>
               {visit.endedAt && clinicTimeZone ? (
                 formatClinicDayTime(visit.endedAt, clinicTimeZone)
               ) : visit.endedAt ? (
-                <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+                <span className="text-muted-foreground">{t('common.readingClinicClock')}</span>
               ) : visit.status === 'OPEN' ? (
-                <span className="text-muted-foreground">Not finished yet</span>
+                <span className="text-muted-foreground">{t('visits.summary.notFinished')}</span>
               ) : (
                 <span className="text-muted-foreground">—</span>
               )}
             </dd>
 
-            <dt className="text-muted-foreground">Clinician</dt>
+            <dt className="text-muted-foreground">{t('visits.summary.clinician')}</dt>
             <dd>{clinicianName}</dd>
 
-            <dt className="text-muted-foreground">Chair</dt>
+            <dt className="text-muted-foreground">{t('visits.summary.chair')}</dt>
             <dd>{chairLabel}</dd>
           </dl>
         </CardContent>
@@ -403,14 +417,14 @@ function VisitSummarySection({
       */}
       <Card>
         <CardHeader>
-          <CardTitle>Clinical summary</CardTitle>
-          <CardDescription>What was recorded for this visit</CardDescription>
+          <CardTitle>{t('visits.summary.clinicalTitle')}</CardTitle>
+          <CardDescription>{t('visits.summary.clinicalDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="text-sm">
           {visit.summary ? (
             <p>{visit.summary}</p>
           ) : (
-            <p className="text-muted-foreground">No clinical summary recorded.</p>
+            <p className="text-muted-foreground">{t('visits.summary.noClinicalSummary')}</p>
           )}
         </CardContent>
       </Card>
@@ -441,28 +455,32 @@ interface VisitNotesSectionProps {
 }
 
 function VisitNotesSection({ visitId, clinicTimeZone }: VisitNotesSectionProps) {
+  const { t } = useTranslation();
   const notesQuery = useVisitNotes(visitId);
   const createNote = useCreateClinicalNote();
   const [draft, setDraft] = useState('');
 
-  const failure = describeNoteFailure(createNote.error, 'The note could not be saved.');
+  const failure = describeNoteFailure(createNote.error, t('visits.notes.error'), {
+    notFound: t('visits.failure.notFound'),
+    network: t('visits.failure.noteNetwork'),
+  });
   const ready = draft.trim().length > 0;
 
   return (
     <Card data-testid="visit-notes">
       <CardHeader>
-        <CardTitle>Clinical notes</CardTitle>
-        <CardDescription>What was written during this visit</CardDescription>
+        <CardTitle>{t('visits.notes.title')}</CardTitle>
+        <CardDescription>{t('visits.notes.description')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {notesQuery.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading the notes…</p>
+          <p className="text-sm text-muted-foreground">{t('visits.notes.loading')}</p>
         ) : notesQuery.error ? (
           <p className="text-sm text-destructive" role="alert">
-            The notes could not be loaded.
+            {t('visits.notes.loadError')}
           </p>
         ) : notesQuery.data.notes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No notes yet.</p>
+          <p className="text-sm text-muted-foreground">{t('visits.notes.empty')}</p>
         ) : (
           <ul className="space-y-3">
             {notesQuery.data.notes.map((note) => (
@@ -475,7 +493,7 @@ function VisitNotesSection({ visitId, clinicTimeZone }: VisitNotesSectionProps) 
                   {clinicTimeZone ? (
                     formatClinicDayTime(note.createdAt, clinicTimeZone)
                   ) : (
-                    <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+                    <span className="text-muted-foreground">{t('common.readingClinicClock')}</span>
                   )}
                 </p>
                 {/* Whitespace is preserved because the textarea offers it: a note that
@@ -502,7 +520,7 @@ function VisitNotesSection({ visitId, clinicTimeZone }: VisitNotesSectionProps) 
             );
           }}
         >
-          <Label htmlFor="visit-note-body">New note</Label>
+          <Label htmlFor="visit-note-body">{t('visits.notes.newNote')}</Label>
           <textarea
             id="visit-note-body"
             data-testid="note-body"
@@ -511,16 +529,16 @@ function VisitNotesSection({ visitId, clinicTimeZone }: VisitNotesSectionProps) 
             rows={4}
             disabled={createNote.isPending}
             className="w-full rounded-md border bg-background p-2 text-sm"
-            placeholder="What was seen, said or done"
+            placeholder={t('visits.notes.placeholder')}
           />
           <div className="flex flex-wrap items-center gap-2">
             <Button type="submit" data-testid="add-note" disabled={createNote.isPending || !ready}>
-              Add note
+              {t('visits.notes.add')}
             </Button>
             {createNote.isPending ? (
               <p className="text-sm text-muted-foreground" role="status">
                 <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
-                Saving…
+                {t('common.saving')}
               </p>
             ) : null}
           </div>
@@ -569,16 +587,17 @@ interface VisitAttachmentsSectionProps {
 }
 
 function VisitAttachmentsSection({ visitId, clinicTimeZone }: VisitAttachmentsSectionProps) {
+  const { t } = useTranslation();
   const attachmentsQuery = useVisitAttachments(visitId);
   const createAttachment = useCreateVisitAttachment();
   const [fileName, setFileName] = useState('');
   const [contentType, setContentType] = useState('');
   const [size, setSize] = useState('');
 
-  const failure = describeAttachmentFailure(
-    createAttachment.error,
-    'The file could not be attached.',
-  );
+  const failure = describeAttachmentFailure(createAttachment.error, t('visits.files.error'), {
+    notFound: t('visits.failure.notFound'),
+    network: t('visits.failure.fileNetwork'),
+  });
   const ready = fileName.trim().length > 0;
   const parsedSize = size.trim() === '' ? undefined : Number(size);
   const sizeValid = size.trim() === '' || (Number.isInteger(parsedSize) && (parsedSize ?? 0) >= 0);
@@ -588,18 +607,18 @@ function VisitAttachmentsSection({ visitId, clinicTimeZone }: VisitAttachmentsSe
   return (
     <Card data-testid="visit-attachments">
       <CardHeader>
-        <CardTitle>Files</CardTitle>
-        <CardDescription>What has been attached to this visit</CardDescription>
+        <CardTitle>{t('visits.files.title')}</CardTitle>
+        <CardDescription>{t('visits.files.description')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {attachmentsQuery.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading the files…</p>
+          <p className="text-sm text-muted-foreground">{t('visits.files.loading')}</p>
         ) : attachmentsQuery.error ? (
           <p className="text-sm text-destructive" role="alert">
-            The files could not be loaded.
+            {t('visits.files.loadError')}
           </p>
         ) : attachments.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No files attached yet.</p>
+          <p className="text-sm text-muted-foreground">{t('visits.files.empty')}</p>
         ) : (
           <ul className="space-y-3">
             {attachments.map((attachment) => (
@@ -612,7 +631,7 @@ function VisitAttachmentsSection({ visitId, clinicTimeZone }: VisitAttachmentsSe
                   {clinicTimeZone ? (
                     formatClinicDayTime(attachment.createdAt, clinicTimeZone)
                   ) : (
-                    <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+                    <span className="text-muted-foreground">{t('common.readingClinicClock')}</span>
                   )}
                 </p>
                 <p className="font-medium">{attachment.fileName}</p>
@@ -620,7 +639,9 @@ function VisitAttachmentsSection({ visitId, clinicTimeZone }: VisitAttachmentsSe
                   <p className="text-muted-foreground">
                     {attachment.contentType ? attachment.contentType : ''}
                     {attachment.contentType && attachment.sizeBytes !== null ? ' · ' : ''}
-                    {attachment.sizeBytes !== null ? `${attachment.sizeBytes} bytes` : ''}
+                    {attachment.sizeBytes !== null
+                      ? t('visits.files.bytes', { count: attachment.sizeBytes })
+                      : ''}
                   </p>
                 ) : null}
               </li>
@@ -654,7 +675,7 @@ function VisitAttachmentsSection({ visitId, clinicTimeZone }: VisitAttachmentsSe
         >
           <div className="grid gap-2 sm:grid-cols-3">
             <div className="space-y-1 sm:col-span-1">
-              <Label htmlFor="attachment-name">File name</Label>
+              <Label htmlFor="attachment-name">{t('visits.files.fileName')}</Label>
               <input
                 id="attachment-name"
                 data-testid="attachment-name"
@@ -662,13 +683,13 @@ function VisitAttachmentsSection({ visitId, clinicTimeZone }: VisitAttachmentsSe
                 onChange={(event) => setFileName(event.target.value)}
                 disabled={createAttachment.isPending}
                 className="w-full rounded-md border bg-background p-2 text-sm"
-                placeholder="e.g. periapical-26.png"
+                placeholder={t('visits.files.fileNamePlaceholder')}
                 maxLength={255}
               />
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="attachment-content-type">Type (optional)</Label>
+              <Label htmlFor="attachment-content-type">{t('visits.files.type')}</Label>
               <input
                 id="attachment-content-type"
                 data-testid="attachment-content-type"
@@ -676,13 +697,13 @@ function VisitAttachmentsSection({ visitId, clinicTimeZone }: VisitAttachmentsSe
                 onChange={(event) => setContentType(event.target.value)}
                 disabled={createAttachment.isPending}
                 className="w-full rounded-md border bg-background p-2 text-sm"
-                placeholder="e.g. image/png"
+                placeholder={t('visits.files.typePlaceholder')}
                 maxLength={100}
               />
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="attachment-size">Size in bytes (optional)</Label>
+              <Label htmlFor="attachment-size">{t('visits.files.size')}</Label>
               <input
                 id="attachment-size"
                 data-testid="attachment-size"
@@ -694,7 +715,7 @@ function VisitAttachmentsSection({ visitId, clinicTimeZone }: VisitAttachmentsSe
                 inputMode="numeric"
                 disabled={createAttachment.isPending}
                 className="w-full rounded-md border bg-background p-2 text-sm"
-                placeholder="e.g. 512400"
+                placeholder={t('visits.files.sizePlaceholder')}
               />
             </div>
           </div>
@@ -705,12 +726,12 @@ function VisitAttachmentsSection({ visitId, clinicTimeZone }: VisitAttachmentsSe
               data-testid="attach-file"
               disabled={createAttachment.isPending || !ready || !sizeValid}
             >
-              Attach file
+              {t('visits.files.attach')}
             </Button>
             {createAttachment.isPending ? (
               <p className="text-sm text-muted-foreground" role="status">
                 <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
-                Saving…
+                {t('common.saving')}
               </p>
             ) : null}
           </div>
@@ -764,9 +785,13 @@ function VisitAttachmentsSection({ visitId, clinicTimeZone }: VisitAttachmentsSe
 const NOT_LINKED = 'not-linked';
 
 /** A planned line, named by its plan and the tooth it is on, for the picker. */
-function describePlannedItem(plan: TreatmentPlanSummary, item: TreatmentPlanItemSummary): string {
-  const title = plan.title?.trim() || 'Plan';
-  const tooth = item.tooth ? ` — tooth ${item.tooth}` : '';
+function describePlannedItem(
+  t: Translate,
+  plan: TreatmentPlanSummary,
+  item: TreatmentPlanItemSummary,
+): string {
+  const title = plan.title?.trim() || t('visits.treatments.planFallback');
+  const tooth = item.tooth ? t('visits.treatments.toothSuffix', { tooth: item.tooth }) : '';
 
   return `${title}${tooth}`;
 }
@@ -776,10 +801,14 @@ function describePlannedItem(plan: TreatmentPlanSummary, item: TreatmentPlanItem
  * plan and on its tooth. A charge has no treatment select of its own, so the line's
  * own treatment name is what tells one open item from another.
  */
-function describeBilledItem(plan: TreatmentPlanSummary, item: TreatmentPlanItemSummary): string {
-  const title = plan.title?.trim() || 'Plan';
-  const treatment = item.treatmentName?.trim() || 'Planned line';
-  const tooth = item.tooth ? ` — tooth ${item.tooth}` : '';
+function describeBilledItem(
+  t: Translate,
+  plan: TreatmentPlanSummary,
+  item: TreatmentPlanItemSummary,
+): string {
+  const title = plan.title?.trim() || t('visits.treatments.planFallback');
+  const treatment = item.treatmentName?.trim() || t('visits.treatments.plannedLineFallback');
+  const tooth = item.tooth ? t('visits.treatments.toothSuffix', { tooth: item.tooth }) : '';
 
   return `${title}: ${treatment}${tooth}`;
 }
@@ -797,6 +826,7 @@ function VisitTreatmentsSection({
   patientId,
   clinicTimeZone,
 }: VisitTreatmentsSectionProps) {
+  const { t } = useTranslation();
   const catalogueQuery = useTreatments();
   const recordsQuery = useVisitTreatments(visitId);
   const plansQuery = usePatientTreatmentPlans(patientId);
@@ -806,7 +836,10 @@ function VisitTreatmentsSection({
   const [tooth, setTooth] = useState('');
   const [draft, setDraft] = useState('');
 
-  const failure = describeTreatmentFailure(record.error, 'The treatment could not be recorded.');
+  const failure = describeTreatmentFailure(record.error, t('visits.treatments.error'), {
+    notFound: t('visits.failure.notFound'),
+    network: t('visits.failure.treatmentNetwork'),
+  });
   const ready = treatmentId.length > 0;
   const catalogue = catalogueQuery.data?.items ?? [];
 
@@ -823,18 +856,18 @@ function VisitTreatmentsSection({
   return (
     <Card data-testid="visit-treatments">
       <CardHeader>
-        <CardTitle>Treatments</CardTitle>
-        <CardDescription>What was performed during this visit</CardDescription>
+        <CardTitle>{t('visits.treatments.title')}</CardTitle>
+        <CardDescription>{t('visits.treatments.description')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {recordsQuery.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading the treatments…</p>
+          <p className="text-sm text-muted-foreground">{t('visits.treatments.loading')}</p>
         ) : recordsQuery.error ? (
           <p className="text-sm text-destructive" role="alert">
-            The treatments could not be loaded.
+            {t('visits.treatments.loadError')}
           </p>
         ) : (recordsQuery.data?.treatments.length ?? 0) === 0 ? (
-          <p className="text-sm text-muted-foreground">No treatments recorded yet.</p>
+          <p className="text-sm text-muted-foreground">{t('visits.treatments.empty')}</p>
         ) : (
           <ul className="space-y-3">
             {recordsQuery.data?.treatments.map((performed) => (
@@ -847,11 +880,13 @@ function VisitTreatmentsSection({
                   {clinicTimeZone ? (
                     formatClinicDayTime(performed.performedAt, clinicTimeZone)
                   ) : (
-                    <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+                    <span className="text-muted-foreground">{t('common.readingClinicClock')}</span>
                   )}
                 </p>
-                <p className="font-medium">{resolveTreatmentName(performed, catalogueQuery)}</p>
-                {performed.tooth ? <p>Tooth {performed.tooth}</p> : null}
+                <p className="font-medium">{resolveTreatmentName(performed, catalogueQuery, t)}</p>
+                {performed.tooth ? (
+                  <p>{t('visits.treatments.tooth', { tooth: performed.tooth })}</p>
+                ) : null}
                 {/* Whitespace is preserved because the textarea offers it, the same
                     rule as a note. */}
                 {performed.notes ? (
@@ -885,7 +920,7 @@ function VisitTreatmentsSection({
           }}
         >
           <div className="space-y-1">
-            <Label htmlFor="treatment-catalogue">Treatment</Label>
+            <Label htmlFor="treatment-catalogue">{t('visits.treatments.treatmentLabel')}</Label>
             <Select
               value={treatmentId}
               // Changing the treatment changes which planned items can apply, so a
@@ -898,7 +933,7 @@ function VisitTreatmentsSection({
               disabled={record.isPending}
             >
               <SelectTrigger id="treatment-catalogue" data-testid="treatment-catalogue">
-                <SelectValue placeholder="Choose a treatment" />
+                <SelectValue placeholder={t('visits.treatments.chooseTreatment')} />
               </SelectTrigger>
               <SelectContent>
                 {catalogue.map((treatment) => (
@@ -910,16 +945,14 @@ function VisitTreatmentsSection({
             </Select>
             {catalogueQuery.isPending ? (
               <p className="text-xs text-muted-foreground" role="status">
-                Loading the catalogue…
+                {t('visits.treatments.loadingCatalogue')}
               </p>
             ) : null}
             {!catalogueQuery.isPending && catalogue.length === 0 ? (
               // Said out loud rather than showing an empty dropdown: a clinic with
               // no catalogue cannot record anything, and a silent select looks like
               // a form that has not loaded.
-              <p className="text-xs text-muted-foreground">
-                This clinic has no treatments in its catalogue yet, so nothing can be recorded.
-              </p>
+              <p className="text-xs text-muted-foreground">{t('visits.treatments.noCatalogue')}</p>
             ) : null}
           </div>
 
@@ -928,32 +961,30 @@ function VisitTreatmentsSection({
               simply has no item to name. */}
           {plannedItems.length > 0 ? (
             <div className="space-y-1">
-              <Label htmlFor="treatment-plan-item">Planned item (optional)</Label>
+              <Label htmlFor="treatment-plan-item">{t('visits.treatments.planItem')}</Label>
               <Select
                 value={planItemId || NOT_LINKED}
                 onValueChange={(value) => setPlanItemId(value === NOT_LINKED ? '' : value)}
                 disabled={record.isPending}
               >
                 <SelectTrigger id="treatment-plan-item" data-testid="treatment-plan-item">
-                  <SelectValue placeholder="Not linked to a plan item" />
+                  <SelectValue placeholder={t('visits.treatments.notLinked')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NOT_LINKED}>Not linked to a plan item</SelectItem>
+                  <SelectItem value={NOT_LINKED}>{t('visits.treatments.notLinked')}</SelectItem>
                   {plannedItems.map(({ plan, item }) => (
                     <SelectItem key={item.id} value={item.id}>
-                      {describePlannedItem(plan, item)}
+                      {describePlannedItem(t, plan, item)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                Records which planned line this fulfils; it does not mark the line done.
-              </p>
+              <p className="text-xs text-muted-foreground">{t('visits.treatments.fulfilHint')}</p>
             </div>
           ) : null}
 
           <div className="space-y-1">
-            <Label htmlFor="treatment-tooth">Tooth (optional)</Label>
+            <Label htmlFor="treatment-tooth">{t('visits.treatments.toothLabel')}</Label>
             <input
               id="treatment-tooth"
               data-testid="treatment-tooth"
@@ -962,13 +993,13 @@ function VisitTreatmentsSection({
               maxLength={2}
               disabled={record.isPending}
               className="w-full rounded-md border bg-background p-2 text-sm"
-              placeholder="FDI number, e.g. 16"
+              placeholder={t('visits.treatments.toothPlaceholder')}
               inputMode="numeric"
             />
           </div>
 
           <div className="space-y-1">
-            <Label htmlFor="treatment-notes">Notes (optional)</Label>
+            <Label htmlFor="treatment-notes">{t('visits.treatments.notesLabel')}</Label>
             <textarea
               id="treatment-notes"
               data-testid="treatment-notes"
@@ -977,7 +1008,7 @@ function VisitTreatmentsSection({
               rows={2}
               disabled={record.isPending}
               className="w-full rounded-md border bg-background p-2 text-sm"
-              placeholder="What was done"
+              placeholder={t('visits.treatments.notesPlaceholder')}
             />
           </div>
 
@@ -987,12 +1018,12 @@ function VisitTreatmentsSection({
               data-testid="record-treatment"
               disabled={record.isPending || !ready}
             >
-              Record treatment
+              {t('visits.treatments.record')}
             </Button>
             {record.isPending ? (
               <p className="text-sm text-muted-foreground" role="status">
                 <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
-                Saving…
+                {t('common.saving')}
               </p>
             ) : null}
           </div>
@@ -1037,6 +1068,7 @@ interface VisitPrescriptionsSectionProps {
 }
 
 function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptionsSectionProps) {
+  const { t } = useTranslation();
   const prescriptionsQuery = useVisitPrescriptions(visitId);
   const createPrescription = useCreatePrescription();
   const [medication, setMedication] = useState('');
@@ -1048,7 +1080,11 @@ function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptio
 
   const failure = describePrescriptionFailure(
     createPrescription.error,
-    'The prescription could not be written.',
+    t('visits.prescriptions.error'),
+    {
+      notFound: t('visits.failure.notFound'),
+      network: t('visits.failure.prescriptionNetwork'),
+    },
   );
 
   const wholeDays = Number(durationDays);
@@ -1063,18 +1099,18 @@ function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptio
   return (
     <Card data-testid="visit-prescriptions">
       <CardHeader>
-        <CardTitle>Prescriptions</CardTitle>
-        <CardDescription>What the patient was sent home with</CardDescription>
+        <CardTitle>{t('visits.prescriptions.title')}</CardTitle>
+        <CardDescription>{t('visits.prescriptions.description')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {prescriptionsQuery.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading the prescriptions…</p>
+          <p className="text-sm text-muted-foreground">{t('visits.prescriptions.loading')}</p>
         ) : prescriptionsQuery.error ? (
           <p className="text-sm text-destructive" role="alert">
-            The prescriptions could not be loaded.
+            {t('visits.prescriptions.loadError')}
           </p>
         ) : prescriptionsQuery.data.prescriptions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No prescriptions written yet.</p>
+          <p className="text-sm text-muted-foreground">{t('visits.prescriptions.empty')}</p>
         ) : (
           <ul className="space-y-3">
             {prescriptionsQuery.data.prescriptions.map((prescription) => (
@@ -1087,17 +1123,21 @@ function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptio
                   {clinicTimeZone ? (
                     formatClinicDayTime(prescription.issuedAt, clinicTimeZone)
                   ) : (
-                    <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+                    <span className="text-muted-foreground">{t('common.readingClinicClock')}</span>
                   )}
                 </p>
                 <p className="font-medium">
                   {prescription.medication} · {prescription.dosage}
                 </p>
                 <p className="text-muted-foreground">
-                  {medicationRouteLabel(prescription.route)} · {prescription.frequency}
-                  {prescription.durationDays === 1
-                    ? ' · 1 day'
-                    : ` · ${prescription.durationDays} days`}
+                  {medicationRouteLabel(t, prescription.route)} · {prescription.frequency}
+                  {' · '}
+                  {t(
+                    prescription.durationDays === 1
+                      ? 'visits.prescriptions.duration.one'
+                      : 'visits.prescriptions.duration.other',
+                    { count: prescription.durationDays },
+                  )}
                 </p>
                 {prescription.instructions ? (
                   <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
@@ -1141,7 +1181,9 @@ function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptio
         >
           <div className="grid gap-2 sm:grid-cols-2">
             <div className="space-y-1">
-              <Label htmlFor="prescription-medication">Medication</Label>
+              <Label htmlFor="prescription-medication">
+                {t('visits.prescriptions.medication')}
+              </Label>
               <input
                 id="prescription-medication"
                 data-testid="prescription-medication"
@@ -1149,13 +1191,13 @@ function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptio
                 onChange={(event) => setMedication(event.target.value)}
                 disabled={createPrescription.isPending}
                 className="w-full rounded-md border bg-background p-2 text-sm"
-                placeholder="e.g. Ibuprofen"
+                placeholder={t('visits.prescriptions.medicationPlaceholder')}
                 maxLength={200}
               />
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="prescription-dosage">Dosage</Label>
+              <Label htmlFor="prescription-dosage">{t('visits.prescriptions.dosage')}</Label>
               <input
                 id="prescription-dosage"
                 data-testid="prescription-dosage"
@@ -1163,7 +1205,7 @@ function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptio
                 onChange={(event) => setDosage(event.target.value)}
                 disabled={createPrescription.isPending}
                 className="w-full rounded-md border bg-background p-2 text-sm"
-                placeholder="e.g. 400 mg"
+                placeholder={t('visits.prescriptions.dosagePlaceholder')}
                 maxLength={200}
               />
             </div>
@@ -1171,17 +1213,17 @@ function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptio
 
           <div className="grid gap-2 sm:grid-cols-2">
             <div className="space-y-1">
-              <Label htmlFor="prescription-route">Route</Label>
+              <Label htmlFor="prescription-route">{t('visits.prescriptions.route')}</Label>
               <Select
                 value={route}
                 onValueChange={(value) => setRoute(value as MedicationRoute)}
                 disabled={createPrescription.isPending}
               >
                 <SelectTrigger id="prescription-route" data-testid="prescription-route">
-                  <SelectValue placeholder="Choose a route" />
+                  <SelectValue placeholder={t('visits.prescriptions.chooseRoute')} />
                 </SelectTrigger>
                 <SelectContent>
-                  {MEDICATION_ROUTE_OPTIONS.map((option) => (
+                  {medicationRouteOptions(t).map((option) => (
                     <SelectItem key={option.route} value={option.route}>
                       {option.label}
                     </SelectItem>
@@ -1191,7 +1233,7 @@ function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptio
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="prescription-frequency">Frequency</Label>
+              <Label htmlFor="prescription-frequency">{t('visits.prescriptions.frequency')}</Label>
               <input
                 id="prescription-frequency"
                 data-testid="prescription-frequency"
@@ -1199,7 +1241,7 @@ function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptio
                 onChange={(event) => setFrequency(event.target.value)}
                 disabled={createPrescription.isPending}
                 className="w-full rounded-md border bg-background p-2 text-sm"
-                placeholder="e.g. Every 8 hours"
+                placeholder={t('visits.prescriptions.frequencyPlaceholder')}
                 maxLength={200}
               />
             </div>
@@ -1207,7 +1249,9 @@ function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptio
 
           <div className="grid gap-2 sm:grid-cols-2">
             <div className="space-y-1">
-              <Label htmlFor="prescription-duration">Length of course</Label>
+              <Label htmlFor="prescription-duration">
+                {t('visits.prescriptions.durationLabel')}
+              </Label>
               <input
                 id="prescription-duration"
                 data-testid="prescription-duration"
@@ -1219,13 +1263,15 @@ function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptio
                 inputMode="numeric"
                 disabled={createPrescription.isPending}
                 className="w-full rounded-md border bg-background p-2 text-sm"
-                placeholder="Days"
+                placeholder={t('visits.prescriptions.durationPlaceholder')}
               />
             </div>
           </div>
 
           <div className="space-y-1">
-            <Label htmlFor="prescription-instructions">Instructions (optional)</Label>
+            <Label htmlFor="prescription-instructions">
+              {t('visits.prescriptions.instructions')}
+            </Label>
             <textarea
               id="prescription-instructions"
               data-testid="prescription-instructions"
@@ -1234,7 +1280,7 @@ function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptio
               rows={2}
               disabled={createPrescription.isPending}
               className="w-full rounded-md border bg-background p-2 text-sm"
-              placeholder="e.g. Take after meals"
+              placeholder={t('visits.prescriptions.instructionsPlaceholder')}
               maxLength={2000}
             />
           </div>
@@ -1245,12 +1291,12 @@ function VisitPrescriptionsSection({ visitId, clinicTimeZone }: VisitPrescriptio
               data-testid="write-prescription"
               disabled={createPrescription.isPending || !ready}
             >
-              Write prescription
+              {t('visits.prescriptions.write')}
             </Button>
             {createPrescription.isPending ? (
               <p className="text-sm text-muted-foreground" role="status">
                 <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
-                Saving…
+                {t('common.saving')}
               </p>
             ) : null}
           </div>
@@ -1307,6 +1353,7 @@ interface VisitChargesSectionProps {
 }
 
 function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitChargesSectionProps) {
+  const { t } = useTranslation();
   const chargesQuery = useVisitCharges(visitId);
   const plansQuery = usePatientTreatmentPlans(patientId);
   const createCharge = useCreateCharge();
@@ -1317,7 +1364,10 @@ function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitCharge
   const [discountMajor, setDiscountMajor] = useState('');
   const [planItemId, setPlanItemId] = useState('');
 
-  const failure = describeChargeFailure(createCharge.error, 'The charge could not be raised.');
+  const failure = describeChargeFailure(createCharge.error, t('visits.charges.error'), {
+    notFound: t('visits.failure.notFound'),
+    network: t('visits.failure.chargeNetwork'),
+  });
 
   const parsedPrice = parseMajorUnitsToMinor(priceMajor);
   const parsedDiscount = parseMajorUnitsToMinor(discountMajor);
@@ -1333,7 +1383,7 @@ function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitCharge
   const invoiceFailure = createInvoice.error
     ? createInvoice.error instanceof Error
       ? createInvoice.error.message
-      : 'The invoice could not be issued.'
+      : t('visits.charges.invoiceError')
     : null;
 
   // The still-open lines on this patient's plans: billing is provenance, so a line
@@ -1346,20 +1396,18 @@ function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitCharge
   return (
     <Card data-testid="visit-charges">
       <CardHeader>
-        <CardTitle>Charges</CardTitle>
-        <CardDescription>
-          What this visit has been priced at, and what is still to pay
-        </CardDescription>
+        <CardTitle>{t('visits.charges.title')}</CardTitle>
+        <CardDescription>{t('visits.charges.description')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {chargesQuery.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading the charges…</p>
+          <p className="text-sm text-muted-foreground">{t('visits.charges.loading')}</p>
         ) : chargesQuery.error ? (
           <p className="text-sm text-destructive" role="alert">
-            The charges could not be loaded.
+            {t('visits.charges.loadError')}
           </p>
         ) : list.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No charges raised yet.</p>
+          <p className="text-sm text-muted-foreground">{t('visits.charges.empty')}</p>
         ) : (
           <ul className="space-y-3">
             {list.map((charge) => (
@@ -1373,7 +1421,7 @@ function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitCharge
             className="flex items-center justify-between border-t pt-3 text-sm"
             data-testid="charges-total"
           >
-            <span className="font-medium">Total so far</span>
+            <span className="font-medium">{t('visits.charges.total')}</span>
             {/* The domain's own sum, in the charges' own currency. */}
             <span className="font-medium">{formatMinorUnits(totalMinor ?? 0)}</span>
           </div>
@@ -1410,7 +1458,7 @@ function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitCharge
           }}
         >
           <div className="space-y-1">
-            <Label htmlFor="charge-description">Description</Label>
+            <Label htmlFor="charge-description">{t('visits.charges.descriptionLabel')}</Label>
             <input
               id="charge-description"
               data-testid="charge-description"
@@ -1418,7 +1466,7 @@ function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitCharge
               onChange={(event) => setDescription(event.target.value)}
               disabled={createCharge.isPending}
               className="w-full rounded-md border bg-background p-2 text-sm"
-              placeholder="e.g. Composite restoration, tooth 16"
+              placeholder={t('visits.charges.descriptionPlaceholder')}
               maxLength={200}
             />
           </div>
@@ -1428,33 +1476,31 @@ function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitCharge
               item to name. */}
           {plannedItems.length > 0 ? (
             <div className="space-y-1">
-              <Label htmlFor="charge-plan-item">Planned item (optional)</Label>
+              <Label htmlFor="charge-plan-item">{t('visits.charges.planItem')}</Label>
               <Select
                 value={planItemId || NOT_LINKED}
                 onValueChange={(value) => setPlanItemId(value === NOT_LINKED ? '' : value)}
                 disabled={createCharge.isPending}
               >
                 <SelectTrigger id="charge-plan-item" data-testid="charge-plan-item">
-                  <SelectValue placeholder="Not linked to a plan item" />
+                  <SelectValue placeholder={t('visits.charges.notLinked')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NOT_LINKED}>Not linked to a plan item</SelectItem>
+                  <SelectItem value={NOT_LINKED}>{t('visits.charges.notLinked')}</SelectItem>
                   {plannedItems.map(({ plan, item }) => (
                     <SelectItem key={item.id} value={item.id}>
-                      {describeBilledItem(plan, item)}
+                      {describeBilledItem(t, plan, item)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                Records which planned line this charge bills; it does not mark the line done.
-              </p>
+              <p className="text-xs text-muted-foreground">{t('visits.charges.planHint')}</p>
             </div>
           ) : null}
 
           <div className="grid gap-2 sm:grid-cols-3">
             <div className="space-y-1">
-              <Label htmlFor="charge-unit-price">Unit price</Label>
+              <Label htmlFor="charge-unit-price">{t('visits.charges.unitPrice')}</Label>
               <input
                 id="charge-unit-price"
                 data-testid="charge-unit-price"
@@ -1468,7 +1514,7 @@ function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitCharge
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="charge-quantity">Quantity (optional)</Label>
+              <Label htmlFor="charge-quantity">{t('visits.charges.quantity')}</Label>
               <input
                 id="charge-quantity"
                 data-testid="charge-quantity"
@@ -1485,7 +1531,7 @@ function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitCharge
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="charge-discount">Discount (optional)</Label>
+              <Label htmlFor="charge-discount">{t('visits.charges.discount')}</Label>
               <input
                 id="charge-discount"
                 data-testid="charge-discount"
@@ -1505,12 +1551,12 @@ function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitCharge
               data-testid="raise-charge"
               disabled={createCharge.isPending || !ready}
             >
-              Raise charge
+              {t('visits.charges.raise')}
             </Button>
             {createCharge.isPending ? (
               <p className="text-sm text-muted-foreground" role="status">
                 <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
-                Saving…
+                {t('common.saving')}
               </p>
             ) : null}
           </div>
@@ -1526,18 +1572,16 @@ function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitCharge
               onClick={() => createInvoice.mutate(visitId)}
             >
               <FileText aria-hidden className="mr-1 size-4" />
-              Issue invoice
+              {t('visits.charges.issueInvoice')}
             </Button>
             {createInvoice.isPending ? (
               <p className="text-sm text-muted-foreground" role="status">
                 <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
-                Issuing…
+                {t('visits.charges.issuing')}
               </p>
             ) : null}
             {!hasUninvoiced ? (
-              <p className="text-sm text-muted-foreground">
-                All charges on this visit are invoiced.
-              </p>
+              <p className="text-sm text-muted-foreground">{t('visits.charges.allInvoiced')}</p>
             ) : null}
           </div>
         ) : null}
@@ -1573,6 +1617,7 @@ function ChargeRow({
   readonly charge: Charge;
   readonly clinicTimeZone: string | undefined;
 }) {
+  const { t } = useTranslation();
   const total = chargeLineTotal(charge).amountMinor;
 
   return (
@@ -1583,7 +1628,7 @@ function ChargeRow({
             {clinicTimeZone ? (
               formatClinicDayTime(charge.createdAt, clinicTimeZone)
             ) : (
-              <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+              <span className="text-muted-foreground">{t('common.readingClinicClock')}</span>
             )}
           </p>
           <p className="font-medium">{charge.description}</p>
@@ -1596,7 +1641,9 @@ function ChargeRow({
                 <span className="line-through">
                   {formatMinorUnits(charge.unitPriceMinor * charge.quantity)}
                 </span>{' '}
-                less {formatMinorUnits(charge.discountMinor)}
+                {t('visits.charges.less', {
+                  amount: formatMinorUnits(charge.discountMinor),
+                })}
               </>
             ) : null}
           </p>
@@ -1654,6 +1701,7 @@ interface VisitPaymentsSectionProps {
 }
 
 function VisitPaymentsSection({ visitId, clinicTimeZone }: VisitPaymentsSectionProps) {
+  const { t } = useTranslation();
   const paymentsQuery = useVisitPayments(visitId);
   const chargesQuery = useVisitCharges(visitId);
   const createPayment = useCreatePayment();
@@ -1661,16 +1709,19 @@ function VisitPaymentsSection({ visitId, clinicTimeZone }: VisitPaymentsSectionP
   const [amountMajor, setAmountMajor] = useState('');
   const [reference, setReference] = useState('');
 
-  const failure = describePaymentFailure(createPayment.error, 'The payment could not be recorded.');
+  const failure = describePaymentFailure(createPayment.error, t('visits.payments.error'), {
+    notFound: t('visits.failure.notFound'),
+    network: t('visits.failure.paymentNetwork'),
+  });
 
   if (paymentsQuery.isPending || chargesQuery.isPending) {
-    return <p className="text-sm text-muted-foreground">Loading the payments…</p>;
+    return <p className="text-sm text-muted-foreground">{t('visits.payments.loading')}</p>;
   }
 
   if (paymentsQuery.error || chargesQuery.error) {
     return (
       <p className="text-sm text-destructive" role="alert">
-        The payments could not be loaded.
+        {t('visits.payments.loadError')}
       </p>
     );
   }
@@ -1696,26 +1747,26 @@ function VisitPaymentsSection({ visitId, clinicTimeZone }: VisitPaymentsSectionP
   return (
     <Card data-testid="visit-payments">
       <CardHeader>
-        <CardTitle>Payments</CardTitle>
-        <CardDescription>Money received against this visit’s bill</CardDescription>
+        <CardTitle>{t('visits.payments.title')}</CardTitle>
+        <CardDescription>{t('visits.payments.description')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {charges.length > 0 || payments.length > 0 ? (
           <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3" data-testid="payments-summary">
             <div className="rounded-md border p-3">
-              <dt className="text-xs text-muted-foreground">Billed</dt>
+              <dt className="text-xs text-muted-foreground">{t('visits.payments.billed')}</dt>
               <dd className="mt-0.5 font-medium" data-testid="payments-billed">
                 {formatMinorUnits(billedMinor)}
               </dd>
             </div>
             <div className="rounded-md border p-3">
-              <dt className="text-xs text-muted-foreground">Paid</dt>
+              <dt className="text-xs text-muted-foreground">{t('visits.payments.paid')}</dt>
               <dd className="mt-0.5 font-medium" data-testid="payments-paid">
                 {formatMinorUnits(paidMinor)}
               </dd>
             </div>
             <div className="rounded-md border p-3">
-              <dt className="text-xs text-muted-foreground">Still to pay</dt>
+              <dt className="text-xs text-muted-foreground">{t('visits.payments.stillToPay')}</dt>
               <dd className="mt-0.5 font-medium" data-testid="payments-still-to-pay">
                 {formatMinorUnits(outstandingMinor)}
               </dd>
@@ -1724,7 +1775,7 @@ function VisitPaymentsSection({ visitId, clinicTimeZone }: VisitPaymentsSectionP
         ) : null}
 
         {payments.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
+          <p className="text-sm text-muted-foreground">{t('visits.payments.empty')}</p>
         ) : (
           <ul className="space-y-3">
             {payments.map((payment) => (
@@ -1736,8 +1787,8 @@ function VisitPaymentsSection({ visitId, clinicTimeZone }: VisitPaymentsSectionP
         {!canSettle ? (
           <p className="text-sm text-muted-foreground">
             {charges.length === 0
-              ? 'Nothing has been charged on this visit yet, so there is nothing to pay.'
-              : 'This visit’s bill is fully settled.'}
+              ? t('visits.payments.nothingToPay')
+              : t('visits.payments.settled')}
           </p>
         ) : (
           <form
@@ -1766,7 +1817,7 @@ function VisitPaymentsSection({ visitId, clinicTimeZone }: VisitPaymentsSectionP
           >
             <div className="grid gap-2 sm:grid-cols-2">
               <div className="space-y-1">
-                <Label htmlFor="payment-amount">Amount</Label>
+                <Label htmlFor="payment-amount">{t('visits.payments.amount')}</Label>
                 <input
                   id="payment-amount"
                   data-testid="payment-amount"
@@ -1780,17 +1831,17 @@ function VisitPaymentsSection({ visitId, clinicTimeZone }: VisitPaymentsSectionP
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="payment-method">Method</Label>
+                <Label htmlFor="payment-method">{t('visits.payments.method')}</Label>
                 <Select
                   value={method}
                   onValueChange={(value) => setMethod(value as PaymentMethod)}
                   disabled={createPayment.isPending}
                 >
                   <SelectTrigger id="payment-method" data-testid="payment-method">
-                    <SelectValue placeholder="Choose a method" />
+                    <SelectValue placeholder={t('visits.payments.chooseMethod')} />
                   </SelectTrigger>
                   <SelectContent>
-                    {PAYMENT_METHOD_OPTIONS.map((option) => (
+                    {paymentMethodOptions(t).map((option) => (
                       <SelectItem key={option.method} value={option.method}>
                         {option.label}
                       </SelectItem>
@@ -1801,7 +1852,7 @@ function VisitPaymentsSection({ visitId, clinicTimeZone }: VisitPaymentsSectionP
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="payment-reference">Reference (optional)</Label>
+              <Label htmlFor="payment-reference">{t('visits.payments.reference')}</Label>
               <input
                 id="payment-reference"
                 data-testid="payment-reference"
@@ -1809,7 +1860,7 @@ function VisitPaymentsSection({ visitId, clinicTimeZone }: VisitPaymentsSectionP
                 onChange={(event) => setReference(event.target.value)}
                 disabled={createPayment.isPending}
                 className="w-full rounded-md border bg-background p-2 text-sm"
-                placeholder="e.g. Last four card digits"
+                placeholder={t('visits.payments.referencePlaceholder')}
                 maxLength={200}
               />
             </div>
@@ -1820,12 +1871,12 @@ function VisitPaymentsSection({ visitId, clinicTimeZone }: VisitPaymentsSectionP
                 data-testid="record-payment"
                 disabled={createPayment.isPending || !ready}
               >
-                Record payment
+                {t('visits.payments.record')}
               </Button>
               {createPayment.isPending ? (
                 <p className="text-sm text-muted-foreground" role="status">
                   <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
-                  Saving…
+                  {t('common.saving')}
                 </p>
               ) : null}
             </div>
@@ -1853,6 +1904,8 @@ function PaymentRow({
   readonly payment: Payment;
   readonly clinicTimeZone: string | undefined;
 }) {
+  const { t } = useTranslation();
+
   return (
     <li className="rounded-md border p-3 text-sm" data-testid="payment">
       <div className="flex items-start justify-between gap-3">
@@ -1861,12 +1914,12 @@ function PaymentRow({
             {clinicTimeZone ? (
               formatClinicDayTime(payment.receivedAt, clinicTimeZone)
             ) : (
-              <span className="text-muted-foreground">{READING_THE_CLINIC_CLOCK}</span>
+              <span className="text-muted-foreground">{t('common.readingClinicClock')}</span>
             )}
           </p>
           {/* The label comes from `payment-presentation.ts`, the same place the
               picker reads it from: one spelling of each method on this screen. */}
-          <p className="font-medium">{paymentMethodLabel(payment.method)}</p>
+          <p className="font-medium">{paymentMethodLabel(t, payment.method)}</p>
           {payment.reference ? <p className="text-muted-foreground">{payment.reference}</p> : null}
         </div>
         <p className="font-medium">{formatMinorUnits(payment.amountMinor)}</p>
@@ -1882,6 +1935,7 @@ function PaymentRow({
 function resolveTreatmentName(
   performed: TreatmentRecord,
   query: ReturnType<typeof useTreatments>,
+  t: Translate,
 ): string {
   const match = query.data?.items.find((item) => item.id === performed.treatmentId);
   if (match) {
@@ -1889,7 +1943,7 @@ function resolveTreatmentName(
   }
   // Distinguish "still reading the catalogue" from "a treatment the offer no
   // longer holds": the record is what was done, and the offer may move on.
-  return query.isPending ? '…' : 'A treatment no longer in the catalogue';
+  return query.isPending ? '…' : t('visits.workspace.treatmentRetired');
 }
 
 /**
@@ -1899,20 +1953,24 @@ function resolveTreatmentName(
  * recorded, a name still being fetched, and a name the list does not hold. Collapsing
  * them into "—" would make the first and the third look like the second.
  */
-function resolveClinician(visit: Visit, query: ReturnType<typeof useDentists>): string {
+function resolveClinician(
+  visit: Visit,
+  query: ReturnType<typeof useDentists>,
+  t: Translate,
+): string {
   if (!visit.dentistId) {
-    return 'No clinician recorded';
+    return t('visits.workspace.noClinician');
   }
   const match = query.data?.items.find((dentist) => dentist.id === visit.dentistId);
   if (match) {
     return match.fullName;
   }
-  return query.isPending ? '—' : 'Clinician not found';
+  return query.isPending ? '—' : t('visits.workspace.clinicianNotFound');
 }
 
-function resolveChair(visit: Visit, query: ReturnType<typeof useChairs>): string {
+function resolveChair(visit: Visit, query: ReturnType<typeof useChairs>, t: Translate): string {
   if (!visit.chairId) {
-    return 'No chair assigned';
+    return t('visits.workspace.noChair');
   }
   const match = query.data?.items.find((chair) => chair.id === visit.chairId);
   if (match) {
@@ -1921,5 +1979,5 @@ function resolveChair(visit: Visit, query: ReturnType<typeof useChairs>): string
     // joins it rather than returning the id.
     return match.roomName ? `${match.name} · ${match.roomName}` : match.name;
   }
-  return query.isPending ? '—' : 'Chair not found';
+  return query.isPending ? '—' : t('visits.workspace.chairNotFound');
 }

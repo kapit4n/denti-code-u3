@@ -30,6 +30,7 @@ export const common = {
   'common.saving': 'Saving…',
   'common.cancel': 'Cancel',
   'common.notProvided': '—',
+  'common.readingClinicClock': 'Reading the clinic’s clock…',
 
   'common.status.SCHEDULED': 'SCHEDULED',
   'common.status.CONFIRMED': 'CONFIRMED',

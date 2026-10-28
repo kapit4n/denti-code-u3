@@ -55,6 +55,27 @@ describe('describeAppointmentFailure', () => {
     );
   });
 
+  it('translates the sentence it builds while keeping the clinic hour', () => {
+    const message = describeAppointmentFailure(conflictError([conflict()]), {
+      timeZone: LIMA,
+      fallback: 'No se pudo actualizar la cita.',
+      locale: 'es',
+      messages: {
+        conflict: 'Esa hora ya está reservada para este odontólogo o sillón.',
+        conflictOne:
+          'Esa hora se cruza con una cita ya reservada, {span}. Muévela o elige otro hueco.',
+        conflictMany:
+          'Esa hora se cruza con {count} citas ya reservadas: {spans}. Mueve una de ellas o elige otro hueco.',
+        notFound: 'Esa cita ya no existe.',
+        network: 'No se pudo conectar con el servidor.',
+      },
+    });
+
+    expect(message).toBe(
+      'Esa hora se cruza con una cita ya reservada, 09:00 – 10:00. Muévela o elige otro hueco.',
+    );
+  });
+
   it('does not quote the visitor timezone', () => {
     const message = describeAppointmentFailure(conflictError([conflict()]), {
       timeZone: 'America/New_York',

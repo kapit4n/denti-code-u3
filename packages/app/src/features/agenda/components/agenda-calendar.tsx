@@ -51,6 +51,7 @@ import luxonPlugin from '@fullcalendar/luxon3';
 // owns the gesture, and the type came with it. Importing it from core would be a guess
 // that happens to work until the plugin moves it.
 import interactionPlugin, { type DateClickArg } from '@fullcalendar/interaction';
+import esLocale from '@fullcalendar/core/locales/es';
 import type { DatesSetArg, EventClickArg } from '@fullcalendar/core';
 import type { AgendaEntry, Clinic } from '@denti-code-u3/domain';
 import { AlertCircle, CalendarDays } from 'lucide-react';
@@ -69,12 +70,15 @@ import { describeAppointmentFailure } from '../describe-appointment-failure.js';
 import { AppointmentQuickPanel } from './appointment-quick-panel.js';
 import { AppointmentBookingDialog } from './appointment-booking-dialog.js';
 import { AgendaFilterBar } from './agenda-filter-bar.js';
+import { useTranslation } from '../../../i18n/index.js';
 
 export interface AgendaCalendarProps {
   readonly clinic: Clinic;
 }
 
 export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
+  const { locale, t } = useTranslation();
+
   /**
    * The window on screen, reported by the calendar itself.
    *
@@ -123,7 +127,10 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
 
   const { data, isPending, error } = useAgendaRange(range, filters);
   const reschedule = useRescheduleAppointment();
-  const events = useMemo(() => toCalendarEvents(data?.items ?? []), [data]);
+  const events = useMemo(
+    () => toCalendarEvents(data?.items ?? [], t('agenda.unassigned')),
+    [data, t],
+  );
 
   const handleDatesSet = useCallback((arg: DatesSetArg) => {
     // `start`/`end` are the instants bounding the visible range, in the calendar's
@@ -157,13 +164,21 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
           setWriteFailure(
             describeAppointmentFailure(failure, {
               timeZone: clinic.timeZone,
-              fallback: 'The appointment could not be moved.',
+              fallback: t('agenda.calendar.moveError'),
+              locale,
+              messages: {
+                conflict: t('agenda.failure.conflict'),
+                conflictOne: t('agenda.failure.conflictOne'),
+                conflictMany: t('agenda.failure.conflictMany'),
+                notFound: t('agenda.failure.notFound'),
+                network: t('agenda.failure.network'),
+              },
             }),
           );
         },
       });
     },
-    [clinic.timeZone, reschedule],
+    [clinic.timeZone, locale, reschedule, t],
   );
 
   /**
@@ -195,7 +210,7 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
   }, []);
 
   return (
-    <section aria-label="Agenda" className="flex flex-col gap-3">
+    <section aria-label={t('agenda.title')} className="flex flex-col gap-3">
       <AgendaFilterBar filters={filters} onChange={setFilters} />
       <div
         className="relative min-h-[40rem]"
@@ -207,17 +222,23 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
         <FullCalendar
           plugins={[dayGridPlugin, timeGridPlugin, luxonPlugin, interactionPlugin]}
           initialView="timeGridDay"
+          locale={locale === 'es' ? esLocale : 'en'}
           views={{
-            timeGridDay: { type: 'timeGridDay', buttonText: 'Day' },
-            timeGridWeek: { type: 'timeGridWeek', buttonText: 'Week' },
-            dayGridMonth: { type: 'dayGridMonth', buttonText: 'Month' },
+            timeGridDay: { type: 'timeGridDay', buttonText: t('agenda.calendar.day') },
+            timeGridWeek: { type: 'timeGridWeek', buttonText: t('agenda.calendar.week') },
+            dayGridMonth: { type: 'dayGridMonth', buttonText: t('agenda.calendar.month') },
           }}
           headerToolbar={{
             left: 'prev,next today',
             center: 'title',
             right: 'timeGridDay,timeGridWeek,dayGridMonth',
           }}
-          buttonText={{ today: 'Today', month: 'Month', week: 'Week', day: 'Day' }}
+          buttonText={{
+            today: t('agenda.calendar.today'),
+            month: t('agenda.calendar.month'),
+            week: t('agenda.calendar.week'),
+            day: t('agenda.calendar.day'),
+          }}
           timeZone={clinic.timeZone}
           events={events}
           datesSet={handleDatesSet}
@@ -255,7 +276,7 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
             className="absolute right-3 top-3 rounded bg-muted px-2 py-1 text-xs text-muted-foreground"
             role="status"
           >
-            Loading…
+            {t('common.loading')}
           </p>
         )}
       </div>
@@ -278,7 +299,7 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
       ) : error ? (
         <p className="flex items-center gap-2 text-sm text-destructive" role="alert">
           <AlertCircle className="h-4 w-4" aria-hidden />
-          The agenda could not be loaded.
+          {t('agenda.calendar.loadError')}
         </p>
       ) : null}
 
@@ -292,8 +313,8 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
             saying there is nothing at all.
           */}
           {hasAgendaFilters(filters)
-            ? 'No appointments match these filters in this range.'
-            : 'No appointments in this range.'}
+            ? t('agenda.calendar.emptyFiltered')
+            : t('agenda.calendar.empty')}
         </p>
       )}
 

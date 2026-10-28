@@ -24,7 +24,16 @@ import { ApiClientError } from '@denti-code-u3/api-client';
  * messages were written for a person by the API, and anything else is developer
  * noise in front of the front desk.
  */
-export function describePaymentFailure(error: unknown, fallback: string): string | undefined {
+export interface PaymentFailureMessages {
+  readonly notFound?: string;
+  readonly network?: string;
+}
+
+export function describePaymentFailure(
+  error: unknown,
+  fallback: string,
+  messages?: PaymentFailureMessages,
+): string | undefined {
   if (!error) {
     return undefined;
   }
@@ -42,9 +51,9 @@ export function describePaymentFailure(error: unknown, fallback: string): string
     case 'NOT_FOUND':
       // The visit was on screen when the payment was recorded and is not there now —
       // closed and deleted on another screen, or a clinic that no longer holds it.
-      return 'This visit no longer exists in the current clinic.';
+      return messages?.notFound ?? 'This visit no longer exists in the current clinic.';
     case 'NETWORK_ERROR':
-      return 'Could not reach the server. The payment was not recorded.';
+      return messages?.network ?? 'Could not reach the server. The payment was not recorded.';
     default:
       return message;
   }

@@ -18,6 +18,8 @@ import { describe, expect, it } from 'vitest';
 
 import { agendaEntryFromEvent, toCalendarEvent, toCalendarEvents } from './to-calendar-event.js';
 
+const UNASSIGNED = 'Unassigned';
+
 function entry(overrides: Partial<AgendaEntry> = {}): AgendaEntry {
   return {
     id: asAppointmentId('appt-1'),
@@ -40,7 +42,7 @@ function entry(overrides: Partial<AgendaEntry> = {}): AgendaEntry {
 
 describe('toCalendarEvent', () => {
   it('passes the instants through untouched', () => {
-    const event = toCalendarEvent(entry());
+    const event = toCalendarEvent(entry(), UNASSIGNED);
 
     // The API sends UTC instants and FullCalendar is handed the clinic's IANA zone,
     // so the library does the arithmetic. If either side converted a second time, a
@@ -51,7 +53,7 @@ describe('toCalendarEvent', () => {
   });
 
   it('carries the identity and the title a receptionist reads', () => {
-    const event = toCalendarEvent(entry());
+    const event = toCalendarEvent(entry(), UNASSIGNED);
 
     expect(event.id).toBe('appt-1');
     expect(event.title).toBe('Ana Torres · Dra. Rivera');
@@ -60,13 +62,15 @@ describe('toCalendarEvent', () => {
   it('names an unassigned dentist rather than leaving a blank', () => {
     // A gap in the book is real information. An empty column reads as a rendering
     // fault, and a receptionist would have to click through to find out.
-    expect(toCalendarEvent(entry({ dentistFullName: null })).title).toBe('Ana Torres · Unassigned');
+    expect(toCalendarEvent(entry({ dentistFullName: null }), UNASSIGNED).title).toBe(
+      'Ana Torres · Unassigned',
+    );
   });
 
   it('keeps the domain entry in extendedProps', () => {
     const original = entry();
 
-    const event = toCalendarEvent(original);
+    const event = toCalendarEvent(original, UNASSIGNED);
 
     // Clicking a block needs the patient and the dentist. Reading them back out of a
     // title string would mean parsing text the user can see.
@@ -82,7 +86,7 @@ describe('toCalendarEvent', () => {
     'CANCELLED',
     'NO_SHOW',
   ] satisfies AppointmentStatus[])('gives %s its own styling', (status) => {
-    const event = toCalendarEvent(entry({ status }));
+    const event = toCalendarEvent(entry({ status }), UNASSIGNED);
 
     // A status missing from the table would render as an unstyled block, which is
     // the kind of gap nobody reports until a screen looks wrong in a chair.
@@ -90,9 +94,9 @@ describe('toCalendarEvent', () => {
   });
 
   it('distinguishes cancelled from no-show, and both from completed', () => {
-    const cancelled = toCalendarEvent(entry({ status: 'CANCELLED' })).classNames;
-    const noShow = toCalendarEvent(entry({ status: 'NO_SHOW' })).classNames;
-    const completed = toCalendarEvent(entry({ status: 'COMPLETED' })).classNames;
+    const cancelled = toCalendarEvent(entry({ status: 'CANCELLED' }), UNASSIGNED).classNames;
+    const noShow = toCalendarEvent(entry({ status: 'NO_SHOW' }), UNASSIGNED).classNames;
+    const completed = toCalendarEvent(entry({ status: 'COMPLETED' }), UNASSIGNED).classNames;
 
     expect(cancelled).not.toEqual(noShow);
     expect(cancelled).not.toEqual(completed);
@@ -101,14 +105,16 @@ describe('toCalendarEvent', () => {
   it('strikes through a cancelled appointment instead of hiding it', () => {
     // A slot that is deliberately empty must look empty on purpose: hiding it would
     // make the chair look bookable.
-    expect(toCalendarEvent(entry({ status: 'CANCELLED' })).classNames).toContain('line-through');
+    expect(toCalendarEvent(entry({ status: 'CANCELLED' }), UNASSIGNED).classNames).toContain(
+      'line-through',
+    );
   });
 
   it('lets a future appointment be dragged and stretched', () => {
     // The grid is editable, so whether *this* block may move is the only question —
     // and the answer is the domain's, not a table kept alongside it.
     for (const status of ['SCHEDULED', 'CONFIRMED'] as const) {
-      const event = toCalendarEvent(entry({ status }));
+      const event = toCalendarEvent(entry({ status }), UNASSIGNED);
 
       expect(event.eventStartEditable).toBe(true);
       expect(event.eventDurationEditable).toBe(true);
@@ -125,7 +131,7 @@ describe('toCalendarEvent', () => {
       'CANCELLED',
       'NO_SHOW',
     ] as const) {
-      const event = toCalendarEvent(entry({ status }));
+      const event = toCalendarEvent(entry({ status }), UNASSIGNED);
 
       expect(event.eventStartEditable).toBe(false);
       expect(event.eventDurationEditable).toBe(false);
@@ -135,17 +141,20 @@ describe('toCalendarEvent', () => {
 
 describe('toCalendarEvents', () => {
   it('keeps the order the API sent', () => {
-    const events = toCalendarEvents([
-      entry({ id: asAppointmentId('a') }),
-      entry({ id: asAppointmentId('b') }),
-      entry({ id: asAppointmentId('c') }),
-    ]);
+    const events = toCalendarEvents(
+      [
+        entry({ id: asAppointmentId('a') }),
+        entry({ id: asAppointmentId('b') }),
+        entry({ id: asAppointmentId('c') }),
+      ],
+      UNASSIGNED,
+    );
 
     expect(events.map((event) => event.id)).toEqual(['a', 'b', 'c']);
   });
 
   it('returns nothing for an empty range', () => {
-    expect(toCalendarEvents([])).toEqual([]);
+    expect(toCalendarEvents([], UNASSIGNED)).toEqual([]);
   });
 });
 

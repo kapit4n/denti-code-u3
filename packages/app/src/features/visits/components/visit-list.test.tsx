@@ -23,6 +23,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { I18nProvider, type Locale } from '../../../i18n/index.js';
 import { ApiClientProvider } from '../../../query/api-client-provider.js';
 import { VisitList } from './visit-list.js';
 
@@ -60,7 +61,9 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function renderDirectory(options: { visits?: readonly unknown[]; total?: number } = {}) {
+function renderDirectory(
+  options: { visits?: readonly unknown[]; total?: number; locale?: Locale } = {},
+) {
   const visits = options.visits ?? VISITS;
   const total = options.total ?? visits.length;
   const reads: URL[] = [];
@@ -104,11 +107,13 @@ function renderDirectory(options: { visits?: readonly unknown[]; total?: number 
   });
 
   render(
-    <QueryClientProvider client={queryClient}>
-      <ApiClientProvider baseUrl={BASE_URL} client={client}>
-        <RouterProvider router={router} />
-      </ApiClientProvider>
-    </QueryClientProvider>,
+    <I18nProvider initialLocale={options.locale ?? 'en'}>
+      <QueryClientProvider client={queryClient}>
+        <ApiClientProvider baseUrl={BASE_URL} client={client}>
+          <RouterProvider router={router} />
+        </ApiClientProvider>
+      </QueryClientProvider>
+    </I18nProvider>,
   );
 
   return { reads, router };
@@ -154,5 +159,18 @@ describe('VisitList', () => {
 
     expect(await screen.findByText(/No visits on record yet/)).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  it('renders the directory in Spanish', async () => {
+    renderDirectory({ locale: 'es' });
+
+    expect(await screen.findByRole('heading', { name: 'Visitas' })).toBeInTheDocument();
+    expect(await screen.findByRole('columnheader', { name: 'Paciente' })).toBeInTheDocument();
+    expect(screen.getByText('Visitas recientes')).toBeInTheDocument();
+    expect(screen.getByText('Completada')).toBeInTheDocument();
+    expect(screen.getByText('Abierta')).toBeInTheDocument();
+    expect(screen.getByText('Sin asignar')).toBeInTheDocument();
+    expect(screen.getByText('No iniciada')).toBeInTheDocument();
+    expect(screen.getByText('2 en el registro')).toBeInTheDocument();
   });
 });

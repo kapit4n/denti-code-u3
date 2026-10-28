@@ -39,7 +39,8 @@ application always renders inside the provider.
 `es satisfies Record<TranslationKey, string>`. Adding an English key without its
 Spanish sibling therefore fails `pnpm run typecheck`; adding a Spanish key with
 no English key fails too. Feature copy lives in that feature's catalogue
-(`common`, `dashboard`, `patients`), matching the feature-oriented frontend.
+(`common`, `dashboard`, `patients`, `agenda`, `visits`), matching the feature-oriented
+frontend.
 
 English values deliberately keep the labels the UI already showed, including the
 uppercase status, condition and surface names. Translation is not a copy rewrite:
@@ -57,7 +58,10 @@ money keep their existing formatters.
 
 Enum values reach the catalogue through `enumLabel(t, prefix, value)`, the one
 place where an API string becomes a known key. An unknown value falls back to
-the raw code there rather than in every component.
+the raw code there rather than in every component. A closed set whose labels are
+already modelled by a presentation module keeps an explicit, typed key map
+instead — visit status and closure, payment method and medication route — so the
+same module that owns the status tone also owns its vocabulary.
 
 ## Decision 4 — Spanish opens first, and the choice persists
 
@@ -77,9 +81,10 @@ without translating every expected string in the same change.
 
 - A future screen must add both catalogues in the same change; typecheck is the
   guard, not a review checklist.
-- The first slice translates the shell, the dashboard and the patient pages.
-  Agenda, visits, treatments, inventory, reports, settings and the login screen
-  still render their existing English copy until they are translated. This is a
+- Session 56 translated the shell, the dashboard and the patient pages; session
+  57 added the agenda and calendar; session 58 added the visit directory and
+  workspace. Treatments, inventory, reports, settings and the login screen still
+  render their existing English copy until they are translated. This is a
   visible, honest gap rather than a claimed complete localisation.
 - There is no locale negotiation from `Accept-Language`, no right-to-left
   layout and no translated API error prose. Known failure kinds are translated

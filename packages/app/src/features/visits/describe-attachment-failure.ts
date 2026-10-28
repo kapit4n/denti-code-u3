@@ -22,7 +22,16 @@ import { ApiClientError } from '@denti-code-u3/api-client';
  * its messages were written for a person by the API, and anything else is
  * developer noise in front of the front desk.
  */
-export function describeAttachmentFailure(error: unknown, fallback: string): string | undefined {
+export interface AttachmentFailureMessages {
+  readonly notFound?: string;
+  readonly network?: string;
+}
+
+export function describeAttachmentFailure(
+  error: unknown,
+  fallback: string,
+  messages?: AttachmentFailureMessages,
+): string | undefined {
   if (!error) {
     return undefined;
   }
@@ -39,9 +48,9 @@ export function describeAttachmentFailure(error: unknown, fallback: string): str
       return message;
     case 'NOT_FOUND':
       // The visit was on screen when the file was attached and is not there now.
-      return 'This visit no longer exists in the current clinic.';
+      return messages?.notFound ?? 'This visit no longer exists in the current clinic.';
     case 'NETWORK_ERROR':
-      return 'Could not reach the server. The file was not attached.';
+      return messages?.network ?? 'Could not reach the server. The file was not attached.';
     default:
       return message;
   }

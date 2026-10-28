@@ -29,6 +29,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Clinic } from '@denti-code-u3/domain';
 import { ApiClientProvider } from '../../../query/api-client-provider.js';
+import { I18nProvider, type Locale } from '../../../i18n/index.js';
 import { AppointmentBookingDialog } from './appointment-booking-dialog.js';
 
 const BASE_URL = 'http://api.test/api/v1';
@@ -110,12 +111,14 @@ function renderDialog({
   startsAt = STARTS_AT,
   patient,
   clinic = CLINIC,
+  locale = 'en',
 }: {
   readonly booking?: (body: unknown) => Promise<Response>;
   readonly patients?: unknown[];
   readonly startsAt?: string | null;
   readonly patient?: { readonly id: string; readonly label: string };
   readonly clinic?: Clinic;
+  readonly locale?: Locale;
 } = {}) {
   const fetchImplementation = vi.fn<typeof fetch>((url, init) => {
     const href = String(url);
@@ -163,12 +166,14 @@ function renderDialog({
   render(
     <QueryClientProvider client={queryClient}>
       <ApiClientProvider baseUrl={BASE_URL} client={client}>
-        <AppointmentBookingDialog
-          startsAt={startsAt ?? undefined}
-          patient={patient}
-          clinic={clinic}
-          onClose={onClose}
-        />
+        <I18nProvider initialLocale={locale}>
+          <AppointmentBookingDialog
+            startsAt={startsAt ?? undefined}
+            patient={patient}
+            clinic={clinic}
+            onClose={onClose}
+          />
+        </I18nProvider>
       </ApiClientProvider>
     </QueryClientProvider>,
   );
@@ -223,6 +228,19 @@ describe('AppointmentBookingDialog', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('asks for the booking in Spanish, with the date in Spanish', () => {
+    renderDialog({ locale: 'es' });
+
+    expect(screen.getByRole('heading', { name: 'Nueva cita' })).toBeInTheDocument();
+    expect(screen.getByText('lun, 5 oct, 09:00 · 09:00 – 09:30')).toBeInTheDocument();
+    expect(screen.getByLabelText('Fecha y hora')).toBeInTheDocument();
+    expect(screen.getByText('Odontólogo')).toBeInTheDocument();
+    expect(screen.getByText('Sillón')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reservar cita' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeInTheDocument();
+    expect(screen.getByText(/hora propia de la clínica, America\/Lima/)).toBeInTheDocument();
   });
 
   it('shows the clicked slot in the clinic own time', () => {

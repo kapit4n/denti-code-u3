@@ -30,6 +30,7 @@ import {
   type AgendaFilters as AgendaSelection,
 } from '../queries/agenda-range-query.js';
 import { dentistChipColor } from '../dentist-chip-color.js';
+import { useTranslation } from '../../../i18n/index.js';
 
 export interface AgendaFilterBarProps {
   readonly filters: AgendaSelection;
@@ -37,6 +38,7 @@ export interface AgendaFilterBarProps {
 }
 
 export function AgendaFilterBar({ filters, onChange }: AgendaFilterBarProps) {
+  const { t } = useTranslation();
   // The full lists, not the bookable ones: this bar is a question about history as
   // much as about the future.
   const dentists = useDentists({ onlyActive: false });
@@ -48,20 +50,22 @@ export function AgendaFilterBar({ filters, onChange }: AgendaFilterBarProps) {
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <ChipGroup
-          label="Dentists"
+          label={t('agenda.filter.dentists')}
+          allLabel={t('agenda.filter.all')}
           ids={filters.dentistIds}
           onChange={(dentistIds) => onChange({ ...filters, dentistIds })}
           options={(dentists.data?.items ?? []).map((dentist) => ({
             id: dentist.id,
             label: dentist.fullName,
             /** A clinician who has left is still a filter; the suffix says why the day is quiet. */
-            detail: dentist.isActive ? undefined : 'inactive',
+            detail: dentist.isActive ? undefined : t('agenda.filter.inactive'),
             color: dentistChipColor(dentist.color),
           }))}
         />
 
         <ChipGroup
-          label="Chairs"
+          label={t('agenda.filter.chairs')}
+          allLabel={t('agenda.filter.all')}
           ids={filters.chairIds}
           onChange={(chairIds) => onChange({ ...filters, chairIds })}
           options={(chairs.data?.items ?? []).map((chair) => ({
@@ -69,7 +73,7 @@ export function AgendaFilterBar({ filters, onChange }: AgendaFilterBarProps) {
             // The room is what tells two identical chairs apart, and it is nullable:
             // a chair with no room says nothing rather than showing an id.
             label: chair.roomName ? `${chair.name} · ${chair.roomName}` : chair.name,
-            detail: chair.isActive ? undefined : 'inactive',
+            detail: chair.isActive ? undefined : t('agenda.filter.inactive'),
           }))}
         />
 
@@ -79,7 +83,7 @@ export function AgendaFilterBar({ filters, onChange }: AgendaFilterBarProps) {
             className="rounded-full px-2 py-0.5 text-xs text-muted-foreground underline-offset-2 hover:underline"
             onClick={() => onChange({ dentistIds: [], chairIds: [] })}
           >
-            Clear filters
+            {t('agenda.filter.clear')}
           </button>
         )}
       </div>
@@ -97,7 +101,7 @@ export function AgendaFilterBar({ filters, onChange }: AgendaFilterBarProps) {
           data-testid="agenda-filters-unavailable"
         >
           <AlertCircle className="h-3.5 w-3.5" aria-hidden />
-          The filters could not be loaded.
+          {t('agenda.filter.error')}
         </p>
       )}
     </div>
@@ -126,11 +130,13 @@ interface ChipOption<TId extends string> {
  */
 function ChipGroup<TId extends string>({
   label,
+  allLabel,
   ids,
   onChange,
   options,
 }: {
   readonly label: string;
+  readonly allLabel: string;
   readonly ids: readonly TId[];
   readonly onChange: (ids: readonly TId[]) => void;
   readonly options: readonly ChipOption<TId>[];
@@ -147,7 +153,7 @@ function ChipGroup<TId extends string>({
     <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={label}>
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <Chip pressed={selected.size === 0} onClick={() => onChange([])}>
-        All
+        {allLabel}
       </Chip>
       {options.map((option) => (
         <Chip

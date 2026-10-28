@@ -1,0 +1,86 @@
+export const agenda = {
+  'agenda.title': 'Agenda',
+  'agenda.loadingClinic': 'Loading the clinic…',
+  'agenda.clinicError':
+    'The clinic could not be loaded, so the agenda cannot be drawn in its timezone.',
+  'agenda.unassigned': 'Unassigned',
+  'agenda.noChair': 'No chair assigned',
+  'agenda.duration': '{count} min',
+
+  'agenda.filter.dentists': 'Dentists',
+  'agenda.filter.chairs': 'Chairs',
+  'agenda.filter.all': 'All',
+  'agenda.filter.inactive': 'inactive',
+  'agenda.filter.clear': 'Clear filters',
+  'agenda.filter.error': 'The filters could not be loaded.',
+
+  'agenda.calendar.day': 'Day',
+  'agenda.calendar.week': 'Week',
+  'agenda.calendar.month': 'Month',
+  'agenda.calendar.today': 'Today',
+  'agenda.calendar.moveError': 'The appointment could not be moved.',
+  'agenda.calendar.loadError': 'The agenda could not be loaded.',
+  'agenda.calendar.empty': 'No appointments in this range.',
+  'agenda.calendar.emptyFiltered': 'No appointments match these filters in this range.',
+
+  'agenda.status.SCHEDULED': 'Scheduled',
+  'agenda.status.CONFIRMED': 'Confirmed',
+  'agenda.status.ARRIVED': 'Arrived',
+  'agenda.status.IN_TREATMENT': 'In treatment',
+  'agenda.status.COMPLETED': 'Completed',
+  'agenda.status.CANCELLED': 'Cancelled',
+  'agenda.status.NO_SHOW': 'No-show',
+
+  'agenda.transition.cancel': 'Cancel',
+  'agenda.transition.markNoShow': 'Mark as no-show',
+  'agenda.transition.unconfirm': 'Unconfirm',
+  'agenda.transition.checkIn': 'Check in',
+  'agenda.transition.startTreatment': 'Start treatment',
+  'agenda.transition.complete': 'Complete',
+  'agenda.transition.putBack': 'Put back to scheduled',
+
+  'agenda.panel.when': 'When',
+  'agenda.panel.dentist': 'Dentist',
+  'agenda.panel.chair': 'Chair',
+  'agenda.panel.cancelReason': 'Why is it being cancelled?',
+  'agenda.panel.cancelReasonPlaceholder': 'The patient called to cancel',
+  'agenda.panel.cancelReasonHint':
+    'A cancellation is kept in the record. This is what the desk reads when the patient calls back.',
+  'agenda.panel.confirmCancellation': 'Cancel the appointment',
+  'agenda.panel.keep': 'Keep it',
+  'agenda.panel.finished': 'This appointment is finished. Its record is kept as it is.',
+  'agenda.panel.updateError': 'The appointment could not be updated.',
+
+  'agenda.booking.newForPatient': 'New appointment for {patient}',
+  'agenda.booking.new': 'New appointment',
+  'agenda.booking.chooseTime': 'Choose the date and time the patient is coming.',
+  'agenda.booking.dateTime': 'Date and time',
+  'agenda.booking.hintFromSlot':
+    "From the slot you clicked on the agenda, in the clinic's own time, {timeZone}.",
+  'agenda.booking.hintTyped': "The clinic's own time, {timeZone}.",
+  'agenda.booking.clinician': 'Clinician',
+  'agenda.booking.chooseClinician': 'Choose a clinician',
+  'agenda.booking.loadingClinicians': 'Loading clinicians…',
+  'agenda.booking.noClinician':
+    'This clinic has no active clinician, so nothing can be booked yet.',
+  'agenda.booking.duration': 'Duration',
+  'agenda.booking.minutes': '{minutes} min',
+  'agenda.booking.chair': 'Chair',
+  'agenda.booking.noChairOption': 'No chair',
+  'agenda.booking.notes': 'Notes',
+  'agenda.booking.notesPlaceholder': 'What the clinician should know before the patient arrives',
+  'agenda.booking.booking': 'Booking…',
+  'agenda.booking.book': 'Book appointment',
+  'agenda.booking.loadingResources': 'Loading the clinicians and chairs…',
+  'agenda.booking.invalidTime':
+    'That time does not exist on that date in {timeZone} — the clocks change then. Choose another time.',
+  'agenda.booking.error': 'The appointment could not be booked.',
+
+  'agenda.failure.conflict': 'That time is already booked for this dentist or chair.',
+  'agenda.failure.conflictOne':
+    'That time overlaps an appointment already booked, {span}. Move it, or pick another slot.',
+  'agenda.failure.conflictMany':
+    'That time overlaps {count} appointments already booked: {spans}. Move one of them, or pick another slot.',
+  'agenda.failure.notFound': 'That appointment no longer exists.',
+  'agenda.failure.network': 'Could not reach the server. Check the connection and try again.',
+} as const;

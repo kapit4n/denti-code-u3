@@ -26,6 +26,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { I18nProvider, type Locale } from '../../../i18n/index.js';
 import { ApiClientProvider } from '../../../query/api-client-provider.js';
 import { VisitWorkspace } from './visit-workspace.js';
 
@@ -108,6 +109,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 interface HarnessOptions {
+  /** The language the workspace is rendered in. */
+  readonly locale?: Locale;
   /** The visit the API answers with, before any closure. */
   readonly visit?: Record<string, unknown>;
   readonly visitStatus?: number;
@@ -184,6 +187,7 @@ interface HarnessOptions {
 }
 
 function renderWorkspace({
+  locale = 'en',
   visit = OPEN_VISIT,
   visitStatus = 200,
   visitAfterClosure,
@@ -484,11 +488,13 @@ function renderWorkspace({
   });
 
   render(
-    <QueryClientProvider client={queryClient}>
-      <ApiClientProvider baseUrl={BASE_URL} client={client}>
-        <RouterProvider router={router} />
-      </ApiClientProvider>
-    </QueryClientProvider>,
+    <I18nProvider initialLocale={locale}>
+      <QueryClientProvider client={queryClient}>
+        <ApiClientProvider baseUrl={BASE_URL} client={client}>
+          <RouterProvider router={router} />
+        </ApiClientProvider>
+      </QueryClientProvider>
+    </I18nProvider>,
   );
 
   return { fetchImplementation };
@@ -555,6 +561,24 @@ describe('VisitWorkspace', () => {
     expect(screen.getByText('Dra. Rivera')).toBeTruthy();
     expect(screen.getByText('Sillón 1 · Sala 1')).toBeTruthy();
     expect(screen.getByText('No clinical summary recorded.')).toBeTruthy();
+  });
+
+  it('renders the workspace and its sections in Spanish', async () => {
+    renderWorkspace({ locale: 'es' });
+
+    expect(await screen.findByRole('heading', { name: 'Ana García' })).toBeTruthy();
+    expect(screen.getByText('Ficha de Ana García')).toBeTruthy();
+    expect(screen.getByText('P-000001 · Iniciada desde una cita')).toBeTruthy();
+    expect(screen.getByTestId('visit-status')).toHaveTextContent('Abierta');
+    expect(screen.getByTestId('complete-visit')).toHaveTextContent('Completar visita');
+    expect(screen.getByRole('navigation', { name: 'Secciones de la visita' })).toBeTruthy();
+    expect(screen.getByText('No hay resumen clínico registrado.')).toBeTruthy();
+
+    await user.click(screen.getByTestId('visit-section-notes'));
+
+    expect(await screen.findByText('Aún no hay notas.')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Notas clínicas' })).toBeTruthy();
+    expect(screen.getByTestId('add-note')).toHaveTextContent('Añadir nota');
   });
 
   it('offers the one closure the domain allows and the API implements', async () => {

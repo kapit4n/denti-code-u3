@@ -57,15 +57,15 @@ const BASE_CLASSES = ['rounded-md', 'border-l-4', 'px-1.5', 'text-xs'] as const;
  * "who is in this chair" is the question they are answering. The dentist follows,
  * and an appointment with no dentist says so rather than leaving a blank.
  */
-export function toCalendarEventTitle(entry: AgendaEntry): string {
+export function toCalendarEventTitle(entry: AgendaEntry, unassignedLabel: string): string {
   const patient = `${entry.patientFirstName} ${entry.patientLastName}`.trim();
-  return `${patient} · ${entry.dentistFullName ?? 'Unassigned'}`;
+  return `${patient} · ${entry.dentistFullName ?? unassignedLabel}`;
 }
 
-export function toCalendarEvent(entry: AgendaEntry): EventInput {
+export function toCalendarEvent(entry: AgendaEntry, unassignedLabel: string): EventInput {
   return {
     id: entry.id,
-    title: toCalendarEventTitle(entry),
+    title: toCalendarEventTitle(entry, unassignedLabel),
     start: entry.startsAt,
     // The end comes from the API, already computed from start + duration (ADR
     // 0012). The client never re-adds the minutes: two additions of the same
@@ -84,8 +84,11 @@ export function toCalendarEvent(entry: AgendaEntry): EventInput {
   };
 }
 
-export function toCalendarEvents(entries: readonly AgendaEntry[]): EventInput[] {
-  return entries.map(toCalendarEvent);
+export function toCalendarEvents(
+  entries: readonly AgendaEntry[],
+  unassignedLabel: string,
+): EventInput[] {
+  return entries.map((entry) => toCalendarEvent(entry, unassignedLabel));
 }
 
 /**

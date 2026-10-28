@@ -24,6 +24,8 @@
 import { allowedVisitTransitions, type VisitStatus } from '@denti-code-u3/domain';
 import { STATUS_TONE_CLASS, type StatusTone } from '@denti-code-u3/ui';
 
+import type { Translate, TranslationKey } from '../../i18n/index.js';
+
 /**
  * Status → tone.
  *
@@ -38,10 +40,10 @@ const VISIT_STATUS_TONE: Readonly<Record<VisitStatus, StatusTone>> = {
 };
 
 /** The state, as a noun. */
-const VISIT_STATUS_LABEL: Readonly<Record<VisitStatus, string>> = {
-  OPEN: 'Open',
-  COMPLETED: 'Completed',
-  CANCELLED: 'Cancelled',
+const VISIT_STATUS_KEY: Readonly<Record<VisitStatus, TranslationKey>> = {
+  OPEN: 'visits.status.OPEN',
+  COMPLETED: 'visits.status.COMPLETED',
+  CANCELLED: 'visits.status.CANCELLED',
 };
 
 /**
@@ -64,9 +66,9 @@ const CLOSABLE: readonly VisitClosure[] = ['COMPLETED', 'OPEN'];
 export type VisitClosure = Extract<VisitStatus, 'OPEN' | 'COMPLETED'>;
 
 /** The verb on the button that moves a visit to `to`. */
-const CLOSURE_LABEL: Readonly<Partial<Record<VisitStatus, string>>> = {
-  COMPLETED: 'Complete visit',
-  OPEN: 'Reopen visit',
+const CLOSURE_KEY: Readonly<Partial<Record<VisitStatus, TranslationKey>>> = {
+  COMPLETED: 'visits.closure.COMPLETED',
+  OPEN: 'visits.closure.OPEN',
 };
 
 export function visitStatusTone(status: VisitStatus): StatusTone {
@@ -77,8 +79,8 @@ export function visitStatusClassName(status: VisitStatus): string {
   return STATUS_TONE_CLASS[VISIT_STATUS_TONE[status]];
 }
 
-export function visitStatusLabel(status: VisitStatus): string {
-  return VISIT_STATUS_LABEL[status];
+export function visitStatusLabel(t: Translate, status: VisitStatus): string {
+  return t(VISIT_STATUS_KEY[status]);
 }
 
 /**
@@ -93,6 +95,6 @@ export function visitClosureTransitions(from: VisitStatus): readonly VisitClosur
   );
 }
 
-export function visitClosureLabel(to: VisitStatus): string {
-  return CLOSURE_LABEL[to] ?? VISIT_STATUS_LABEL[to];
+export function visitClosureLabel(t: Translate, to: VisitStatus): string {
+  return t(CLOSURE_KEY[to] ?? VISIT_STATUS_KEY[to]);
 }

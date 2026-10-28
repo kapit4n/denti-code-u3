@@ -28,14 +28,16 @@ import {
   TableRow,
 } from '@denti-code-u3/ui';
 
+import { useTranslation } from '../../../i18n/index.js';
 import { useClinicSettings } from '../../clinic/queries/clinic-settings-query.js';
-import { formatClinicDayTime, READING_THE_CLINIC_CLOCK } from '../../clinic/format-clinic-time.js';
+import { formatClinicDayTime } from '../../clinic/format-clinic-time.js';
 import { useVisitList } from '../queries/visit-list-query.js';
 import { visitStatusClassName, visitStatusLabel } from '../visit-status-presentation.js';
 
 const PAGE_SIZE = 20;
 
 export function VisitList() {
+  const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const { data, isPending, error } = useVisitList({ page, limit: PAGE_SIZE });
   const { data: clinic } = useClinicSettings();
@@ -47,32 +49,39 @@ export function VisitList() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-3xl font-bold tracking-tight">Visits</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{t('visits.list.title')}</h1>
         <p className="text-muted-foreground">
-          {pagination ? `${pagination.total} on record` : 'Loading visits'}
+          {pagination
+            ? t(
+                pagination.total === 1
+                  ? 'visits.list.recordCount.one'
+                  : 'visits.list.recordCount.other',
+                { count: pagination.total },
+              )
+            : t('visits.list.loading')}
         </p>
       </header>
 
       <Card>
         <CardHeader>
-          <CardTitle>Recent visits</CardTitle>
+          <CardTitle>{t('visits.list.recent')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {isPending ? (
-            <p className="text-sm text-muted-foreground">Loading visits…</p>
+            <p className="text-sm text-muted-foreground">{t('visits.list.loadingRows')}</p>
           ) : error ? (
             <p role="alert" className="text-sm text-destructive">
-              The visit list could not be loaded.
+              {t('visits.list.loadError')}
             </p>
           ) : rows.length > 0 ? (
             <>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Patient</TableHead>
-                    <TableHead>Clinician</TableHead>
-                    <TableHead>Started</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>{t('visits.list.patient')}</TableHead>
+                    <TableHead>{t('visits.list.clinician')}</TableHead>
+                    <TableHead>{t('visits.list.started')}</TableHead>
+                    <TableHead>{t('visits.list.status')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -87,23 +96,25 @@ export function VisitList() {
                           {visit.patientName}
                         </Link>
                       </TableCell>
-                      <TableCell>{visit.dentistName ?? 'Unassigned'}</TableCell>
+                      <TableCell>{visit.dentistName ?? t('visits.list.unassigned')}</TableCell>
                       <TableCell>
                         {visit.startedAt ? (
                           timeZone ? (
                             formatClinicDayTime(visit.startedAt, timeZone)
                           ) : (
                             <span className="text-muted-foreground">
-                              {READING_THE_CLINIC_CLOCK}
+                              {t('common.readingClinicClock')}
                             </span>
                           )
                         ) : (
-                          <span className="text-muted-foreground">Not started</span>
+                          <span className="text-muted-foreground">
+                            {t('visits.list.notStarted')}
+                          </span>
                         )}
                       </TableCell>
                       <TableCell>
                         <span className={visitStatusClassName(visit.status)}>
-                          {visitStatusLabel(visit.status)}
+                          {visitStatusLabel(t, visit.status)}
                         </span>
                       </TableCell>
                     </TableRow>
@@ -112,27 +123,31 @@ export function VisitList() {
               </Table>
 
               {pagination && pagination.totalPages > 1 ? (
-                <nav aria-label="Pagination" className="flex items-center justify-between">
+                <nav
+                  aria-label={t('visits.list.paginationAria')}
+                  className="flex items-center justify-between"
+                >
                   <Button variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                    Previous
+                    {t('visits.list.previous')}
                   </Button>
                   <p className="text-sm text-muted-foreground">
-                    Page {pagination.page} of {pagination.totalPages}
+                    {t('visits.list.pageOf', {
+                      page: pagination.page,
+                      totalPages: pagination.totalPages,
+                    })}
                   </p>
                   <Button
                     variant="outline"
                     disabled={page >= pagination.totalPages}
                     onClick={() => setPage(page + 1)}
                   >
-                    Next
+                    {t('visits.list.next')}
                   </Button>
                 </nav>
               ) : null}
             </>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              No visits on record yet. A visit starts from the agenda or as a walk-in.
-            </p>
+            <p className="text-sm text-muted-foreground">{t('visits.list.empty')}</p>
           )}
         </CardContent>
       </Card>

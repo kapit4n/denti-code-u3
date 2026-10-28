@@ -21,7 +21,16 @@ import { ApiClientError } from '@denti-code-u3/api-client';
  * messages were written for a person by the API, and anything else is developer noise
  * in front of a clinician.
  */
-export function describeNoteFailure(error: unknown, fallback: string): string | undefined {
+export interface NoteFailureMessages {
+  readonly notFound?: string;
+  readonly network?: string;
+}
+
+export function describeNoteFailure(
+  error: unknown,
+  fallback: string,
+  messages?: NoteFailureMessages,
+): string | undefined {
   if (!error) {
     return undefined;
   }
@@ -39,9 +48,9 @@ export function describeNoteFailure(error: unknown, fallback: string): string | 
     case 'NOT_FOUND':
       // The visit was on screen when the note was typed and is not there now —
       // closed and deleted on another screen, or a clinic that no longer holds it.
-      return 'This visit no longer exists in the current clinic.';
+      return messages?.notFound ?? 'This visit no longer exists in the current clinic.';
     case 'NETWORK_ERROR':
-      return 'Could not reach the server. The note was not saved.';
+      return messages?.network ?? 'Could not reach the server. The note was not saved.';
     default:
       return message;
   }

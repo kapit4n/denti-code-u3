@@ -49,6 +49,7 @@ import {
   requiresTransitionReason,
 } from '../appointment-status-presentation.js';
 import { formatClinicDayTime, formatClinicTimeRange } from '../../clinic/format-clinic-time.js';
+import { useTranslation } from '../../../i18n/index.js';
 
 export interface AppointmentQuickPanelProps {
   readonly entry: AgendaEntry;
@@ -58,6 +59,7 @@ export interface AppointmentQuickPanelProps {
 }
 
 export function AppointmentQuickPanel({ entry, clinic, onClose }: AppointmentQuickPanelProps) {
+  const { locale, t } = useTranslation();
   const transition = useTransitionAppointmentStatus();
   const [reason, setReason] = useState('');
   /**
@@ -75,7 +77,15 @@ export function AppointmentQuickPanel({ entry, clinic, onClose }: AppointmentQui
 
   const failure = describeAppointmentFailure(transition.error, {
     timeZone: clinic.timeZone,
-    fallback: 'The appointment could not be updated.',
+    fallback: t('agenda.panel.updateError'),
+    locale,
+    messages: {
+      conflict: t('agenda.failure.conflict'),
+      conflictOne: t('agenda.failure.conflictOne'),
+      conflictMany: t('agenda.failure.conflictMany'),
+      notFound: t('agenda.failure.notFound'),
+      network: t('agenda.failure.network'),
+    },
   });
 
   const sendTransition = (to: AppointmentStatus, why?: string) => {
@@ -114,7 +124,7 @@ export function AppointmentQuickPanel({ entry, clinic, onClose }: AppointmentQui
             <span
               className={`inline-flex rounded px-1.5 py-0.5 text-xs font-medium ${appointmentStatusClassName(entry.status)}`}
             >
-              {appointmentStatusLabel(entry.status)}
+              {appointmentStatusLabel(t, entry.status)}
             </span>
           </DialogDescription>
         </DialogHeader>
@@ -132,27 +142,27 @@ export function AppointmentQuickPanel({ entry, clinic, onClose }: AppointmentQui
         <dl className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-2 text-sm">
           <dt className="flex items-center gap-1.5 text-muted-foreground">
             <CalendarClock aria-hidden className="size-4" />
-            <span className="sr-only sm:not-sr-only">When</span>
+            <span className="sr-only sm:not-sr-only">{t('agenda.panel.when')}</span>
           </dt>
           <dd>
-            {formatClinicDayTime(entry.startsAt, clinic.timeZone)}
+            {formatClinicDayTime(entry.startsAt, clinic.timeZone, locale)}
             <span className="block text-muted-foreground">
-              {formatClinicTimeRange(entry.startsAt, entry.endsAt, clinic.timeZone)} ·{' '}
-              {entry.durationMinutes} min
+              {formatClinicTimeRange(entry.startsAt, entry.endsAt, clinic.timeZone, locale)} ·{' '}
+              {t('agenda.duration', { count: entry.durationMinutes })}
             </span>
           </dd>
 
           <dt className="flex items-center gap-1.5 text-muted-foreground">
             <Stethoscope aria-hidden className="size-4" />
-            <span className="sr-only sm:not-sr-only">Dentist</span>
+            <span className="sr-only sm:not-sr-only">{t('agenda.panel.dentist')}</span>
           </dt>
-          <dd>{entry.dentistFullName ?? 'Unassigned'}</dd>
+          <dd>{entry.dentistFullName ?? t('agenda.unassigned')}</dd>
 
           <dt className="flex items-center gap-1.5 text-muted-foreground">
             <UserRound aria-hidden className="size-4" />
-            <span className="sr-only sm:not-sr-only">Chair</span>
+            <span className="sr-only sm:not-sr-only">{t('agenda.panel.chair')}</span>
           </dt>
-          <dd>{entry.chairName ?? 'No chair assigned'}</dd>
+          <dd>{entry.chairName ?? t('agenda.noChair')}</dd>
         </dl>
 
         {entry.notes ? <p className="rounded-md bg-muted p-3 text-sm">{entry.notes}</p> : null}
@@ -164,7 +174,7 @@ export function AppointmentQuickPanel({ entry, clinic, onClose }: AppointmentQui
         */}
         {askingWhy ? (
           <div className="space-y-2">
-            <Label htmlFor="appointment-cancel-reason">Why is it being cancelled?</Label>
+            <Label htmlFor="appointment-cancel-reason">{t('agenda.panel.cancelReason')}</Label>
             <textarea
               id="appointment-cancel-reason"
               value={reason}
@@ -173,12 +183,9 @@ export function AppointmentQuickPanel({ entry, clinic, onClose }: AppointmentQui
               autoFocus
               disabled={transition.isPending}
               className="w-full rounded-md border bg-background p-2 text-sm"
-              placeholder="The patient called to cancel"
+              placeholder={t('agenda.panel.cancelReasonPlaceholder')}
             />
-            <p className="text-xs text-muted-foreground">
-              A cancellation is kept in the record. This is what the desk reads when the patient
-              calls back.
-            </p>
+            <p className="text-xs text-muted-foreground">{t('agenda.panel.cancelReasonHint')}</p>
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -190,7 +197,7 @@ export function AppointmentQuickPanel({ entry, clinic, onClose }: AppointmentQui
                 disabled={transition.isPending || reason.trim().length === 0}
                 onClick={() => sendTransition('CANCELLED', reason.trim())}
               >
-                Cancel the appointment
+                {t('agenda.panel.confirmCancellation')}
               </Button>
               <Button
                 type="button"
@@ -198,7 +205,7 @@ export function AppointmentQuickPanel({ entry, clinic, onClose }: AppointmentQui
                 disabled={transition.isPending}
                 onClick={() => setAskingWhy(false)}
               >
-                Keep it
+                {t('agenda.panel.keep')}
               </Button>
             </div>
           </div>
@@ -208,9 +215,7 @@ export function AppointmentQuickPanel({ entry, clinic, onClose }: AppointmentQui
               // Said out loud rather than shown as an empty row of buttons: a completed
               // appointment is history, and silence here reads as a panel that failed
               // to load.
-              <p className="text-sm text-muted-foreground">
-                This appointment is finished. Its record is kept as it is.
-              </p>
+              <p className="text-sm text-muted-foreground">{t('agenda.panel.finished')}</p>
             ) : (
               allowed.map((to) => (
                 <Button
@@ -227,14 +232,14 @@ export function AppointmentQuickPanel({ entry, clinic, onClose }: AppointmentQui
                     sendTransition(to);
                   }}
                 >
-                  {appointmentTransitionLabel(entry.status, to)}
+                  {appointmentTransitionLabel(t, entry.status, to)}
                 </Button>
               ))
             )}
             {transition.isPending ? (
               <p className="text-sm text-muted-foreground" role="status">
                 <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
-                Saving…
+                {t('common.saving')}
               </p>
             ) : null}
           </DialogFooter>

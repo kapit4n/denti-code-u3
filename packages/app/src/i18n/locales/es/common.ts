@@ -26,6 +26,7 @@ export const common = {
   'common.saving': 'Guardando…',
   'common.cancel': 'Cancelar',
   'common.notProvided': '—',
+  'common.readingClinicClock': 'Leyendo el reloj de la clínica…',
 
   'common.status.SCHEDULED': 'Programada',
   'common.status.CONFIRMED': 'Confirmada',

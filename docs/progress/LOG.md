@@ -3724,3 +3724,47 @@ pnpm run test:e2e         154/154 passed
 ```
 
 Docs: ADR 0032, `docs/frontend.md` §14, `docs/open-questions.md` #9 updated.
+
+---
+
+Session 57: the agenda and calendar joined the Spanish catalogue. The new agenda catalogue
+carries the route shell, filter chips, status and transition labels, quick panel, booking
+dialog, client-built failure sentences and the calendar's loading/empty/error copy.
+FullCalendar uses its bundled `es` locale with our own view/today labels on top, so its
+month/week/day names and toolbar follow the app's language. The adapter now receives the
+translated "Unassigned" label, while English stays the fallback for isolated tests.
+
+The first full browser run was 154/155: the new Spanish agenda test asked for `Sillón`,
+which also matched the panel's `Sin sillón asignado`. The label assertion is now exact, and
+the suite is green.
+
+**Verification.** Typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing React
+Compiler warning) · format clean · build 5/5 · domain 376, app **359**, desktop 4, API unit
+128, API integration **46 passed / 273 skipped** (PG skips without `TEST_DATABASE_URL`) ·
+e2e **155/155**. Docs: ADR 0032, `frontend.md` §14, `open-questions.md` #9.
+
+---
+
+Session 58: the visit directory and workspace joined the Spanish catalogue. The new
+`visits` catalogue covers the list headings and record count, status and closure labels,
+the seven workspace sections, summary/notes/files/treatments/prescriptions/charges/payments
+copy, medication and payment vocabularies, and the client-built failure sentences. Status,
+closure, payment-method and medication-route labels now use explicit typed key maps in the
+modules that already own their presentation; option lists are built from the translator.
+The seven failure describers accept optional translated messages and keep English defaults.
+
+The directory and workspace are translated end to end, including resolved clinician, chair
+and treatment names, the clinic-clock placeholder (`common.readingClinicClock`), section
+navigation, save state, loading, empty and error copy.
+`visit-list.test.tsx` and `visit-workspace.test.tsx` gained an optional `locale` option and
+Spanish assertions; `visit-status-presentation.test.ts` asserts Spanish statuses and closure
+actions. A new browser flow covers the Spanish directory and workspace through the empty
+notes section.
+
+The first full run was 155/156: heading `Visitas` also matched `Visitas recientes`; the
+assertion is now exact, and the suite is green.
+
+**Verification.** Typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing React
+Compiler warning) · format clean · build 5/5 · domain 376, app **362**, desktop 4, API unit
+128, API integration **46 passed / 273 skipped** (PG skips without `TEST_DATABASE_URL`) ·
+e2e **156/156**. Docs: ADR 0032, `frontend.md` §14, `open-questions.md` #9.

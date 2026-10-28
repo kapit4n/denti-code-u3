@@ -1,13 +1,15 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 56 (typed English/Spanish catalogues, Spanish default)
+> Last updated: session 58 (visit directory and workspace translated to Spanish)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
 
 > **Session 56** added the typed English/Spanish UI catalogue (ADR 0032). Spanish is the
 > default, the header switches language and persists the choice, and the shell, dashboard
-> and patient pages are translated. Agenda, visits, treatments, inventory, reports,
+> and patient pages are translated. **Session 57** translated the agenda and calendar,
+> including FullCalendar's own controls, the booking dialog and the quick panel. **Session
+> 58** translated the visit directory and workspace. Treatments, inventory, reports,
 > settings and the login screen still render English until their own slice.
 
 ## Phase
@@ -3296,3 +3298,48 @@ Both catalogues now keep the separator.
 Compiler warning) · format clean · build 5/5 · domain 376, app **355**, desktop 4, API unit
 128, API integration **46 passed / 273 skipped** (PG skips without `TEST_DATABASE_URL`) ·
 e2e **154/154**. Docs: ADR 0032, `frontend.md` §14, open question #9.
+
+---
+
+Session 57: the agenda and calendar now speak Spanish. The agenda catalogue covers the
+route shell, filter chips, event fallbacks, quick panel, booking dialog, appointment status
+labels and transitions, the failure sentences the client builds, and the calendar's own
+loading/empty/error copy. FullCalendar gets its bundled `es` locale, with our view/today
+buttons translated over it, so month/day names and the toolbar both follow the app rather
+than the browser. The agenda adapter now takes the translated "Unassigned" label; English
+remains the default for isolated tests.
+
+**Tests.** +4 app unit/component tests (Spanish calendar controls, quick panel, booking
+dialog and failure sentence) and +1 e2e Spanish agenda flow (grid controls, filters, quick
+panel). App **359** · e2e **155**. Existing domain **376**, desktop **4**, API unit **128**,
+API integration **46 passed / 273 skipped** unchanged. Typecheck 12/12 · lint 12/12 + guard ·
+format clean · root test 12/12 tasks · build 5/5. Docs: ADR 0032, `frontend.md` §14,
+`open-questions.md` #9.
+
+---
+
+Session 58: the **visit directory and workspace** joined the Spanish catalogue. A new
+`visits` catalogue carries the list headings and record count, the status and closure
+vocabulary, the seven section names, every summary/note/file/treatment/prescription/charge/
+payment label and empty state, the medication and payment vocabularies, and the failure
+sentences the client builds. Status, closure, payment-method and medication-route labels now
+come from explicit typed key maps in their presentation modules; the option lists are
+functions of the translator rather than exported English constants. The seven failure
+describers accept optional translated `notFound`/network messages and keep their English
+defaults, so isolated tests stay stable while the workspace passes the Spanish sentences.
+
+Both the directory and the workspace are translated end to end, including the resolved
+clinician/chair/treatment names, the clinic-clock placeholder (`common.readingClinicClock`),
+section navigation, save state, loading and error states.
+`visit-list.test.tsx` and `visit-workspace.test.tsx` gained an optional `locale` option and
+Spanish assertions; `visit-status-presentation.test.ts` asserts the Spanish statuses and
+closure actions. The new browser flow covers the Spanish directory and workspace up to the
+empty notes section.
+
+A first full run was 155/156: the Spanish list test asked for heading `Visitas`, which also
+matches `Visitas recientes`; the list heading assertion is now exact, and the suite is green.
+
+**Verification.** Typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing React
+Compiler warning) · format clean · build 5/5 · domain 376, app **362**, desktop 4, API unit
+128, API integration **46 passed / 273 skipped** (PG skips without `TEST_DATABASE_URL`) ·
+e2e **156/156**. Docs: ADR 0032, `frontend.md` §14, `open-questions.md` #9.

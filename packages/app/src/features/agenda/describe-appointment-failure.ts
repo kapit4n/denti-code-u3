@@ -32,7 +32,29 @@ export interface AppointmentFailureContext {
   readonly timeZone: string;
   /** Used when the API sent no message of its own. */
   readonly fallback: string;
+  /** The language of the quoted times and the sentences built here. */
+  readonly locale?: string;
+  /** Optional translated sentences; the English defaults keep this helper usable alone. */
+  readonly messages?: AppointmentFailureMessages;
 }
+
+export interface AppointmentFailureMessages {
+  readonly conflict?: string;
+  readonly conflictOne?: string;
+  readonly conflictMany?: string;
+  readonly notFound?: string;
+  readonly network?: string;
+}
+
+const DEFAULT_MESSAGES: Required<AppointmentFailureMessages> = {
+  conflict: 'That time is already booked for this dentist or chair.',
+  conflictOne:
+    'That time overlaps an appointment already booked, {span}. Move it, or pick another slot.',
+  conflictMany:
+    'That time overlaps {count} appointments already booked: {spans}. Move one of them, or pick another slot.',
+  notFound: 'That appointment no longer exists.',
+  network: 'Could not reach the server. Check the connection and try again.',
+};
 
 /**
  * One sentence about a failed schedule write, or `undefined` when nothing failed.
@@ -52,9 +74,11 @@ export function describeAppointmentFailure(
   const apiError = error as Partial<ApiClientError>;
   const message = apiError.message || context.fallback;
 
+  const messages = { ...DEFAULT_MESSAGES, ...context.messages };
+
   switch (apiError.code) {
     case 'SCHEDULING_CONFLICT':
-      return describeConflict(apiError.details, context.timeZone);
+      return describeConflict(apiError.details, context.timeZone, context.locale, messages);
     case 'VALIDATION_ERROR':
     case 'DOMAIN_RULE_VIOLATION':
       // The domain already writes these for a person: "The clinic opens at 08:00 on
@@ -65,9 +89,9 @@ export function describeAppointmentFailure(
     case 'NOT_FOUND':
       // The row was there when the grid drew it and is not any more — deleted on
       // another screen, or a clinic that no longer exists. Not a fault to retry.
-      return 'That appointment no longer exists.';
+      return messages.notFound;
     case 'NETWORK_ERROR':
-      return 'Could not reach the server. Check the connection and try again.';
+      return messages.network;
     default:
       // Everything else, including a code this build has never heard of. The API
       // builds those messages for a client — never SQL, never driver text — so a
@@ -85,24 +109,30 @@ export function describeAppointmentFailure(
  * sentence keeps its meaning and drops the detail, because a wrong time is worse
  * than no time.
  */
-function describeConflict(details: unknown, timeZone: string): string {
+function describeConflict(
+  details: unknown,
+  timeZone: string,
+  locale: string | undefined,
+  messages: Required<AppointmentFailureMessages>,
+): string {
   const parsed = scheduleConflictDetailsSchema.safeParse(details);
   if (!parsed.success || parsed.data.conflicts.length === 0) {
-    return 'That time is already booked for this dentist or chair.';
+    return messages.conflict;
   }
 
   const spans = parsed.data.conflicts
-    .map((conflict) => formatClinicTimeRange(conflict.startsAt, conflict.endsAt, timeZone))
+    .map((conflict) => formatClinicTimeRange(conflict.startsAt, conflict.endsAt, timeZone, locale))
     .filter((span) => span !== '—');
 
   if (spans.length === 0) {
-    return 'That time is already booked for this dentist or chair.';
+    return messages.conflict;
   }
 
   if (spans.length === 1) {
-    const [span] = spans;
-    return `That time overlaps an appointment already booked, ${span}. Move it, or pick another slot.`;
+    return messages.conflictOne.replace('{span}', spans[0] ?? '');
   }
 
-  return `That time overlaps ${spans.length} appointments already booked: ${spans.join(', ')}. Move one of them, or pick another slot.`;
+  return messages.conflictMany
+    .replace('{count}', String(spans.length))
+    .replace('{spans}', spans.join(', '));
 }

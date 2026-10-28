@@ -18,34 +18,36 @@ import { AlertCircle, CalendarDays } from 'lucide-react';
 
 import { AgendaCalendar } from '../features/agenda/components/agenda-calendar.js';
 import { useClinicSettings } from '../features/clinic/queries/clinic-settings-query.js';
+import { useTranslation } from '../i18n/index.js';
 
 export const Route = createFileRoute('/agenda')({
   component: Agenda,
 });
 
 function Agenda() {
+  const { t } = useTranslation();
   const { data: clinic, isPending, error } = useClinicSettings();
 
   return (
     <div className="flex flex-col gap-4">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Agenda</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('agenda.title')}</h1>
         <p className="text-sm text-muted-foreground">
-          {clinic ? `${clinic.name} · ${clinic.timeZone}` : 'Loading the clinic…'}
+          {clinic ? `${clinic.name} · ${clinic.timeZone}` : t('agenda.loadingClinic')}
         </p>
       </header>
 
       {isPending && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
           <CalendarDays className="h-4 w-4" aria-hidden />
-          Loading the clinic…
+          {t('agenda.loadingClinic')}
         </p>
       )}
 
       {error && (
         <p className="flex items-center gap-2 text-sm text-destructive" role="alert">
           <AlertCircle className="h-4 w-4" aria-hidden />
-          The clinic could not be loaded, so the agenda cannot be drawn in its timezone.
+          {t('agenda.clinicError')}
         </p>
       )}
 

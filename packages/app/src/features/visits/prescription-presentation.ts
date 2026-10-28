@@ -10,21 +10,28 @@
 
 import { MEDICATION_ROUTES, type MedicationRoute } from '@denti-code-u3/domain';
 
-const MEDICATION_ROUTE_LABELS: Readonly<Record<MedicationRoute, string>> = {
-  ORAL: 'Oral',
-  TOPICAL: 'Topical',
-  INHALATION: 'Inhaled',
-  INJECTION: 'Injection',
-  RECTAL: 'Rectal',
-  OTHER: 'Other',
+import type { Translate, TranslationKey } from '../../i18n/index.js';
+
+const MEDICATION_ROUTE_KEY: Readonly<Record<MedicationRoute, TranslationKey>> = {
+  ORAL: 'visits.medicationRoute.ORAL',
+  TOPICAL: 'visits.medicationRoute.TOPICAL',
+  INHALATION: 'visits.medicationRoute.INHALATION',
+  INJECTION: 'visits.medicationRoute.INJECTION',
+  RECTAL: 'visits.medicationRoute.RECTAL',
+  OTHER: 'visits.medicationRoute.OTHER',
 };
 
-export function medicationRouteLabel(route: MedicationRoute): string {
-  return MEDICATION_ROUTE_LABELS[route];
+export function medicationRouteLabel(t: Translate, route: MedicationRoute): string {
+  return t(MEDICATION_ROUTE_KEY[route]);
 }
 
 /** The picker's choices, in the domain's order. */
-export const MEDICATION_ROUTE_OPTIONS = MEDICATION_ROUTES.map((route) => ({
-  route,
-  label: MEDICATION_ROUTE_LABELS[route],
-}));
+export function medicationRouteOptions(t: Translate): readonly {
+  readonly route: MedicationRoute;
+  readonly label: string;
+}[] {
+  return MEDICATION_ROUTES.map((route) => ({
+    route,
+    label: medicationRouteLabel(t, route),
+  }));
+}

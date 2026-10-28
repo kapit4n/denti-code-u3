@@ -17,6 +17,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Clinic } from '@denti-code-u3/domain';
 import type { CalendarOptions, DatesSetArg } from '@fullcalendar/core';
 import { ApiClientProvider } from '../../../query/api-client-provider.js';
+import { I18nProvider, type Locale } from '../../../i18n/index.js';
 import { AgendaCalendar } from './agenda-calendar.js';
 
 /** Every `CalendarOptions` the component has rendered, newest last. */
@@ -100,8 +101,10 @@ function jsonResponse(body: unknown, status = 200) {
  */
 function renderCalendar({
   reply = () => Promise.resolve(jsonResponse({ items: [AGENDA_ITEM] })),
+  locale = 'en',
 }: {
   readonly reply?: (init: RequestInit | undefined) => Promise<Response>;
+  readonly locale?: Locale;
 } = {}) {
   rendered.length = 0;
   const fetchImplementation = vi.fn<typeof fetch>((url, init) => {
@@ -114,7 +117,9 @@ function renderCalendar({
   render(
     <QueryClientProvider client={queryClient}>
       <ApiClientProvider baseUrl={BASE_URL} client={client}>
-        <AgendaCalendar clinic={CLINIC} />
+        <I18nProvider initialLocale={locale}>
+          <AgendaCalendar clinic={CLINIC} />
+        </I18nProvider>
       </ApiClientProvider>
     </QueryClientProvider>,
   );
@@ -195,6 +200,19 @@ function bodyOf(call: readonly unknown[] | undefined): unknown {
 }
 
 describe('AgendaCalendar', () => {
+  it('draws the grid and its controls in Spanish when the app is in Spanish', () => {
+    renderCalendar({ locale: 'es' });
+
+    const locale = latest().locale as { readonly code?: string };
+    expect(locale.code).toBe('es');
+    expect(latest().buttonText).toMatchObject({
+      today: 'Hoy',
+      day: 'Día',
+      week: 'Semana',
+      month: 'Mes',
+    });
+  });
+
   it('draws in the clinic timezone, not the browser one', () => {
     renderCalendar();
 

@@ -19,24 +19,31 @@
 import { sumMoney, type Payment, type PaymentMethod } from '@denti-code-u3/domain';
 import type { CurrencyCode } from '@denti-code-u3/types';
 
-const PAYMENT_METHOD_LABELS: Readonly<Record<PaymentMethod, string>> = {
-  CASH: 'Cash',
-  CARD: 'Card',
-  TRANSFER: 'Bank transfer',
-  YAPE: 'Yape',
-  PLIN: 'Plin',
-  OTHER: 'Other',
+import type { Translate, TranslationKey } from '../../i18n/index.js';
+
+const PAYMENT_METHOD_KEY: Readonly<Record<PaymentMethod, TranslationKey>> = {
+  CASH: 'visits.paymentMethod.CASH',
+  CARD: 'visits.paymentMethod.CARD',
+  TRANSFER: 'visits.paymentMethod.TRANSFER',
+  YAPE: 'visits.paymentMethod.YAPE',
+  PLIN: 'visits.paymentMethod.PLIN',
+  OTHER: 'visits.paymentMethod.OTHER',
 };
 
-export function paymentMethodLabel(method: PaymentMethod): string {
-  return PAYMENT_METHOD_LABELS[method];
+export function paymentMethodLabel(t: Translate, method: PaymentMethod): string {
+  return t(PAYMENT_METHOD_KEY[method]);
 }
 
 /** The picker's choices, in the domain's order. */
-export const PAYMENT_METHOD_OPTIONS = Object.keys(PAYMENT_METHOD_LABELS).map((method) => ({
-  method: method as PaymentMethod,
-  label: PAYMENT_METHOD_LABELS[method as PaymentMethod],
-}));
+export function paymentMethodOptions(t: Translate): readonly {
+  readonly method: PaymentMethod;
+  readonly label: string;
+}[] {
+  return (Object.keys(PAYMENT_METHOD_KEY) as PaymentMethod[]).map((method) => ({
+    method,
+    label: paymentMethodLabel(t, method),
+  }));
+}
 
 /**
  * What the register has recorded so far, in one currency.

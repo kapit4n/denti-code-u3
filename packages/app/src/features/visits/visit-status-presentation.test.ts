@@ -11,6 +11,7 @@
 import { VISIT_STATUSES, type VisitStatus } from '@denti-code-u3/domain';
 import { describe, expect, it } from 'vitest';
 
+import { translate, type TranslationKey, type TranslationParams } from '../../i18n/index.js';
 import {
   visitClosureLabel,
   visitClosureTransitions,
@@ -19,13 +20,23 @@ import {
   visitStatusTone,
 } from './visit-status-presentation.js';
 
+const t = (key: TranslationKey, params?: TranslationParams) => translate('en', key, params);
+const tEs = (key: TranslationKey, params?: TranslationParams) => translate('es', key, params);
+
 describe('visit status presentation', () => {
   it('names every status in the domain, as a state and as a tone', () => {
     for (const status of VISIT_STATUSES) {
-      expect(visitStatusLabel(status)).toBeTruthy();
+      expect(visitStatusLabel(t, status)).toBeTruthy();
       expect(visitStatusTone(status)).toBeTruthy();
       expect(visitStatusClassName(status)).toContain('bg-');
     }
+  });
+
+  it('names statuses and closures in Spanish', () => {
+    expect(visitStatusLabel(tEs, 'OPEN')).toBe('Abierta');
+    expect(visitStatusLabel(tEs, 'COMPLETED')).toBe('Completada');
+    expect(visitClosureLabel(tEs, 'COMPLETED')).toBe('Completar visita');
+    expect(visitClosureLabel(tEs, 'OPEN')).toBe('Reabrir visita');
   });
 
   it('offers only the closures the API implements', () => {
@@ -46,7 +57,7 @@ describe('visit status presentation', () => {
   });
 
   it('labels each closure with the act, not with the state', () => {
-    expect(visitClosureLabel('COMPLETED')).toBe('Complete visit');
-    expect(visitClosureLabel('OPEN')).toBe('Reopen visit');
+    expect(visitClosureLabel(t, 'COMPLETED')).toBe('Complete visit');
+    expect(visitClosureLabel(t, 'OPEN')).toBe('Reopen visit');
   });
 });

@@ -28,7 +28,16 @@ import { ApiClientError } from '@denti-code-u3/api-client';
  * sentence in front of a clinician while the fallback next to it says what actually
  * happened.
  */
-export function describeVisitFailure(error: unknown, fallback: string): string | undefined {
+export interface VisitFailureMessages {
+  readonly notFound?: string;
+  readonly network?: string;
+}
+
+export function describeVisitFailure(
+  error: unknown,
+  fallback: string,
+  messages?: VisitFailureMessages,
+): string | undefined {
   if (!error) {
     return undefined;
   }
@@ -47,9 +56,9 @@ export function describeVisitFailure(error: unknown, fallback: string): string |
       // The record was on screen when the button was pressed and is not there now —
       // closed on another screen, or a clinic that no longer holds it. Not a fault
       // to retry, and not a rule either.
-      return 'This visit no longer exists in the current clinic.';
+      return messages?.notFound ?? 'This visit no longer exists in the current clinic.';
     case 'NETWORK_ERROR':
-      return 'Could not reach the server. The visit was not changed.';
+      return messages?.network ?? 'Could not reach the server. The visit was not changed.';
     default:
       // Everything else, including a code this build has never heard of. The API
       // builds those messages for a client — never SQL, never driver text — so a
