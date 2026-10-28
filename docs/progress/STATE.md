@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 53 (the visit directory)
+> Last updated: session 54 (the odontogram page)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -3221,3 +3221,21 @@ the 100-row cap in `auth.integration.test.ts`), +4 e2e (`visits.spec.ts`). API u
 **128** · API integration **46 passed / 273 skipped** · typecheck 12/12 · lint 12/12 + guard ·
 format clean · root test 12/12 tasks · build 5/5 · e2e **149/149** · db unchanged (no
 migration). Docs: ADR 0031, ADR 0023 amended, `roadmap.md`, `open-questions.md`.
+---
+
+Session 54: the sidebar's **Odontogram** link now has a page. `/odontogram` gates the chart
+behind the shared `PatientPicker` — no patient means no request, because there is no chart
+that would belong to anyone — and then mounts the same `PatientOdontogramSection` the patient
+profile draws. One chart, one upsert form, one row list, one clinic-clock formatter: a second
+chart would answer "what does this tooth look like" twice and drift on the first new
+condition. Switching patients remounts the section (`key`), so a selected tooth, condition,
+surfaces and notes never cross records. The selection is component state rather than a search
+param for the documented T2 reason; a reload asks again, which is acceptable for a working
+screen whose unit is a tooth rather than a shared link. No endpoint, domain or schema change.
+
+**Tests.** +2 app component (`odontogram-page.test.tsx`: no request before a patient, then
+the chosen patient's chart on the clinic's clock) and +2 e2e (`odontogram-page.spec.ts`: the
+gate, and Ana → Luis replacing the chart rather than leaving tooth 16 on screen). App **351** ·
+e2e **151**. Existing domain **376**, desktop **4**, API unit **128**, API integration **46
+passed / 273 skipped** unchanged. Typecheck 12/12 · lint 12/12 + guard · format clean · root
+test 12/12 tasks · build 5/5 · db unchanged. Docs: `roadmap.md`, `frontend.md`.

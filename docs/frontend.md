@@ -70,15 +70,17 @@ Each feature uses the layout in [ADR 0006](./decisions/0006-feature-oriented-fro
 Target route map (only existing screens are created — no placeholders for
 features that do not exist yet):
 
-| Route                                  | Feature   | Milestone |
-| -------------------------------------- | --------- | --------- |
-| `/dashboard`                           | dashboard | 3         |
-| `/agenda`                              | agenda    | 5         |
-| `/patients`                            | patients  | 4         |
-| `/patients/$patientId`                 | patients  | 4         |
-| `/patients/$patientId/visits/$visitId` | visits    | 6         |
-| `/visits/$visitId`                     | visits    | 6         |
-| `/settings`                            | settings  | 12        |
+| Route                                  | Feature    | Milestone |
+| -------------------------------------- | ---------- | --------- |
+| `/dashboard`                           | dashboard  | 3         |
+| `/agenda`                              | agenda     | 5         |
+| `/patients`                            | patients   | 4         |
+| `/patients/$patientId`                 | patients   | 4         |
+| `/patients/$patientId/visits/$visitId` | visits     | 6         |
+| `/visits`                              | visits     | 6         |
+| `/visits/$visitId`                     | visits     | 6         |
+| `/odontogram`                          | odontogram | 7         |
+| `/settings`                            | settings   | 12        |
 
 `/` redirects to `/dashboard`. Unknown paths render a not-found route.
 

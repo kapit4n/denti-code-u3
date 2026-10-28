@@ -324,6 +324,14 @@ current-state-only by design) and the **treatment recommendation** bullet remain
 the recommendation needs the treatment plan's write and its link to planned items,
 which are Milestone 8.
 
+**Dedicated page (session 54):** the sidebar's `/odontogram` link now opens a
+patient-gated page. The shared `PatientPicker` chooses the record, then the same
+`PatientOdontogramSection` the profile draws (same `OdontogramChart`, same upsert form,
+same rows) charts and reads it — a second chart would be a second answer to "what does
+this tooth look like". The selection is component state, not a search param, because the
+installed router cannot type the latter (T2); switching patients remounts the section so
+a selected tooth and draft do not cross records. No new endpoint and no schema change.
+
 **Exit criteria:** the odontogram is a reusable component backed by domain
 validity rules, not a drawing hack.
 

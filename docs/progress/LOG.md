@@ -3597,3 +3597,50 @@ pnpm run test:e2e         149/149 passed
 
 The first e2e run failed one spec: the `Visits` heading matched both the page `<h1>` and the
 "Recent visits" card title. The assertion now uses `exact: true`; the screen was correct.
+---
+
+## Session 54 — the odontogram page
+
+**Context.** Milestone 7 delivered the chart on the patient profile (session 34) and the
+sidebar has linked `/odontogram` since the shell was built; that path answered 404. The
+chart itself was already reusable: `OdontogramChart` is presentation-only and
+`PatientOdontogramSection` owns the read, the upsert and the row list. The missing piece was
+a screen that starts from a patient.
+
+**Change.** `routes/odontogram.tsx` renders `OdontogramPage`, which uses the shared
+`PatientPicker` (the header search's own endpoint, two characters before querying) and then
+mounts `PatientOdontogramSection` with the clinic's time zone. The section is keyed by
+patient id: a switch remounts it, so a selected tooth, condition, surfaces and draft notes do
+not follow the user to another record. No patient renders a sentence, not an empty chart.
+
+The selection is local state, not `?patientId=`, because the generated route tree cannot type
+search params in the installed router version (T2) and an `any`-typed id would fail at
+runtime. A reload therefore returns to the prompt; that is recorded in the page's comment.
+
+**Why no second chart.** The page is layout plus a picker. Reusing the profile's section
+keeps one implementation of the clinic clock, the domain condition/surface options, the
+non-optimistic upsert and the "refusal keeps the draft" behaviour. The dedicated page does
+not add an endpoint, migration or domain rule.
+
+**Tests**
+
+- app: 2 — nothing is requested before a patient is chosen; choosing Ana draws the CARIES
+  cell and the 08:00 Lima row. (The chart's own write path stays covered by the profile's
+  component and browser specs.)
+- e2e: 2 — the gate, and Ana → Luis replaces the chart (tooth 16 returns to `UNCHARTED`,
+  "No teeth charted yet."), with the two `GET …/odontogram` reads asserted in order.
+
+Two assertion fixes during the run were test-only: the header's global search is also a
+`combobox`, so the page picker is matched by exact accessible name `Patient`; the e2e run then
+went green.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (existing warning)
+pnpm run format           changed then verified clean
+pnpm run test             app 351/351 (domain/API/desktop unchanged)
+pnpm run build            5/5 successful
+pnpm run test:e2e         151/151 passed
+```
