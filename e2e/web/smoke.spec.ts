@@ -1,4 +1,6 @@
 import { expect, test } from './fixtures/frozen-clock.js';
+import { allDashboardFixtures, clinicFixture } from './fixtures/api-responses.js';
+import { installApi } from './fixtures/mock-api.js';
 
 /**
  * Web shell smoke tests.
@@ -10,6 +12,13 @@ import { expect, test } from './fixtures/frozen-clock.js';
  */
 
 test.describe('Smoke (web shell)', () => {
+  test.beforeEach(async ({ page }) => {
+    // `/` now lands on the dashboard, and the dashboard reads its six endpoints
+    // on mount. Mocked rather than left to the network: this suite is about the
+    // shell mounting, not about a live API answering.
+    await installApi(page, { ...allDashboardFixtures(), ...clinicFixture() });
+  });
+
   test('application shell renders', async ({ page }) => {
     await page.goto('/');
     await expect(page).toHaveTitle(/Denti-Code U3/);
@@ -18,10 +27,12 @@ test.describe('Smoke (web shell)', () => {
   test('the router mounts a route inside the shared frame', async ({ page }) => {
     await page.goto('/');
 
-    // The route content proves the generated route tree mounted...
-    await expect(page.getByRole('heading', { name: 'Foundation is mounted' })).toBeVisible();
+    // The landing route redirects to the dashboard, and the statistics grid is
+    // the dashboard's stable anchor — its <h1> is a time-of-day greeting.
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByRole('region', { name: 'Clinic statistics' })).toBeVisible();
 
-    // ...and the frame proves the root route provided it. Both come from
+    // The frame proves the root route provided the content. Both come from
     // packages/app, not from the shell. `exact` matters: the product name also
     // appears in the footer, so a loose match would be ambiguous.
     await expect(page.getByRole('banner')).toContainText('Denti-Code U3');
@@ -46,7 +57,7 @@ test.describe('Smoke (web shell)', () => {
     page.on('pageerror', (error) => errors.push(error.message));
 
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Foundation is mounted' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Clinic statistics' })).toBeVisible();
 
     expect(errors).toEqual([]);
   });

@@ -186,9 +186,13 @@ same reason — nothing can put an appointment in a room yet.
     whether the _same_ patient may hold two open visits at once (Q19).
 - Visit read side
   - **Done (session 25).** `GET /api/v1/visits/:visitId` and
-    `GET /api/v1/patients/:patientId/visits` (ADR 0023). No filterable collection, and
-    the timeline is uncapped on purpose — a silently truncated clinical history is worse
-    than a long one.
+    `GET /api/v1/patients/:patientId/visits` (ADR 0023). The timeline is uncapped on
+    purpose — a silently truncated clinical history is worse than a long one.
+  - **Done (session 53): the directory.** `GET /api/v1/visits?page=&limit=` returns a
+    page of the caller's visits with an exact total (ADR 0031, amending 0023's rejection
+    of a collection). A clinician sees their own; the manager and the front desk see the
+    clinic's. `RECEPTIONIST`/`ASSISTANT` scope is an open question. `/visits` renders a
+    table with patient, clinician, clinic-time start and status.
   - **Not done:** consolidating the patient profile's inline `visits` query, which is
     recorded in ADR 0023 as open work rather than a rejection.
 - Visit workspace: patient/visit header, left section nav, right workspace
@@ -203,9 +207,8 @@ same reason — nothing can put an appointment in a room yet.
     from the patient profile's "Recent visits" card; a `GET` 404 renders a message
     and a way back rather than an empty shell.
   - **Not done:** the doors into a visit (the agenda's "start visit" and the
-    walk-in form) still have no UI — see session 28's note in `STATE.md` — and the
-    sidebar's `/visits` link is a 404 with no visits list, which ADR 0023's
-    "no filterable collection" deliberately leaves out.
+    walk-in form) still have no UI — see session 28's note in `STATE.md`. The
+    sidebar's `/visits` link now opens the directory (session 53).
 - Clinical notes
   - **Done (session 29).** `listClinicalNotes` / `addClinicalNote` over a
     `ClinicalNoteRepository` whose scoping comes through `visits`, because

@@ -3508,3 +3508,92 @@ clinic monitors unused.
 
 `apps/desktop/test/tauri-config.test.ts` gained a test pinning the flag and the minimum
 size next to the CSP assertions (desktop 3 → 4 tests).
+
+---
+
+## Session 52 — The landing route is the dashboard — 2026-10-26
+
+**Problem.** Opening the app showed "Foundation is mounted", the Milestone 2 placeholder at
+`/`. The sidebar's Dashboard link went to `/dashboard`, but the URL a person actually starts
+on — web address bar or the desktop window's initial entry — was `/`, so a fresh run showed a
+page that is not part of the product.
+
+**Change.** `routes/index.tsx` is now a `beforeLoad` redirect to `/dashboard` with
+`replace: true`. The redirect runs before the auth gate: a signed-out visit ends on the
+dashboard's URL behind the login screen, so signing in lands on the dashboard rather than
+whatever the shell started with. The placeholder component is deleted.
+
+**Test fallout, all intentional**
+
+- `router.test.tsx` / `mount.test.tsx`: assert the path is `/dashboard` and anchor on the
+  `Clinic statistics` region (the dashboard `<h1>` is a time-of-day greeting). The "frame
+  once" check counts the sign-out control, not `<header>` elements: the dashboard has a
+  page header of its own.
+- e2e smoke/login: install the five dashboard fixtures + clinic settings, assert the landing
+  URL and the statistics region. Login tests would otherwise reach a live API with their
+  fake token.
+- `patients.spec.ts`: the global-search spec filters its "no request before typing" check to
+  the patient-list path; the dashboard's own reads now happen on `/`.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK
+pnpm run build            5/5 successful
+pnpm run test             app 346/346, desktop 4/4 (domain/API unchanged)
+pnpm run test:e2e         145/145 passed
+```
+
+---
+
+## Session 53 — the visit directory
+
+**Context.** The shell has linked `/visits` since it was built; it answered 404. ADR 0023 had
+declined a collection endpoint because no question needed a window and a set of filters. The
+product asked for a directory — "a clinician's visits, or all of them for the manager" — which
+is a different question from a filtered schedule. ADR 0031 records the amendment.
+
+**Server.** `GET /api/v1/visits?page=&limit=` (`visits:read`) returns
+`{ items, pagination: { page, limit, total, totalPages } }`. Scope is domain policy:
+`listVisitsForActor` resolves a `DENTIST` through `DentistRepository.findByUserId` to a
+`dentistId` filter, and gives every other permitted role the clinic's rows. `ADMINISTRATOR` is
+the manager; `RECEPTIONIST`/`ASSISTANT` keep the access their `visits:read` already grants and
+their narrower scope is open question 21. A login with no clinician row answers an empty page,
+not an error. The detail route's clinic scope is untouched: this is a default view.
+
+Ordering is `coalesce(started_at, created_at)` descending with `id` as a tiebreak, so a
+walk-in without a start is not shuffled to an arbitrary end. `VisitListEntry` joins patient
+and dentist on `(id, clinic_id)`, so a foreign name cannot leak in and the screen needs one
+request. Both PostgreSQL and SQLite implement `listForClinic` (rule 16), with the same join
+order and count.
+
+**App.** `useVisitList` + `VisitList` + `routes/visits.tsx` render patient, clinician,
+clinic-time start and a status chip, with Previous/Next and an empty record sentence. Times
+wait for `GET /clinic` instead of falling back to the visitor's zone. A clinician with no
+start and no clinician is drawn as "Not started"/"Unassigned" rather than omitted.
+
+**Tests**
+
+- domain: 5 for the scope table, including the unlinked login and that the page request is
+  forwarded untouched.
+- app: 3 — 09:00 Lima rather than 14:00Z, `page=2` on the wire, empty state without a table.
+- API integration (SQLite, real server): two — dentist sees only their two rows while the
+  administrator sees three, with names in the payload; page 2 of 3 and the `limit=1000` cap.
+  Seed gained a DENTIST login, a second clinician, two patients and three visits.
+- e2e: four — rendering, page-2 request, empty, explicit failure alert.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (existing warning)
+pnpm run format:check     clean
+pnpm run test             domain 376, app 349, desktop 4, API unit 128,
+                          API integration 46 passed / 273 skipped
+pnpm run build            5/5 successful
+pnpm run test:e2e         149/149 passed
+```
+
+The first e2e run failed one spec: the `Visits` heading matched both the page `<h1>` and the
+"Recent visits" card title. The assertion now uses `exact: true`; the screen was correct.

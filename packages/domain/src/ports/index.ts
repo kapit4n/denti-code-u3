@@ -32,7 +32,14 @@ import type {
   AppointmentStatus,
   AppointmentWindow,
 } from '../appointment/index.js';
-import type { Visit, VisitStatus, ClinicalNote, VisitAttachment } from '../visit/index.js';
+import type {
+  Visit,
+  VisitStatus,
+  ClinicalNote,
+  VisitAttachment,
+  VisitListEntry,
+  VisitListQuery,
+} from '../visit/index.js';
 import type {
   TreatmentRecord,
   TreatmentPlanProgress,
@@ -447,6 +454,14 @@ export interface VisitRepository {
   findOpenForPatient(clinicId: ClinicId, patientId: PatientId): Promise<Visit | undefined>;
   findForPatient(clinicId: ClinicId, patientId: PatientId): Promise<readonly Visit[]>;
   /**
+   * A page of the clinic's visits, joined to the names a directory row shows.
+   *
+   * `dentistId` is a filter, not an authorization: the caller that supplies it is
+   * `listVisitsForActor`, after it has decided that this viewer may only see their
+   * own work. A repository cannot know who is asking, so it cannot make that call.
+   */
+  listForClinic(clinicId: ClinicId, query: VisitListQuery): Promise<Page<VisitListEntry>>;
+  /**
    * Move a visit to a new status, with the end time the domain decided.
    *
    * `endedAt` is a parameter rather than something the repository works out, because
@@ -589,6 +604,14 @@ export interface DentistRepository {
     request?: DentistListRequest,
   ): Promise<readonly DentistSummary[]>;
   findById(clinicId: ClinicId, dentistId: DentistId): Promise<DentistSummary | undefined>;
+  /**
+   * The clinician record behind a login, if the clinic has linked one.
+   *
+   * Used by the visit directory to answer "whose visits are this dentist's?". The
+   * link is nullable in both directions — a user may have no clinician row, and a
+   * clinician may have no login — so `undefined` is a normal answer, not an error.
+   */
+  findByUserId(clinicId: ClinicId, userId: UserId): Promise<DentistSummary | undefined>;
 }
 
 /** A treatment unit (sillón) the clinic books into. */

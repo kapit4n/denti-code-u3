@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 51 (desktop window opens maximized)
+> Last updated: session 53 (the visit directory)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -3183,3 +3183,41 @@ sets `maximized: true` on the main window, keeping the 1024×720 minimum so a ma
 un-maximize still lands on a usable size. The agenda and visit workspace are built for a
 wide screen; starting at 1366×768 left a larger clinic monitor unused. `tauri-config.test.ts`
 pins the flag and the minimum size alongside the CSP assertions. Desktop tests **4/4**.
+
+---
+
+Session 52: `/` now **redirects to `/dashboard`** (replace, not push) instead of rendering the
+old "Foundation is mounted" placeholder. A fresh launch — web or desktop, signed in or signed
+out — therefore lands where a clinic expects: the dashboard behind the login screen, then the
+dashboard after sign-in. `router.test.tsx` and `mount.test.tsx` assert the redirect and anchor
+on the `Clinic statistics` region; e2e smoke/login now install the dashboard fixtures and
+assert the landing URL; the patient-search spec filters its "no request" check to the patient
+list, since the dashboard's own reads are expected. App tests **346/346**, desktop **4/4**,
+e2e **145/145**.
+---
+
+Session 53: the sidebar's **Visits** link now has a screen (ADR 0031, amending ADR 0023).
+`GET /api/v1/visits?page=&limit=` returns a page of the caller's visits with an exact total
+(default 20, max 100, newest first by `coalesce(started_at, created_at)` with `id` as the
+tiebreak). The domain's `listVisitsForActor` decides the scope from the principal, never from
+a query parameter or the browser: a `DENTIST` is resolved through `dentists.user_id` and sees
+only their own visits (no clinician row → an empty page); `ADMINISTRATOR` sees the clinic's;
+`RECEPTIONIST`/`ASSISTANT` see the clinic's too, recorded as open question 21. This is a
+default view, not a read barrier — `GET /visits/:visitId` stays clinic-scoped by permission.
+`VisitListEntry` carries patient and clinician names joined on `(id, clinic_id)`, so the
+directory is one request rather than an N+1. Both engines implement the query.
+
+**UI.** `/visits` (`visits.tsx`, sibling of `visits_.$visitId.tsx`) renders a table of
+patient, clinician, clinic-time start and status, with paging and an empty state. The
+clinician column is always shown: a manager needs it, and a clinician's rows repeat the same
+name rather than the screen quietly differing by role. `visit-query.ts`'s "no list" comment
+and the workspace route's note are updated.
+
+**Tests.** +5 domain (`listVisitsForActor`: three roles unfiltered, dentist narrowed with the
+page forwarded, unlinked dentist empty), +3 app component (clinic clock, page-2 request on the
+wire, empty record), +2 SQLite API integration (dentist vs manager rows and names, paging and
+the 100-row cap in `auth.integration.test.ts`), +4 e2e (`visits.spec.ts`). API unit rose to
+128 as the suite's own fixtures grew. Domain **376** · app **349** · desktop **4** · API unit
+**128** · API integration **46 passed / 273 skipped** · typecheck 12/12 · lint 12/12 + guard ·
+format clean · root test 12/12 tasks · build 5/5 · e2e **149/149** · db unchanged (no
+migration). Docs: ADR 0031, ADR 0023 amended, `roadmap.md`, `open-questions.md`.

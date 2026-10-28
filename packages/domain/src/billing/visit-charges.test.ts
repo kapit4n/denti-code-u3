@@ -176,6 +176,7 @@ function harness(
         : undefined,
     findOpenForPatient: async () => undefined,
     findForPatient: async () => [],
+    listForClinic: async () => ({ items: [], total: 0 }),
     updateStatus: async () => {},
     save: async () => {},
   };

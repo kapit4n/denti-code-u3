@@ -68,6 +68,7 @@ import {
   listVisitCharges,
   listVisitPayments,
   listVisitPrescriptions,
+  listVisitsForActor,
   listVisitsForPatient,
   payVisitCharges,
   recordVisitTreatment,
@@ -107,6 +108,22 @@ import {
 } from '@denti-code-u3/types';
 
 import { sendProblem } from '../problem.js';
+
+/** Ceiling on a page size, so `?limit=` cannot ask for the whole clinical record. */
+const MAX_PAGE_SIZE = 100;
+const DEFAULT_PAGE_SIZE = 20;
+
+function resolvePageSize(raw: unknown): number {
+  const requested = Number(raw);
+  if (!Number.isFinite(requested)) return DEFAULT_PAGE_SIZE;
+  return Math.min(MAX_PAGE_SIZE, Math.max(1, Math.trunc(requested)));
+}
+
+function resolvePage(raw: unknown): number {
+  const requested = Number(raw);
+  if (!Number.isFinite(requested)) return 1;
+  return Math.max(1, Math.trunc(requested));
+}
 
 export interface VisitsDependencies {
   /**
@@ -258,6 +275,47 @@ export async function registerVisitsRoutes(
     ids,
   }: VisitsDependencies,
 ): Promise<void> {
+  /**
+   * `GET /api/v1/visits` — the clinic's visits, scoped to the caller.
+   *
+   * The directory (ADR 0031). A clinician sees their own visits; everyone else with
+   * `visits:read` sees the clinic's. The scope is decided by `listVisitsForActor`,
+   * not here: a route that read a `dentistId` query parameter would be a route that
+   * let a caller ask for somebody else's list.
+   *
+   * Paging is deliberate. A clinic accumulates visits forever, and the timeline's
+   * rule — return everything, because a truncated history is a lie — is about one
+   * patient's record, not a clinic-wide window. This answers with an exact total so
+   * "page 2 of 7" is true; there is no filter yet because no screen has asked for one.
+   */
+  app.get('/api/v1/visits', { config: { permission: 'visits:read' } }, async (request, reply) => {
+    const clinicId = request.clinicId as ClinicId;
+    const query = request.query as { page?: string; limit?: string };
+    const page = resolvePage(query.page);
+    const limit = resolvePageSize(query.limit);
+
+    try {
+      const { items, total } = await listVisitsForActor(
+        clinicId,
+        request.principal,
+        { offset: (page - 1) * limit, limit },
+        { visits, dentists },
+      );
+
+      return {
+        items,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    } catch (error) {
+      return sendProblem(reply, request, error, 'Failed to list visits');
+    }
+  });
+
   /**
    * `POST /api/v1/visits` — start a visit from an appointment.
    *

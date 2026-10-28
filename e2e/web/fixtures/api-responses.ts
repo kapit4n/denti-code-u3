@@ -344,6 +344,39 @@ export function clinicFixture(): MockedResponses {
   return { '/api/v1/clinic': { body: clinicSettings } };
 }
 
+/**
+ * The clinic's visit directory, as `GET /visits` answers it.
+ *
+ * One completed visit with a clinician and a start, one open walk-in with neither:
+ * both states the table has to draw, and the null case is the one a mapper is most
+ * likely to invent a name for. The instants are 14:00Z/09:00 Lima, like the agenda.
+ */
+export const VISIT_LIST_RESPONSE = {
+  items: [
+    {
+      id: '11111111-7777-4888-8999-000000000042',
+      patientId: ANA_ID,
+      patientName: 'Ana García',
+      dentistId: '11111111-2222-4333-8444-000000000001',
+      dentistName: 'Dra. Rivera',
+      status: 'COMPLETED',
+      startedAt: '2026-10-05T14:00:00.000Z',
+      endedAt: '2026-10-05T15:00:00.000Z',
+    },
+    {
+      id: VISIT_ID,
+      patientId: LUIS_ID,
+      patientName: 'Luis Fernández',
+      dentistId: null,
+      dentistName: null,
+      status: 'OPEN',
+      startedAt: null,
+      endedAt: null,
+    },
+  ],
+  pagination: { page: 1, limit: 20, total: 2, totalPages: 1 },
+} as const;
+
 /** Unpaginated list response for the three seeded patients. */
 export const PATIENT_LIST_RESPONSE = {
   items: patientSummaries,

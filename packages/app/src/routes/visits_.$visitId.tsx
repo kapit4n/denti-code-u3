@@ -12,9 +12,9 @@
  * route here uses: no loaders, so a slow answer is a loading state in the component
  * that needs it rather than a route that cannot render at all.
  *
- * There is no `/visits` list and this does not add one. A collection of visits is
- * not a question the API answers (ADR 0023); visits are reached from the record they
- * belong to, which is where somebody already looking at the patient is.
+ * The `/visits` list is its sibling, `visits.tsx` (ADR 0031). This route stays the
+ * workspace for one visit, reached from the directory or from the patient whose
+ * record it belongs to.
  */
 
 import { createFileRoute } from '@tanstack/react-router';

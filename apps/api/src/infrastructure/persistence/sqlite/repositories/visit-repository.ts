@@ -16,6 +16,8 @@
 import {
   DomainError,
   type Visit,
+  type VisitListEntry,
+  type VisitListQuery,
   type VisitRepository,
   type VisitStatus,
 } from '@denti-code-u3/domain';
@@ -31,9 +33,9 @@ import {
   type PatientId,
   type VisitId,
 } from '@denti-code-u3/types';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, sql } from 'drizzle-orm';
 
-import { visits } from '@denti-code-u3/database/schema/sqlite';
+import { dentists, patients, visits } from '@denti-code-u3/database/schema/sqlite';
 
 import type { SqliteDatabase } from '../connection.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../sqlite-error.js';
@@ -88,6 +90,58 @@ export class SQLiteVisitRepository implements VisitRepository {
       .orderBy(desc(visits.startedAt));
 
     return rows.map(toEntity);
+  }
+
+  /**
+   * A page of the clinic's visits — the SQLite twin of the PostgreSQL query.
+   *
+   * Same joins on `(id, clinic_id)`, same `coalesce(started_at, created_at)` order:
+   * a visit with no start (a row written by hand before the walk-in door existed)
+   * still sorts by when it entered the record, instead of at the top or bottom
+   * depending on how the engine treats NULLs in a descending sort.
+   */
+  async listForClinic(
+    clinicId: ClinicId,
+    query: VisitListQuery,
+  ): Promise<{ items: readonly VisitListEntry[]; total: number }> {
+    const where = and(
+      eq(visits.clinicId, clinicId),
+      query.dentistId ? eq(visits.dentistId, query.dentistId) : undefined,
+    );
+
+    const rows = await this.db
+      .select({
+        id: visits.id,
+        patientId: visits.patientId,
+        patientFirstName: patients.firstName,
+        patientLastName: patients.lastName,
+        patientPreferredName: patients.preferredName,
+        dentistId: visits.dentistId,
+        dentistName: dentists.fullName,
+        status: visits.status,
+        startedAt: visits.startedAt,
+        endedAt: visits.endedAt,
+      })
+      .from(visits)
+      .innerJoin(
+        patients,
+        and(eq(patients.id, visits.patientId), eq(patients.clinicId, visits.clinicId)),
+      )
+      .leftJoin(
+        dentists,
+        and(eq(dentists.id, visits.dentistId), eq(dentists.clinicId, visits.clinicId)),
+      )
+      .where(where)
+      .orderBy(desc(sql`coalesce(${visits.startedAt}, ${visits.createdAt})`), desc(visits.id))
+      .limit(query.limit)
+      .offset(query.offset);
+
+    const [counted] = await this.db.select({ total: count() }).from(visits).where(where);
+
+    return {
+      items: rows.map(toListEntry),
+      total: counted?.total ?? 0,
+    };
   }
 
   async updateStatus(
@@ -154,6 +208,33 @@ export class SQLiteVisitRepository implements VisitRepository {
       throw error;
     }
   }
+}
+
+/**
+ * A joined row as the directory's `VisitListEntry` — the PostgreSQL twin's mapping.
+ */
+function toListEntry(row: {
+  id: string;
+  patientId: string;
+  patientFirstName: string;
+  patientLastName: string;
+  patientPreferredName: string | null;
+  dentistId: string | null;
+  dentistName: string | null;
+  status: VisitStatus;
+  startedAt: Date | null;
+  endedAt: Date | null;
+}): VisitListEntry {
+  return {
+    id: asVisitId(row.id),
+    patientId: asPatientId(row.patientId),
+    patientName: row.patientPreferredName ?? `${row.patientFirstName} ${row.patientLastName}`,
+    dentistId: row.dentistId ? asDentistId(row.dentistId) : null,
+    dentistName: row.dentistName,
+    status: row.status,
+    startedAt: row.startedAt ? (row.startedAt.toISOString() as IsoDateTime) : null,
+    endedAt: row.endedAt ? (row.endedAt.toISOString() as IsoDateTime) : null,
+  };
 }
 
 /**

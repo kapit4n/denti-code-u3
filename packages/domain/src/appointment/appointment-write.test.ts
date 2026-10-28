@@ -175,6 +175,7 @@ function ports(
   // the answer to the tenant foreign keys.
   const dentists: DentistRepository = {
     listByClinic: async () => [],
+    findByUserId: async () => undefined,
     findById: async (scope, dentistId) => {
       lookups.dentists.push(dentistId);
       if (scope !== CLINIC_ID || ![DENTIST_A, DENTIST_B].includes(dentistId)) {
@@ -237,6 +238,7 @@ function inactiveDentists(
 ): DentistRepository {
   return {
     listByClinic: harness.dependencies.dentists.listByClinic,
+    findByUserId: harness.dependencies.dentists.findByUserId,
     findById: async (clinicId, dentistId) => {
       const found = await harness.dependencies.dentists.findById(clinicId, dentistId);
       return found && dentistId === inactive ? { ...found, isActive: false } : found;

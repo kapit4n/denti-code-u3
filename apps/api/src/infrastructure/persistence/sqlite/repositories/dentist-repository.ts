@@ -8,7 +8,7 @@
  */
 
 import type { DentistListRequest, DentistRepository, DentistSummary } from '@denti-code-u3/domain';
-import { asDentistId, type ClinicId, type DentistId } from '@denti-code-u3/types';
+import { asDentistId, type ClinicId, type DentistId, type UserId } from '@denti-code-u3/types';
 import { and, asc, eq, type SQL } from 'drizzle-orm';
 import { dentists } from '@denti-code-u3/database/schema/sqlite';
 
@@ -46,6 +46,24 @@ export class SQLiteDentistRepository implements DentistRepository {
       .select(summaryColumns)
       .from(dentists)
       .where(and(eq(dentists.clinicId, clinicId), eq(dentists.id, dentistId)))
+      .limit(1);
+
+    return row ? toSummary(row) : undefined;
+  }
+
+  /**
+   * The clinician row behind a login.
+   *
+   * Both nullabilities are real: a user may have no clinician row, and a clinician
+   * may have no login. `undefined` is therefore an ordinary answer, not a failure.
+   * Scoping by clinic means a user id from another clinic cannot resolve to a row
+   * here (ADR 0014).
+   */
+  async findByUserId(clinicId: ClinicId, userId: UserId): Promise<DentistSummary | undefined> {
+    const [row] = await this.db
+      .select(summaryColumns)
+      .from(dentists)
+      .where(and(eq(dentists.clinicId, clinicId), eq(dentists.userId, userId)))
       .limit(1);
 
     return row ? toSummary(row) : undefined;

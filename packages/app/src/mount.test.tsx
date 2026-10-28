@@ -54,10 +54,11 @@ describe('mountApp', () => {
     const router = mountInto(container);
     await router.load();
 
-    // Both halves matter: the route content proves the tree mounted, the frame
-    // proves the root route provided it. Neither comes from the shell.
+    // Both halves matter: the landing route redirects to the dashboard, whose
+    // statistics grid proves the tree mounted, and the frame proves the root
+    // route provided it. Neither comes from the shell.
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /foundation is mounted/i })).toBeTruthy();
+      expect(screen.getByRole('region', { name: 'Clinic statistics' })).toBeTruthy();
     });
     expect(screen.getByText(/^Denti-Code U3 · Milestone 2/)).toBeTruthy();
   });
@@ -95,11 +96,12 @@ describe('mountApp', () => {
     const router = mountInto(container);
     await router.load();
 
-    // Exactly one header and one footer means one frame. A shell that also
+    // One sign-out control and one footer mean one frame. A shell that also
     // rendered its own layout would double these, which is the failure ADR-0008
-    // describes.
+    // describes. Counting `<header>` elements would count the dashboard's own
+    // page header as well, so the frame is identified by its control.
     await waitFor(() => {
-      expect(container.querySelectorAll('header')).toHaveLength(1);
+      expect(screen.getAllByRole('button', { name: /sign out/i })).toHaveLength(1);
     });
     expect(container.querySelectorAll('footer')).toHaveLength(1);
   });

@@ -6,10 +6,10 @@
  * and this app has already had one drift silently (`usePatientOdontogram`, which
  * expected `items` where the API has always returned `entries`).
  *
- * There is deliberately no list hook beside it. `GET /visits` with a window and a
- * set of filters does not exist (ADR 0023): a visit is a clinical record with no
- * schedule, and the only collection anyone has asked for is one patient's own
- * timeline, addressed by the patient.
+ * The list beside it is `useVisitList`. ADR 0023 said there would be no `GET
+ * /visits`; ADR 0031 adds one, scoped to the caller, because the sidebar has always
+ * linked to `/visits` and a directory is a different question from one patient's
+ * timeline.
  */
 
 import { useQuery } from '@tanstack/react-query';

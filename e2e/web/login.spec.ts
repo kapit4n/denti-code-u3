@@ -8,6 +8,7 @@
  */
 
 import { expect, test } from './fixtures/frozen-clock.js';
+import { allDashboardFixtures, clinicFixture } from './fixtures/api-responses.js';
 import { installApi } from './fixtures/mock-api.js';
 
 const LOGIN_BODY = {
@@ -24,6 +25,13 @@ const LOGIN_BODY = {
 };
 
 test.describe('Authentication', () => {
+  test.beforeEach(async ({ page }) => {
+    // Signing in lands on the dashboard, which reads its endpoints on mount. They
+    // are mocked so a successful sign-in is judged by the page it reaches, not by
+    // an unrelated 501 from this suite's dispatcher.
+    await installApi(page, { ...allDashboardFixtures(), ...clinicFixture() });
+  });
+
   async function startLoggedOut(page: import('@playwright/test').Page): Promise<void> {
     // Added after the suite's seeding script, so it runs second and undoes it.
     await page.addInitScript(() => window.localStorage.removeItem('denti-code-session'));
@@ -36,8 +44,9 @@ test.describe('Authentication', () => {
     await expect(page.getByLabel('Email')).toBeVisible();
     await expect(page.getByLabel('Password')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
-    // The shell is not rendered without a session.
-    await expect(page.getByRole('heading', { name: 'Foundation is mounted' })).toHaveCount(0);
+    // The shell is not rendered without a session, even though the landing
+    // route has already redirected to the dashboard's URL behind it.
+    await expect(page.getByRole('region', { name: 'Clinic statistics' })).toHaveCount(0);
   });
 
   test('reaches the shell after a successful login', async ({ page }) => {
@@ -52,7 +61,8 @@ test.describe('Authentication', () => {
     await page.getByLabel('Password').fill('denti-code-dev');
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
-    await expect(page.getByRole('heading', { name: 'Foundation is mounted' })).toBeVisible();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByRole('region', { name: 'Clinic statistics' })).toBeVisible();
   });
 
   test('shows one message when the API refuses the credentials', async ({ page }) => {
@@ -107,7 +117,8 @@ test.describe('Authentication', () => {
     await page.goto('/');
     await page.getByRole('button', { name: /sign in as e2e admin/i }).click();
 
-    await expect(page.getByRole('heading', { name: 'Foundation is mounted' })).toBeVisible();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByRole('region', { name: 'Clinic statistics' })).toBeVisible();
   });
 
   test('signs out and returns to the login screen', async ({ page }) => {
@@ -116,7 +127,8 @@ test.describe('Authentication', () => {
     });
 
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Foundation is mounted' })).toBeVisible();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByRole('region', { name: 'Clinic statistics' })).toBeVisible();
 
     await page.getByRole('button', { name: /sign out/i }).click();
 

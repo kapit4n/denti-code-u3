@@ -168,6 +168,7 @@ function harness(
       stored && stored.id === visitId && stored.clinicId === clinicId ? stored : undefined,
     findOpenForPatient: async () => undefined,
     findForPatient: async () => [],
+    listForClinic: async () => ({ items: [], total: 0 }),
     updateStatus: async () => {},
     save: async () => {},
   };

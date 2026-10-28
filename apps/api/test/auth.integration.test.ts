@@ -24,6 +24,11 @@ import { buildServer, type DentiApiServer } from '../src/app.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const clinicId = 'b0b0b0b0-0000-4000-8000-000000000001';
 const userId = 'b0b0b0b0-0000-4000-8000-000000000002';
+const dentistUserId = 'b0b0b0b0-0000-4000-8000-000000000008';
+const dentistId = 'b0b0b0b0-0000-4000-8000-000000000003';
+const otherDentistId = 'b0b0b0b0-0000-4000-8000-000000000009';
+const patientId = 'b0b0b0b0-0000-4000-8000-00000000000a';
+const otherPatientId = 'b0b0b0b0-0000-4000-8000-00000000000b';
 const PASSWORD = 'a-good-password';
 
 describe('authentication (SQLite)', () => {
@@ -220,6 +225,64 @@ describe('authentication (SQLite)', () => {
     expect((await login(email, PASSWORD)).statusCode).toBe(429);
   });
 
+  it('gives a clinician only their own visits, and the manager the clinic’s', async () => {
+    const dentist = (await login('dentist@auth.test')).json().token;
+    const administrator = (await login()).json().token;
+
+    const mine = await app.inject({
+      method: 'GET',
+      url: '/api/v1/visits',
+      headers: { authorization: `Bearer ${dentist}` },
+    });
+    expect(mine.statusCode).toBe(200);
+    const myBody = mine.json();
+    expect(myBody.items.map((visit: { id: string }) => visit.id)).toEqual([
+      'b0b0b0b0-0000-4000-8000-0000000000e2',
+      'b0b0b0b0-0000-4000-8000-0000000000e1',
+    ]);
+    // The page size is the ceiling, not the total: one clinician's list ends here.
+    expect(myBody.pagination).toEqual({ page: 1, limit: 20, total: 2, totalPages: 1 });
+    // Names travel with the row, so the list needs no second request per visit.
+    expect(myBody.items[0]).toMatchObject({
+      patientName: 'Ana Visits',
+      dentistName: 'Dr Auth',
+      status: 'COMPLETED',
+    });
+
+    const all = await app.inject({
+      method: 'GET',
+      url: '/api/v1/visits',
+      headers: { authorization: `Bearer ${administrator}` },
+    });
+    expect(all.statusCode).toBe(200);
+    expect(all.json().pagination.total).toBe(3);
+    expect(all.json().items).toHaveLength(3);
+  });
+
+  it('pages the clinic list and keeps the total exact', async () => {
+    const { token } = (await login()).json();
+    const auth = { authorization: `Bearer ${token}` };
+
+    const page = await app.inject({
+      method: 'GET',
+      url: '/api/v1/visits?page=2&limit=2',
+      headers: auth,
+    });
+    expect(page.statusCode).toBe(200);
+    expect(page.json().pagination).toEqual({ page: 2, limit: 2, total: 3, totalPages: 2 });
+    expect(page.json().items.map((visit: { id: string }) => visit.id)).toEqual([
+      'b0b0b0b0-0000-4000-8000-0000000000e1',
+    ]);
+
+    // A ceiling, so `?limit=` cannot ask for the whole record in one request.
+    const capped = await app.inject({
+      method: 'GET',
+      url: '/api/v1/visits?limit=1000',
+      headers: auth,
+    });
+    expect(capped.json().pagination.limit).toBe(100);
+  });
+
   it('does not expose the development doors in production', async () => {
     const users = await productionApp.inject({
       method: 'GET',
@@ -362,10 +425,76 @@ async function seed(db: BetterSQLite3Database<typeof sqliteSchema>) {
     isActive: true,
   });
 
-  await db.insert(sqliteSchema.dentists).values({
-    id: 'b0b0b0b0-0000-4000-8000-000000000003',
+  await db.insert(sqliteSchema.users).values({
+    id: dentistUserId,
     clinicId,
+    email: 'dentist@auth.test',
+    passwordHash: await new ScryptPasswordHasher().hash(PASSWORD),
     fullName: 'Dr Auth',
+    role: 'DENTIST',
     isActive: true,
   });
+
+  await db.insert(sqliteSchema.dentists).values([
+    {
+      id: dentistId,
+      clinicId,
+      userId: dentistUserId,
+      fullName: 'Dr Auth',
+      isActive: true,
+    },
+    {
+      id: otherDentistId,
+      clinicId,
+      fullName: 'Dra. Other',
+      isActive: true,
+    },
+  ]);
+
+  await db.insert(sqliteSchema.patients).values([
+    {
+      id: patientId,
+      clinicId,
+      firstName: 'Ana',
+      lastName: 'Visits',
+    },
+    {
+      id: otherPatientId,
+      clinicId,
+      firstName: 'Beto',
+      lastName: 'Other',
+    },
+  ]);
+
+  // Two for the linked clinician, one for the other, written in the opposite
+  // order from the one the list must answer in.
+  await db.insert(sqliteSchema.visits).values([
+    {
+      id: 'b0b0b0b0-0000-4000-8000-0000000000e1',
+      clinicId,
+      patientId,
+      dentistId,
+      status: 'COMPLETED',
+      startedAt: new Date('2026-10-01T14:00:00.000Z'),
+      endedAt: new Date('2026-10-01T14:30:00.000Z'),
+    },
+    {
+      id: 'b0b0b0b0-0000-4000-8000-0000000000e3',
+      clinicId,
+      patientId: otherPatientId,
+      dentistId: otherDentistId,
+      status: 'COMPLETED',
+      startedAt: new Date('2026-10-02T14:00:00.000Z'),
+      endedAt: new Date('2026-10-02T14:30:00.000Z'),
+    },
+    {
+      id: 'b0b0b0b0-0000-4000-8000-0000000000e2',
+      clinicId,
+      patientId,
+      dentistId,
+      status: 'COMPLETED',
+      startedAt: new Date('2026-10-03T14:00:00.000Z'),
+      endedAt: new Date('2026-10-03T14:30:00.000Z'),
+    },
+  ]);
 }

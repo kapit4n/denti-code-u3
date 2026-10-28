@@ -92,6 +92,7 @@ function harness(options: { visit?: Visit } = {}) {
     // only prove nothing calls them.
     findOpenForPatient: async () => undefined,
     findForPatient: async () => [],
+    listForClinic: async () => ({ items: [], total: 0 }),
     save: async () => {},
   };
 

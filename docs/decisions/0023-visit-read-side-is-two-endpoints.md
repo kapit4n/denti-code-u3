@@ -1,6 +1,6 @@
 # ADR 0023 — The visit read side is two endpoints, and the timeline is not capped
 
-- Status: accepted
+- Status: amended by [0031](0031-the-visit-directory-is-scoped-to-the-caller.md)
 - Date: 2026-10-05
 - Decides: what `GET /api/v1/visits` is allowed to be, whether the clinical timeline is
   bounded, and why the patient profile's existing visit query is not folded in here.
@@ -31,6 +31,11 @@ produces is unreadable, which means:
   independent count, which reads the `appointments` table and not `visits`.
 
 ## Decision 1 — Two endpoints: one visit, and one patient's timeline
+
+> **Amended by ADR 0031 (2026-10-28).** `GET /api/v1/visits` now exists as a paged,
+> caller-scoped directory. The rejection below is about a _filterable scheduling_
+> collection — date, chair and status filters — and that part still stands; what changed
+> is that "which visits exist in this clinic?" acquired a caller.
 
 `GET /api/v1/visits/:visitId` and `GET /api/v1/patients/:patientId/visits`.
 

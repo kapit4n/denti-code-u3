@@ -84,6 +84,7 @@ function harness(options: { visit?: Visit; storedAttachments?: readonly VisitAtt
       visit && visit.id === visitId && visit.clinicId === clinicId ? visit : undefined,
     findOpenForPatient: async () => undefined,
     findForPatient: async () => [],
+    listForClinic: async () => ({ items: [], total: 0 }),
     updateStatus: async () => {},
     save: async () => {},
   };

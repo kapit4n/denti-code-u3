@@ -18,6 +18,7 @@ import {
   ANA_ID,
   LUIS_ID,
   PATIENT_LIST_RESPONSE,
+  allDashboardFixtures,
   anaBalance,
   anaOdontogram,
   anaProfile,
@@ -197,10 +198,12 @@ test.describe('Global patient search', () => {
       [LIST_PATH]: {
         body: { items: [anaProfile], pagination: { page: 1, limit: 8, total: 1, totalPages: 1 } },
       },
-      // Needed as well as the list: landing on the profile fires the detail
-      // query, and an unmocked endpoint answers 501 by design. So does the
-      // clinic's settings, which the profile now reads its times through. The
-      // chart is part of the profile's own reads too.
+      // Needed as well as the list: `/` lands on the dashboard, which reads its
+      // own endpoints; then landing on the profile fires the detail query, and an
+      // unmocked endpoint answers 501 by design. So does the clinic's settings,
+      // which the profile now reads its times through. The chart is part of the
+      // profile's own reads too.
+      ...allDashboardFixtures(),
       ...clinicFixture(),
       [`${LIST_PATH}/${ANA_ID}`]: { body: anaProfile },
       [`${LIST_PATH}/${ANA_ID}/odontogram`]: { body: anaOdontogram },
@@ -230,6 +233,8 @@ test.describe('Global patient search', () => {
   test('does not query the API before the user types', async ({ page }) => {
     const api = await installApi(page, {
       [LIST_PATH]: { body: PATIENT_LIST_RESPONSE },
+      ...allDashboardFixtures(),
+      ...clinicFixture(),
     });
 
     await page.goto('/');
@@ -237,6 +242,9 @@ test.describe('Global patient search', () => {
     // Give any stray request time to appear before claiming there were none.
     await page.waitForTimeout(500);
 
-    expect(api.requests).toEqual([]);
+    // The dashboard's own reads are expected now that `/` redirects there. What
+    // must not happen is the header search querying before it has enough text.
+    const patientRequests = api.requests.filter((url) => new URL(url).pathname === LIST_PATH);
+    expect(patientRequests).toEqual([]);
   });
 });

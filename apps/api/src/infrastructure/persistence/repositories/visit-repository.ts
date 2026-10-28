@@ -20,6 +20,8 @@
 import {
   DomainError,
   type Visit,
+  type VisitListEntry,
+  type VisitListQuery,
   type VisitRepository,
   type VisitStatus,
 } from '@denti-code-u3/domain';
@@ -35,9 +37,9 @@ import {
   type PatientId,
   type VisitId,
 } from '@denti-code-u3/types';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, sql } from 'drizzle-orm';
 
-import { visits } from '@denti-code-u3/database/schema';
+import { dentists, patients, visits } from '@denti-code-u3/database/schema';
 
 import type { DentiDatabase } from '../postgres/connection.js';
 import {
@@ -114,6 +116,63 @@ export class DrizzleVisitRepository implements VisitRepository {
       .orderBy(desc(visits.startedAt));
 
     return rows.map(toEntity);
+  }
+
+  /**
+   * A page of the clinic's visits, for the directory.
+   *
+   * The joins are the read model's whole reason for existing: a list needs the
+   * patient's and clinician's names, and asking for them per row would turn one
+   * page into twenty-one queries. Both joins are on `(id, clinic_id)`, the same
+   * tenant pair the foreign keys use, so a row that somehow named another clinic's
+   * patient cannot leak a name through this query.
+   *
+   * The count is a second statement rather than a window function: it is the same
+   * `where`, and paging a clinical table is one of the few places where an exact
+   * total is worth the extra round trip — "page 2 of 7" has to be true.
+   */
+  async listForClinic(
+    clinicId: ClinicId,
+    query: VisitListQuery,
+  ): Promise<{ items: readonly VisitListEntry[]; total: number }> {
+    const where = and(
+      eq(visits.clinicId, clinicId),
+      query.dentistId ? eq(visits.dentistId, query.dentistId) : undefined,
+    );
+
+    const rows = await this.db
+      .select({
+        id: visits.id,
+        patientId: visits.patientId,
+        patientFirstName: patients.firstName,
+        patientLastName: patients.lastName,
+        patientPreferredName: patients.preferredName,
+        dentistId: visits.dentistId,
+        dentistName: dentists.fullName,
+        status: visits.status,
+        startedAt: visits.startedAt,
+        endedAt: visits.endedAt,
+      })
+      .from(visits)
+      .innerJoin(
+        patients,
+        and(eq(patients.id, visits.patientId), eq(patients.clinicId, visits.clinicId)),
+      )
+      .leftJoin(
+        dentists,
+        and(eq(dentists.id, visits.dentistId), eq(dentists.clinicId, visits.clinicId)),
+      )
+      .where(where)
+      .orderBy(desc(sql`coalesce(${visits.startedAt}, ${visits.createdAt})`), desc(visits.id))
+      .limit(query.limit)
+      .offset(query.offset);
+
+    const [counted] = await this.db.select({ total: count() }).from(visits).where(where);
+
+    return {
+      items: rows.map(toListEntry),
+      total: counted?.total ?? 0,
+    };
   }
 
   /**
@@ -207,6 +266,38 @@ export class DrizzleVisitRepository implements VisitRepository {
       throw error;
     }
   }
+}
+
+/**
+ * A joined row as the directory's `VisitListEntry`.
+ *
+ * The patient's preferred name wins over the legal name exactly as it does on the
+ * patient list; a row with no preference reads `first last`. The clinician is
+ * nullable because the column is `on delete set null` — a departed clinician leaves
+ * the visit, not a name to invent.
+ */
+function toListEntry(row: {
+  id: string;
+  patientId: string;
+  patientFirstName: string;
+  patientLastName: string;
+  patientPreferredName: string | null;
+  dentistId: string | null;
+  dentistName: string | null;
+  status: VisitStatus;
+  startedAt: Date | null;
+  endedAt: Date | null;
+}): VisitListEntry {
+  return {
+    id: asVisitId(row.id),
+    patientId: asPatientId(row.patientId),
+    patientName: row.patientPreferredName ?? `${row.patientFirstName} ${row.patientLastName}`,
+    dentistId: row.dentistId ? asDentistId(row.dentistId) : null,
+    dentistName: row.dentistName,
+    status: row.status,
+    startedAt: row.startedAt ? (row.startedAt.toISOString() as IsoDateTime) : null,
+    endedAt: row.endedAt ? (row.endedAt.toISOString() as IsoDateTime) : null,
+  };
 }
 
 /**

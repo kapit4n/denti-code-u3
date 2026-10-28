@@ -81,6 +81,7 @@ function harness(options: { byId?: Visit; forPatient?: readonly Visit[] } = {}) 
       return options.forPatient ?? [];
     },
     findOpenForPatient: async () => undefined,
+    listForClinic: async () => ({ items: [], total: 0 }),
     updateStatus: async () => {},
     save: async () => {},
   };

@@ -136,24 +136,27 @@ describe('the mounted route tree', () => {
     window.localStorage.clear();
   });
 
-  it('renders the index route inside the application frame', async () => {
-    renderApp();
+  it('redirects the index route to the dashboard inside the application frame', async () => {
+    const router = renderApp();
 
-    // The frame comes from the root route, not from the index route. Checking it
+    // The frame comes from the root route, not from the dashboard. Checking it
     // after the route settles also proves the frame survived the route's own
-    // render rather than only appearing on an empty tree.
+    // render rather than only appearing on an empty tree. The dashboard's <h1>
+    // is a time-of-day greeting, so the statistics grid is the stable anchor.
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Foundation is mounted' })).toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Clinic statistics' })).toBeInTheDocument();
     });
+    expect(router.state.location.pathname).toBe('/dashboard');
     expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
   });
 
   it('renders the same routes on the desktop target', async () => {
-    renderApp(desktopCapabilities);
+    const router = renderApp(desktopCapabilities);
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Foundation is mounted' })).toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Clinic statistics' })).toBeInTheDocument();
     });
+    expect(router.state.location.pathname).toBe('/dashboard');
   });
 
   it('reports the injected runtime through the frame, not a hardcoded target', async () => {
@@ -173,7 +176,7 @@ describe('the mounted route tree', () => {
     renderApp();
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Foundation is mounted' })).toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Clinic statistics' })).toBeInTheDocument();
     });
 
     expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
