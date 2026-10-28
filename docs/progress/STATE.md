@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 54 (the odontogram page)
+> Last updated: session 55 (wider shell and a full demo dataset)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -3239,3 +3239,23 @@ gate, and Ana → Luis replacing the chart rather than leaving tooth 16 on scree
 e2e **151**. Existing domain **376**, desktop **4**, API unit **128**, API integration **46
 passed / 273 skipped** unchanged. Typecheck 12/12 · lint 12/12 + guard · format clean · root
 test 12/12 tasks · build 5/5 · db unchanged. Docs: `roadmap.md`, `frontend.md`.
+
+---
+
+Session 55: the shell's content cap rose from `max-w-[1600px]` to `max-w-[1920px]`, so the
+agenda, the dashboards and the visit workspace use a large clinic monitor instead of
+letter-boxing at 1600. `max-w-7xl` on the auth/loading frame is unchanged: those are forms,
+not working surfaces.
+
+The development seed now carries a page of data for the screens this phase demos: **10
+patients** (+7), **10 appointments** (+6, six of them today across two rooms), **10 visits**
+(+8 completed/cancelled history rows, still eight completed, one open, one cancelled) and
+**10 odontogram entries** (+8 findings across the seeded charts, one current state per tooth).
+Every row keeps the seed's fixed ids and `onConflictDoNothing`, both engines receive the same
+values, and `seedSummary()` names the new counts. The local SQLite file was rebuilt from
+`db:migrate` + `db:seed`, because old relative timestamps would otherwise leave only three
+appointments in _today_.
+
+**Verification.** `typecheck` 12/12 · `lint` 12/12 + guard · `test` 12/12 tasks (domain 376,
+app 351, desktop 4) · `build` 5/5 · seed span twice, counts stable (10/10/10/10, six today).
+No migration or schema change.

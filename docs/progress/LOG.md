@@ -3644,3 +3644,36 @@ pnpm run test             app 351/351 (domain/API/desktop unchanged)
 pnpm run build            5/5 successful
 pnpm run test:e2e         151/151 passed
 ```
+
+---
+
+Session 55 — wider shell and demo data
+
+**Request.** "Increase width of page and populate some data to display the dashboard, patients,
+calendars, visits and odontograms (around 10 by type)."
+
+**Width.** `packages/app/src/components/shell/shell.tsx` now caps the working area at
+`max-w-[1920px]` instead of 1600. The auth/loading frame keeps `max-w-7xl`; it is a form.
+
+**Seed.** `database/seed.ts` gained seven patients (`…0004`–`…000a`), six appointments (today
+14:00/15:00/16:00, tomorrow 09:00/11:00, +3 days 10:00 — no room overlap), eight past visits
+(seven completed, one cancelled; no appointment link) and eight odontogram findings. Totals:
+patients 10, appointments 10, visits 10 (8 completed / 1 open / 1 cancelled), odontogram
+entries 10. The new visit and odontogram rows are shared constants spread into both the
+PostgreSQL and SQLite insert paths, and the odontogram's readonly surface tuples are copied to
+mutable arrays at the insert boundary. `seedSummary()` was updated.
+
+**Local database.** `data/denti-code-u3.db` was deleted, re-migrated and re-seeded. The old
+file still held the previous run's relative appointment times (Oct 7), which would have made
+the dashboard report three appointments today instead of six. Counts verified directly in
+SQLite: 10/10/10/10; appointments today 6.
+
+**Verification**
+
+```
+pnpm run typecheck        12/12 successful
+pnpm run lint             12/12 successful + BOUNDARY GUARD OK (existing warning)
+pnpm run test             12/12 tasks successful (domain 376, app 351, desktop 4)
+pnpm run build            5/5 successful
+pnpm run db:seed          run twice; counts stable
+```

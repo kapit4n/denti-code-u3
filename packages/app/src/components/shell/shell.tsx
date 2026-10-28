@@ -9,7 +9,7 @@ export function Shell() {
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-y-auto bg-background p-4 md:p-6">
-          <div className="mx-auto w-full max-w-[1600px]">
+          <div className="mx-auto w-full max-w-[1920px]">
             <Outlet />
           </div>
         </main>

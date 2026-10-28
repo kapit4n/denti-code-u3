@@ -122,7 +122,7 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 function seedSummary(): string {
-  return `clinic ${DEVELOPMENT_CLINIC_ID}, 3 patients, 2 dentists, 2 rooms, 4 chairs, 4 appointments, 2 visits (1 completed, 1 open), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 attachments, 2 odontogram entries, 3 charges, 2 payments`;
+  return `clinic ${DEVELOPMENT_CLINIC_ID}, 10 patients, 2 dentists, 2 rooms, 4 chairs, 10 appointments, 10 visits (8 completed, 1 open, 1 cancelled), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 attachments, 10 odontogram entries, 3 charges, 2 payments`;
 }
 
 /**
@@ -404,6 +404,79 @@ const PATIENTS = [
     birthDate: '1979-06-30',
     isActive: false,
   },
+  // Seven more current records, so the list, the picker and the dashboard's
+  // "recent patients" card have a page rather than a handful of rows.
+  {
+    id: '11111111-3333-4444-8555-000000000004',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    recordNumber: 'P-000004',
+    firstName: 'Diego',
+    lastName: 'Rojas',
+    phone: '+1 555 0104',
+    email: 'diego.rojas@example.test',
+    birthDate: '1998-01-23',
+  },
+  {
+    id: '11111111-3333-4444-8555-000000000005',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    recordNumber: 'P-000005',
+    firstName: 'Valeria',
+    lastName: 'Mendoza',
+    phone: '+1 555 0105',
+    email: 'valeria.mendoza@example.test',
+    birthDate: '1994-08-09',
+    allergies: 'Latex',
+  },
+  {
+    id: '11111111-3333-4444-8555-000000000006',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    recordNumber: 'P-000006',
+    firstName: 'Tomás',
+    lastName: 'Herrera',
+    phone: '+1 555 0106',
+    email: 'tomas.herrera@example.test',
+    birthDate: '2001-12-05',
+  },
+  {
+    id: '11111111-3333-4444-8555-000000000007',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    recordNumber: 'P-000007',
+    firstName: 'Camila',
+    lastName: 'Ortiz',
+    phone: '+1 555 0107',
+    email: 'camila.ortiz@example.test',
+    birthDate: '1988-03-14',
+  },
+  {
+    id: '11111111-3333-4444-8555-000000000008',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    recordNumber: 'P-000008',
+    firstName: 'Mateo',
+    lastName: 'Ríos',
+    phone: '+1 555 0108',
+    email: 'mateo.rios@example.test',
+    birthDate: '1972-07-28',
+  },
+  {
+    id: '11111111-3333-4444-8555-000000000009',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    recordNumber: 'P-000009',
+    firstName: 'Lucía',
+    lastName: 'Castro',
+    phone: '+1 555 0109',
+    email: 'lucia.castro@example.test',
+    birthDate: '1996-10-11',
+  },
+  {
+    id: '11111111-3333-4444-8555-00000000000a',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    recordNumber: 'P-000010',
+    firstName: 'Andrés',
+    lastName: 'Paredes',
+    phone: '+1 555 0110',
+    email: 'andres.paredes@example.test',
+    birthDate: '1983-05-19',
+  },
 ] as const;
 
 async function insertPatientsPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
@@ -475,6 +548,75 @@ const APPOINTMENTS = [
     startsAt: at(3, 9, 0),
     durationMinutes: 45,
     status: 'SCHEDULED',
+  },
+  // Six more bookings: three still today (one finished, one cancelled, one later),
+  // two tomorrow and one in three days, so the agenda and the dashboard's preview
+  // have a week rather than a single column. Rooms do not overlap.
+  {
+    id: '11111111-4444-4555-8666-000000000005',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000004',
+    dentistId: '11111111-2222-4333-8444-000000000002',
+    chairId: '11111111-4444-4555-8666-000000000003',
+    roomId: '11111111-3333-4444-8555-000000000002',
+    startsAt: at(0, 14, 0),
+    durationMinutes: 45,
+    status: 'COMPLETED',
+  },
+  {
+    id: '11111111-4444-4555-8666-000000000006',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000005',
+    dentistId: '11111111-2222-4333-8444-000000000001',
+    chairId: '11111111-4444-4555-8666-000000000001',
+    roomId: '11111111-3333-4444-8555-000000000001',
+    startsAt: at(0, 15, 0),
+    durationMinutes: 30,
+    status: 'CANCELLED',
+  },
+  {
+    id: '11111111-4444-4555-8666-000000000007',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000006',
+    dentistId: '11111111-2222-4333-8444-000000000002',
+    chairId: '11111111-4444-4555-8666-000000000003',
+    roomId: '11111111-3333-4444-8555-000000000002',
+    startsAt: at(0, 16, 0),
+    durationMinutes: 45,
+    status: 'SCHEDULED',
+  },
+  {
+    id: '11111111-4444-4555-8666-000000000008',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000007',
+    dentistId: '11111111-2222-4333-8444-000000000001',
+    chairId: '11111111-4444-4555-8666-000000000001',
+    roomId: '11111111-3333-4444-8555-000000000001',
+    startsAt: at(1, 9, 0),
+    durationMinutes: 60,
+    status: 'CONFIRMED',
+  },
+  {
+    id: '11111111-4444-4555-8666-000000000009',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000008',
+    dentistId: '11111111-2222-4333-8444-000000000002',
+    chairId: '11111111-4444-4555-8666-000000000003',
+    roomId: '11111111-3333-4444-8555-000000000002',
+    startsAt: at(1, 11, 0),
+    durationMinutes: 30,
+    status: 'SCHEDULED',
+  },
+  {
+    id: '11111111-4444-4555-8666-000000000010',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000009',
+    dentistId: '11111111-2222-4333-8444-000000000002',
+    chairId: '11111111-4444-4555-8666-000000000003',
+    roomId: '11111111-3333-4444-8555-000000000002',
+    startsAt: at(3, 10, 0),
+    durationMinutes: 45,
+    status: 'CONFIRMED',
   },
 ] satisfies readonly AppointmentInput[];
 
@@ -619,6 +761,189 @@ async function insertTreatmentsSqlite(
 // already populated.
 const DAY = 24 * 60 * 60 * 1000;
 
+// Eight more visits on past clinic days, so the directory and each patient's
+// history have a page to read. They carry no appointment: a visit is a clinical
+// record whether or not a booking produced it, and linking these to slots that
+// already happened would make the timeline claim a booking nobody made. One is
+// cancelled, because a directory that only ever draws one status is a directory
+// that has not been looked at.
+const EXTRA_VISITS = [
+  {
+    id: '11111111-7777-4888-8999-000000000003',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000001',
+    dentistId: '11111111-2222-4333-8444-000000000001',
+    status: 'COMPLETED',
+    startedAt: at(-2, 9, 0),
+    endedAt: at(-2, 9, 40),
+    reason: 'Routine check-up',
+    summary: 'No new findings; hygiene reinforced.',
+  },
+  {
+    id: '11111111-7777-4888-8999-000000000004',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000004',
+    dentistId: '11111111-2222-4333-8444-000000000002',
+    status: 'COMPLETED',
+    startedAt: at(-4, 10, 0),
+    endedAt: at(-4, 10, 50),
+    reason: 'Pain on the lower left molar',
+    summary: 'Caries excavated and a temporary filling placed.',
+  },
+  {
+    id: '11111111-7777-4888-8999-000000000005',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000005',
+    dentistId: '11111111-2222-4333-8444-000000000001',
+    status: 'COMPLETED',
+    startedAt: at(-6, 11, 0),
+    endedAt: at(-6, 11, 45),
+    reason: 'Broken incisor',
+    summary: 'Edge restored with composite; occlusion checked.',
+  },
+  {
+    id: '11111111-7777-4888-8999-000000000006',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000006',
+    dentistId: '11111111-2222-4333-8444-000000000002',
+    status: 'COMPLETED',
+    startedAt: at(-8, 9, 30),
+    endedAt: at(-8, 10, 30),
+    reason: 'Sensitivity in the upper right quadrant',
+    summary: 'Crown seated on tooth 14; margins verified.',
+  },
+  {
+    id: '11111111-7777-4888-8999-000000000007',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000007',
+    dentistId: '11111111-2222-4333-8444-000000000001',
+    status: 'COMPLETED',
+    startedAt: at(-11, 14, 0),
+    endedAt: at(-11, 14, 45),
+    reason: 'Swelling around the lower right molar',
+    summary: 'Root canal started; temporary dressing placed.',
+  },
+  {
+    id: '11111111-7777-4888-8999-000000000008',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000008',
+    dentistId: '11111111-2222-4333-8444-000000000002',
+    status: 'COMPLETED',
+    startedAt: at(-14, 10, 0),
+    endedAt: at(-14, 10, 30),
+    reason: 'Missing tooth review',
+    summary: 'Implant site healing well; no intervention needed.',
+  },
+  {
+    id: '11111111-7777-4888-8999-000000000009',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000009',
+    dentistId: '11111111-2222-4333-8444-000000000001',
+    status: 'COMPLETED',
+    startedAt: at(-18, 9, 0),
+    endedAt: at(-18, 9, 50),
+    reason: 'Cleaning and sealant review',
+    summary: 'Prophylaxis completed; sealants intact.',
+  },
+  {
+    id: '11111111-7777-4888-8999-00000000000a',
+    clinicId: DEVELOPMENT_CLINIC_ID,
+    patientId: '11111111-3333-4444-8555-000000000003',
+    dentistId: '11111111-2222-4333-8444-000000000002',
+    status: 'CANCELLED',
+    startedAt: at(-9, 15, 0),
+    endedAt: null,
+    reason: 'Consultation requested by phone',
+    summary: null,
+  },
+] as const;
+
+// Eight findings across the seeded charts; with Luis's two below, ten entries in
+// total. Every tooth is permanent FDI and every surface belongs to the tooth's
+// site rule, so the map and the detail list both have something true to draw.
+const EXTRA_ODONTOGRAM_ENTRIES = [
+  {
+    id: '11111111-cccc-4ddd-8eee-000000000009',
+    patientId: '11111111-3333-4444-8555-000000000001',
+    dentition: 'PERMANENT',
+    tooth: '26',
+    surfaces: ['MESIAL', 'OCCLUSAL'],
+    condition: 'CARIES',
+    notes: 'Watch at the next check-up.',
+    recordedAt: at(-2, 9, 20),
+  },
+  {
+    id: '11111111-cccc-4ddd-8eee-00000000000a',
+    patientId: '11111111-3333-4444-8555-000000000003',
+    dentition: 'PERMANENT',
+    tooth: '46',
+    surfaces: ['OCCLUSAL'],
+    condition: 'FILLED',
+    notes: 'Amalgam replaced with composite in 2023.',
+    recordedAt: at(-18, 9, 10),
+  },
+  {
+    id: '11111111-cccc-4ddd-8eee-00000000000b',
+    patientId: '11111111-3333-4444-8555-000000000004',
+    dentition: 'PERMANENT',
+    tooth: '11',
+    surfaces: ['INCISAL'],
+    condition: 'FRACTURE',
+    notes: 'Edge chipped; composite planned.',
+    recordedAt: at(-4, 10, 20),
+  },
+  {
+    id: '11111111-cccc-4ddd-8eee-00000000000c',
+    patientId: '11111111-3333-4444-8555-000000000005',
+    dentition: 'PERMANENT',
+    tooth: '36',
+    surfaces: [],
+    condition: 'ROOT_CANAL',
+    notes: 'Completed two-session endodontic treatment.',
+    recordedAt: at(-6, 11, 20),
+  },
+  {
+    id: '11111111-cccc-4ddd-8eee-00000000000d',
+    patientId: '11111111-3333-4444-8555-000000000006',
+    dentition: 'PERMANENT',
+    tooth: '47',
+    surfaces: [],
+    condition: 'MISSING',
+    notes: 'Extracted before the patient joined the clinic.',
+    recordedAt: at(-8, 10, 10),
+  },
+  {
+    id: '11111111-cccc-4ddd-8eee-00000000000e',
+    patientId: '11111111-3333-4444-8555-000000000007',
+    dentition: 'PERMANENT',
+    tooth: '14',
+    surfaces: [],
+    condition: 'CROWN',
+    notes: 'Ceramic crown seated, margins sound.',
+    recordedAt: at(-11, 14, 20),
+  },
+  {
+    id: '11111111-cccc-4ddd-8eee-00000000000f',
+    patientId: '11111111-3333-4444-8555-000000000008',
+    dentition: 'PERMANENT',
+    tooth: '37',
+    surfaces: ['OCCLUSAL'],
+    condition: 'SEALANT',
+    notes: 'Sealant intact at recall.',
+    recordedAt: at(-14, 10, 20),
+  },
+  {
+    id: '11111111-cccc-4ddd-8eee-000000000010',
+    patientId: '11111111-3333-4444-8555-000000000009',
+    dentition: 'PERMANENT',
+    tooth: '24',
+    surfaces: [],
+    condition: 'IMPLANT',
+    notes: 'Implant restored with a single crown.',
+    recordedAt: at(-18, 9, 20),
+  },
+] as const;
+
 async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
   await db
     .insert(pgSchema.visits)
@@ -647,6 +972,7 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
         startedAt: at(0, 10, 0),
         reason: 'Scaling and hygiene visit',
       },
+      ...EXTRA_VISITS,
     ])
     .onConflictDoNothing();
 
@@ -791,6 +1117,7 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
         notes: null,
         recordedAt: at(0, 10, 20),
       },
+      ...EXTRA_ODONTOGRAM_ENTRIES.map((entry) => ({ ...entry, surfaces: [...entry.surfaces] })),
     ])
     .onConflictDoNothing();
 }
@@ -822,6 +1149,7 @@ async function insertVisitsAndPlansSqlite(
         startedAt: at(0, 10, 0),
         reason: 'Scaling and hygiene visit',
       },
+      ...EXTRA_VISITS,
     ])
     .onConflictDoNothing();
 
@@ -960,6 +1288,7 @@ async function insertVisitsAndPlansSqlite(
         notes: null,
         recordedAt: at(0, 10, 20),
       },
+      ...EXTRA_ODONTOGRAM_ENTRIES.map((entry) => ({ ...entry, surfaces: [...entry.surfaces] })),
     ])
     .onConflictDoNothing();
 }
