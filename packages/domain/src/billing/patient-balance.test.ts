@@ -103,6 +103,7 @@ function harness(options: HarnessOptions = {}) {
       reads.push('payments');
       return options.payments ?? [];
     },
+    listForClinic: async () => ({ items: [], total: 0, totalAmountMinor: 0 }),
     save: async () => {},
   };
 

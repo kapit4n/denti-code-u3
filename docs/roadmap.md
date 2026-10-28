@@ -390,6 +390,11 @@ numbering and status (session 40, refined session 44), payments/methods/allocati
 (sessions 31–32, invoice-scoped follow-up in session 44), patient balances (session 43) and statements (session 45), and the visit workspace's invoice controls (session
 44). See `docs/progress/LOG.md`.
 
+**Session 59** closed the sidebar's dangling **Payments** link with `/payments`: a
+read-only clinic-wide ledger over the stored payments, filtered by clinic-local period
+and method, paged, with a server-side total. Recording stays on the visit settlement flow
+(ADR 0033); a clinic-wide "record payment" door is open question 22, not an omission.
+
 - Charges → invoices
 - Invoice numbering and status
 - Payments, methods, allocation

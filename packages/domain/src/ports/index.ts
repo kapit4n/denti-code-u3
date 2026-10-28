@@ -61,6 +61,8 @@ import type {
   InvoiceStatus,
   Payment,
   PaymentAllocation,
+  PaymentLedgerPage,
+  PaymentLedgerQuery,
 } from '../billing/index.js';
 import type { Prescription } from '../prescription/index.js';
 import type { InventoryItem, StockMovement } from '../inventory/index.js';
@@ -1020,11 +1022,16 @@ export interface InvoiceRepository {
  * patient is here (it distinguishes the two, because the route has to), so doing it
  * twice would buy a second patient query for no second answer. Scope is the payment's
  * own `clinic_id` and `patient_id` — no join, because nothing is being reached for.
+ *
+ * `listForClinic` is the manager's ledger: a window bounded by the clinic's own
+ * calendar, an optional method, and a patient name joined so the page is one request.
+ * Its totals cover every matching row rather than only the requested page.
  */
 export interface PaymentRepository {
   findForVisit(clinicId: ClinicId, visitId: VisitId): Promise<readonly Payment[]>;
   /** Every payment this patient made to this clinic, newest first; `[]` when there are none. */
   findForPatient(clinicId: ClinicId, patientId: PatientId): Promise<readonly Payment[]>;
+  listForClinic(clinicId: ClinicId, query: PaymentLedgerQuery): Promise<PaymentLedgerPage>;
   save(payment: Payment): Promise<void>;
 }
 

@@ -984,6 +984,48 @@ describe('API on SQLite', () => {
     expect(refused.json().error.code).toBe('VALIDATION_ERROR');
   });
 
+  it('lists the clinic’s payments for a period, with the period total', async () => {
+    const day = today.start.toISOString().slice(0, 10);
+
+    const ledger = await app.inject({
+      method: 'GET',
+      url: `/api/v1/payments?from=${day}&to=${day}`,
+    });
+
+    expect(ledger.statusCode).toBe(200);
+    expect(ledger.json()).toMatchObject({
+      period: { from: day, to: day, timeZone: 'UTC' },
+      currencyCode: 'USD',
+      totalAmountMinor: 23_000,
+      pagination: { page: 1, limit: 20, total: 1, totalPages: 1 },
+    });
+    expect(ledger.json().items[0]).toMatchObject({
+      patientId: apiPatientId,
+      patientName: 'Dee Book',
+      method: 'CARD',
+      currency: 'USD',
+      amountMinor: 23_000,
+      reference: '*** 4242',
+    });
+
+    // The method filter applies to the rows and to the period total together, so a
+    // filtered screen cannot show cash rows under a card total.
+    const cashOnly = await app.inject({
+      method: 'GET',
+      url: `/api/v1/payments?from=${day}&to=${day}&method=CASH`,
+    });
+    expect(cashOnly.statusCode).toBe(200);
+    expect(cashOnly.json().items).toEqual([]);
+    expect(cashOnly.json().totalAmountMinor).toBe(0);
+
+    const reversed = await app.inject({
+      method: 'GET',
+      url: `/api/v1/payments?from=${day}&to=2000-01-01`,
+    });
+    expect(reversed.statusCode).toBe(422);
+    expect(reversed.json().error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('bills a planned line on a charge, without completing it', async () => {
     const created = await app.inject({
       method: 'POST',

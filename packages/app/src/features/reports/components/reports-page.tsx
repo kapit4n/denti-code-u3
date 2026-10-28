@@ -41,7 +41,7 @@ import {
 import { usePlatform } from '../../../providers.js';
 import { useDentists } from '../../agenda/queries/bookable-resources-query.js';
 import { useClinicSettings } from '../../clinic/queries/clinic-settings-query.js';
-import { defaultReportPeriod, type ReportPeriod } from '../clinic-report-period.js';
+import { defaultMonthToDatePeriod, type ClinicDatePeriod } from '../../clinic/clinic-period.js';
 import { buildReportCsv, reportFileName } from '../report-csv.js';
 import { useReportSummary } from '../queries/reports-query.js';
 import { StatCard } from '../../dashboard/components/stat-card.js';
@@ -64,7 +64,7 @@ export function ReportsPage() {
   // this way rather than seeding state in an effect is what keeps the clinic clock out
   // of a render loop — the effect version wrote state on the same tick the clinic
   // arrived and lit React's cascading-render warning.
-  const [editedPeriod, setEditedPeriod] = useState<ReportPeriod | null>(null);
+  const [editedPeriod, setEditedPeriod] = useState<ClinicDatePeriod | null>(null);
   const [dentistId, setDentistId] = useState('');
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [exportFailure, setExportFailure] = useState<string | null>(null);
@@ -75,7 +75,7 @@ export function ReportsPage() {
   // Before the clinic record arrives there is no honest date to show, so the fields
   // stay empty and the query stays disabled.
   const period = useMemo(
-    () => editedPeriod ?? (timeZone ? defaultReportPeriod(new Date(), timeZone) : null),
+    () => editedPeriod ?? (timeZone ? defaultMonthToDatePeriod(new Date(), timeZone) : null),
     [editedPeriod, timeZone],
   );
   const from = period?.from ?? '';

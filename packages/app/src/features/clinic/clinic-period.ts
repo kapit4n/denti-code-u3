@@ -1,17 +1,14 @@
 /**
- * The default reporting period, read in the clinic's own calendar.
+ * A month-to-date period, read in the clinic's own calendar.
  *
- * A report is about dates, not instants: "October" means the clinic's October. The
- * browser's `new Date()` is an instant and `toISOString()` is UTC, so on the evening
- * of the 31st in Lima it would name the 1st of the next month. The clinic's clock
- * answers the question the page is actually asking.
- *
- * The default is the current month to date: enough to be useful on the first visit,
- * short enough to stay inside the report's one-year limit, and it does not pretend to
- * know a financial year the clinic has not configured.
+ * Reports and the payment ledger both open on "this month so far". That is a
+ * calendar question, not a reporting rule: the clinic's October is not UTC's
+ * October, and `toISOString()` on the browser's instant would name the wrong day for
+ * the last hours of every month. Keeping the arithmetic here means the two screens
+ * cannot disagree about which dates they are asking for.
  */
 
-export interface ReportPeriod {
+export interface ClinicDatePeriod {
   readonly from: string;
   readonly to: string;
 }
@@ -33,7 +30,7 @@ export function clinicDateIso(now: Date, timeZone: string): string {
 }
 
 /** The clinic-local month containing `now`, from its first day through today. */
-export function defaultReportPeriod(now: Date, timeZone: string): ReportPeriod {
+export function defaultMonthToDatePeriod(now: Date, timeZone: string): ClinicDatePeriod {
   const today = clinicDateIso(now, timeZone);
   return { from: `${today.slice(0, 8)}01`, to: today };
 }

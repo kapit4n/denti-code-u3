@@ -22,6 +22,7 @@ import {
   noInvoices,
   openVisit,
   PATIENT_LIST_RESPONSE,
+  paymentsFixtures,
   VISIT_ID,
   visitWorkspaceFixtures,
 } from './fixtures/api-responses.js';
@@ -167,5 +168,15 @@ test.describe('Spanish', () => {
     await expect(page.getByRole('heading', { name: 'Odontograma' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Planes de tratamiento' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Facturas' })).toBeVisible();
+  });
+  test('translates the payment ledger', async ({ page }) => {
+    await installApi(page, paymentsFixtures());
+
+    await page.goto('/payments');
+
+    await expect(page.getByRole('heading', { name: 'Pagos', exact: true })).toBeVisible();
+    await expect(page.getByTestId('payments-collected')).toHaveText('180.00 PEN');
+    await expect(page.getByTestId('payment-row').first()).toContainText('Tarjeta');
+    await expect(page.getByTestId('payments-method')).toContainText('Todos los métodos');
   });
 });

@@ -80,6 +80,7 @@ features that do not exist yet):
 | `/visits`                              | visits     | 6         |
 | `/visits/$visitId`                     | visits     | 6         |
 | `/odontogram`                          | odontogram | 7         |
+| `/payments`                            | payments   | 9         |
 | `/settings`                            | settings   | 12        |
 
 `/` redirects to `/dashboard`. Unknown paths render a not-found route.

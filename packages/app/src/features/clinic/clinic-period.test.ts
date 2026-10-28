@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { clinicDateIso, defaultReportPeriod } from './clinic-report-period.js';
+import { clinicDateIso, defaultMonthToDatePeriod } from './clinic-period.js';
 
 describe('clinicDateIso', () => {
   it('answers with the clinic date, not the UTC date', () => {
@@ -14,9 +14,9 @@ describe('clinicDateIso', () => {
   });
 });
 
-describe('defaultReportPeriod', () => {
+describe('defaultMonthToDatePeriod', () => {
   it('runs from the first of the clinic month through today', () => {
-    expect(defaultReportPeriod(new Date('2026-11-01T01:30:00.000Z'), 'America/Lima')).toEqual({
+    expect(defaultMonthToDatePeriod(new Date('2026-11-01T01:30:00.000Z'), 'America/Lima')).toEqual({
       from: '2026-10-01',
       to: '2026-10-31',
     });

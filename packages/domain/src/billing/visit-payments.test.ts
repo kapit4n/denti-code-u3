@@ -240,6 +240,7 @@ function harness(
       recorded.paymentsForPatientRead.push({ clinicId, patientId });
       return options.storedPayments ?? [];
     },
+    listForClinic: async () => ({ items: [], total: 0, totalAmountMinor: 0 }),
     save: async (payment) => {
       recorded.payments.push(payment);
     },

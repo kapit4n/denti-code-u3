@@ -19,7 +19,14 @@
  * its invoice names. Newest received first, then by id: the order a payment
  * register is read in.
  */
-import { DomainError, type Payment, type PaymentRepository } from '@denti-code-u3/domain';
+import {
+  DomainError,
+  type Payment,
+  type PaymentLedgerEntry,
+  type PaymentLedgerPage,
+  type PaymentLedgerQuery,
+  type PaymentRepository,
+} from '@denti-code-u3/domain';
 import {
   asClinicId,
   asPatientId,
@@ -29,9 +36,15 @@ import {
   type PatientId,
   type VisitId,
 } from '@denti-code-u3/types';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, gte, lt, sql } from 'drizzle-orm';
 
-import { charges, invoices, paymentAllocations, payments } from '@denti-code-u3/database/schema';
+import {
+  charges,
+  invoices,
+  patients,
+  paymentAllocations,
+  payments,
+} from '@denti-code-u3/database/schema';
 
 import type { DentiDatabase } from '../postgres/connection.js';
 import { isForeignKeyViolation } from '../postgres-error.js';
@@ -81,6 +94,52 @@ export class DrizzlePaymentRepository implements PaymentRepository {
     return rows.map(toEntity);
   }
 
+  /**
+   * The clinic's ledger for a window, with the patient name the row shows.
+   *
+   * The window is half-open `[from, to)`, and the aggregate runs over the same
+   * predicate as the page so "collected" is the period's figure, not the page's.
+   */
+  async listForClinic(clinicId: ClinicId, query: PaymentLedgerQuery): Promise<PaymentLedgerPage> {
+    const where = and(
+      eq(payments.clinicId, clinicId),
+      gte(payments.receivedAt, new Date(query.from)),
+      lt(payments.receivedAt, new Date(query.to)),
+      query.method ? eq(payments.method, query.method) : undefined,
+    );
+
+    const rows = await this.db
+      .select({
+        ...PAYMENT_COLUMNS,
+        patientFirstName: patients.firstName,
+        patientLastName: patients.lastName,
+        patientPreferredName: patients.preferredName,
+      })
+      .from(payments)
+      .innerJoin(
+        patients,
+        and(eq(patients.id, payments.patientId), eq(patients.clinicId, payments.clinicId)),
+      )
+      .where(where)
+      .orderBy(desc(payments.receivedAt), desc(payments.id))
+      .limit(query.limit)
+      .offset(query.offset);
+
+    const [aggregate] = await this.db
+      .select({
+        total: count(),
+        totalAmountMinor: sql<number>`coalesce(sum(${payments.amountMinor}), 0)::int`,
+      })
+      .from(payments)
+      .where(where);
+
+    return {
+      items: rows.map(toLedgerEntry),
+      total: aggregate?.total ?? 0,
+      totalAmountMinor: aggregate?.totalAmountMinor ?? 0,
+    };
+  }
+
   async save(payment: Payment): Promise<void> {
     try {
       await this.db.insert(payments).values({
@@ -103,6 +162,31 @@ export class DrizzlePaymentRepository implements PaymentRepository {
       throw error;
     }
   }
+}
+
+function toLedgerEntry(row: {
+  id: string;
+  clinicId: string;
+  patientId: string;
+  method: Payment['method'];
+  currency: string;
+  amountMinor: number;
+  reference: string | null;
+  receivedAt: Date;
+  patientFirstName: string;
+  patientLastName: string;
+  patientPreferredName: string | null;
+}): PaymentLedgerEntry {
+  return {
+    id: asPaymentId(row.id),
+    patientId: asPatientId(row.patientId),
+    patientName: row.patientPreferredName ?? `${row.patientFirstName} ${row.patientLastName}`,
+    method: row.method,
+    currency: row.currency as Payment['currency'],
+    amountMinor: row.amountMinor,
+    reference: row.reference,
+    receivedAt: row.receivedAt.toISOString() as IsoDateTime,
+  };
 }
 
 function toEntity(row: {

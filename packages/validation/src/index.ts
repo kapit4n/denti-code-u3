@@ -8,4 +8,5 @@ export * from './visits/index.js';
 export * from './odontogram/index.js';
 export * from './treatments/index.js';
 export * from './inventory/index.js';
+export * from './payments/index.js';
 export * from './reports/index.js';

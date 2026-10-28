@@ -15,6 +15,7 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as OdontogramRouteImport } from './routes/odontogram'
 import { Route as PatientsRouteImport } from './routes/patients'
+import { Route as PaymentsRouteImport } from './routes/payments'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as TreatmentsRouteImport } from './routes/treatments'
 import { Route as VisitsRouteImport } from './routes/visits'
@@ -51,6 +52,11 @@ const OdontogramRoute = OdontogramRouteImport.update({
 const PatientsRoute = PatientsRouteImport.update({
   id: '/patients',
   path: '/patients',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PaymentsRoute = PaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReportsRoute = ReportsRouteImport.update({
@@ -96,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/inventory': typeof InventoryRoute
   '/odontogram': typeof OdontogramRoute
   '/patients': typeof PatientsRoute
+  '/payments': typeof PaymentsRoute
   '/reports': typeof ReportsRoute
   '/treatments': typeof TreatmentsRoute
   '/visits': typeof VisitsRoute
@@ -111,6 +118,7 @@ export interface FileRoutesByTo {
   '/inventory': typeof InventoryRoute
   '/odontogram': typeof OdontogramRoute
   '/patients': typeof PatientsRoute
+  '/payments': typeof PaymentsRoute
   '/reports': typeof ReportsRoute
   '/treatments': typeof TreatmentsRoute
   '/visits': typeof VisitsRoute
@@ -127,6 +135,7 @@ export interface FileRoutesById {
   '/inventory': typeof InventoryRoute
   '/odontogram': typeof OdontogramRoute
   '/patients': typeof PatientsRoute
+  '/payments': typeof PaymentsRoute
   '/reports': typeof ReportsRoute
   '/treatments': typeof TreatmentsRoute
   '/visits': typeof VisitsRoute
@@ -144,6 +153,7 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/odontogram'
     | '/patients'
+    | '/payments'
     | '/reports'
     | '/treatments'
     | '/visits'
@@ -159,6 +169,7 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/odontogram'
     | '/patients'
+    | '/payments'
     | '/reports'
     | '/treatments'
     | '/visits'
@@ -174,6 +185,7 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/odontogram'
     | '/patients'
+    | '/payments'
     | '/reports'
     | '/treatments'
     | '/visits'
@@ -190,6 +202,7 @@ export interface RootRouteChildren {
   InventoryRoute: typeof InventoryRoute
   OdontogramRoute: typeof OdontogramRoute
   PatientsRoute: typeof PatientsRoute
+  PaymentsRoute: typeof PaymentsRoute
   ReportsRoute: typeof ReportsRoute
   TreatmentsRoute: typeof TreatmentsRoute
   VisitsRoute: typeof VisitsRoute
@@ -241,6 +254,13 @@ declare module '@tanstack/react-router' {
       path: '/patients'
       fullPath: '/patients'
       preLoaderRoute: typeof PatientsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/payments': {
+      id: '/payments'
+      path: '/payments'
+      fullPath: '/payments'
+      preLoaderRoute: typeof PaymentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reports': {
@@ -302,6 +322,7 @@ const rootRouteChildren: RootRouteChildren = {
   InventoryRoute: InventoryRoute,
   OdontogramRoute: OdontogramRoute,
   PatientsRoute: PatientsRoute,
+  PaymentsRoute: PaymentsRoute,
   ReportsRoute: ReportsRoute,
   TreatmentsRoute: TreatmentsRoute,
   VisitsRoute: VisitsRoute,

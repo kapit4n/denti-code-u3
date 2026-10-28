@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 58 (visit directory and workspace translated to Spanish)
+> Last updated: session 59 (clinic-wide payment ledger)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -9,8 +9,10 @@
 > default, the header switches language and persists the choice, and the shell, dashboard
 > and patient pages are translated. **Session 57** translated the agenda and calendar,
 > including FullCalendar's own controls, the booking dialog and the quick panel. **Session
-> 58** translated the visit directory and workspace. Treatments, inventory, reports,
-> settings and the login screen still render English until their own slice.
+> 58** translated the visit directory and workspace. **Session 59** added the read-only
+> clinic-wide payment ledger at `/payments` (ADR 0033) and translated it in both
+> languages. Treatments, inventory, reports, settings and the login screen still render
+> English until their own slice.
 
 ## Phase
 
@@ -3343,3 +3345,31 @@ matches `Visitas recientes`; the list heading assertion is now exact, and the su
 Compiler warning) · format clean · build 5/5 · domain 376, app **362**, desktop 4, API unit
 128, API integration **46 passed / 273 skipped** (PG skips without `TEST_DATABASE_URL`) ·
 e2e **156/156**. Docs: ADR 0032, `frontend.md` §14, `open-questions.md` #9.
+
+---
+
+Session 59: the sidebar's **Payments** link now has a screen: `/payments` is a
+**read-only clinic-wide payment ledger** (ADR 0033). `GET /api/v1/payments` takes
+inclusive clinic-local `from`/`to` dates plus an optional method and pages
+(20 default, 100 max); the route resolves the dates into a half-open UTC window, caps
+the period at 366 days, answers `422 VALIDATION_ERROR` for a reversed range, unknown
+method or wider period, and keeps `totalAmountMinor` over every row matching the
+period and method rather than the current page. `PaymentRepository.listForClinic` joins
+the patient name and is implemented twice under ADR 0025. Reading money requires
+`billing:read` (administrator, dentist, receptionist; not assistant); the UI hiding the
+link is convenience, not the barrier. Recording money stays on the visit settlement
+flow, where the payment, allocation and invoice are written atomically — the ledger
+deliberately has no record button (open question 22).
+
+The page defaults to month-to-date on the clinic clock, filters by method, pages the
+rows, links each to its patient and draws the server total. It is translated in both
+catalogues. The shared `clinic-period` helper now serves both `/payments` and `/reports`.
+
+**Tests.** +3 app component (`payments-page.test.tsx`: rendered ledger, method filter on
+the wire, empty period), +1 SQLite API integration (ledger rows, method filter, reversed
+range 422), +4 PostgreSQL repository tests (skipped without `TEST_DATABASE_URL`: window,
+clinic scope, filter with page total, preferred-name preference), +4 e2e (three ledger
+flows and the Spanish ledger in `i18n.spec.ts`). App **365** · domain 376 · desktop 4 ·
+API unit **129** · API integration **46 passed / 277 skipped** · typecheck 12/12 · lint
+12/12 + guard · format clean · root test 12/12 tasks · build 5/5 · e2e **160/160** · db
+unchanged (no migration). Docs: ADR 0033, `roadmap.md`, `open-questions.md` #22.

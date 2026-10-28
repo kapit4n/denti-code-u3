@@ -29,6 +29,7 @@ import { registerTreatmentsRoutes } from './http/routes/treatments.js';
 import { registerInventoryRoutes } from './http/routes/inventory.js';
 import { registerVisitsRoutes } from './http/routes/visits.js';
 import { registerInvoiceRoutes } from './http/routes/invoices.js';
+import { registerPaymentsRoutes } from './http/routes/payments.js';
 import { registerPatientsRoutes } from './http/routes/patients.js';
 import { registerTreatmentPlanRoutes } from './http/routes/treatment-plans.js';
 import { systemClock } from './infrastructure/clock/system-clock.js';
@@ -282,6 +283,14 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
   // through, so a document is raised and read through one door (ADR 0014).
   await registerInvoiceRoutes(app, {
     invoices: connection.repositories.invoices,
+    payments: connection.repositories.payments,
+    clinics: connection.repositories.clinics,
+  });
+
+  // The clinic-wide payment ledger. A read of the same rows the visit register
+  // writes, scoped to a period and joined to the patient's name so the manager's
+  // page is one request. Recording money stays on the visit (see the route note).
+  await registerPaymentsRoutes(app, {
     payments: connection.repositories.payments,
     clinics: connection.repositories.clinics,
   });

@@ -1535,3 +1535,48 @@ export function reportsFixtures(): MockedResponses {
     '/api/v1/reports/summary': { body: reportSummary },
   };
 }
+
+/**
+ * `GET /api/v1/payments`, as the ledger page reads it.
+ *
+ * Two payments on the frozen suite day: a card payment with a reference and a cash
+ * one with none, from two patients. The collected total is deliberately not the sum
+ * of an obvious page subset — it is the server's period figure, and the page must
+ * show that number rather than adding the rows itself.
+ */
+export const paymentLedger = {
+  period: { from: '2026-10-01', to: '2026-10-05', timeZone: 'America/Lima' },
+  currencyCode: 'PEN',
+  items: [
+    {
+      id: '11111111-8888-4999-8000-000000000051',
+      patientId: ANA_ID,
+      patientName: 'Ana García',
+      method: 'CARD',
+      currency: 'PEN',
+      amountMinor: 12_000,
+      reference: '4242',
+      receivedAt: '2026-10-05T14:00:00.000Z',
+    },
+    {
+      id: '11111111-8888-4999-8000-000000000052',
+      patientId: LUIS_ID,
+      patientName: 'Luis Fernández',
+      method: 'CASH',
+      currency: 'PEN',
+      amountMinor: 6_000,
+      reference: null,
+      receivedAt: '2026-10-05T15:00:00.000Z',
+    },
+  ],
+  totalAmountMinor: 18_000,
+  pagination: { page: 1, limit: 20, total: 2, totalPages: 1 },
+} as const;
+
+/** Everything the payment ledger asks for: the clinic and its period rows. */
+export function paymentsFixtures(): MockedResponses {
+  return {
+    ...clinicFixture(),
+    '/api/v1/payments': { body: paymentLedger },
+  };
+}

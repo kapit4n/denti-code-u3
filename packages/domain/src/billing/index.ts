@@ -3,5 +3,6 @@ export * from './patient-balance.js';
 export * from './patient-statement.js';
 export * from './visit-invoices.js';
 export * from './money.js';
+export * from './payment-ledger.js';
 export * from './visit-charges.js';
 export * from './visit-payments.js';
