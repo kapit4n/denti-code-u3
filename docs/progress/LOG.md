@@ -3496,3 +3496,15 @@ pnpm run test:e2e         145/145 passed
 - Production login pages still make one `GET /auth/dev-users` request (404, hidden). It
   is retry-disabled and stale forever, but a future `/auth/config` probe would make the
   absence explicit if the 404 ever becomes noisy.
+
+---
+
+## Session 51 — Desktop: open the main window maximized — 2026-10-26
+
+`tauri.conf.json` now sets `"maximized": true` on the main window, keeping
+`minWidth: 1024` / `minHeight: 720` so an un-maximize is still usable. The desktop app is
+built for a wide agenda and visit workspace, and the old fixed 1366×768 start left larger
+clinic monitors unused.
+
+`apps/desktop/test/tauri-config.test.ts` gained a test pinning the flag and the minimum
+size next to the CSP assertions (desktop 3 → 4 tests).

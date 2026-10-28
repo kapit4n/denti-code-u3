@@ -28,7 +28,13 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = path.resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 const tauriConfig = JSON.parse(
   readFileSync(path.join(repoRoot, 'apps/desktop/src-tauri/tauri.conf.json'), 'utf8'),
-) as { app: { security: { csp: string } }; build: { frontendDist: string; devUrl: string } };
+) as {
+  app: {
+    windows: { maximized?: boolean; minWidth?: number; minHeight?: number }[];
+    security: { csp: string };
+  };
+  build: { frontendDist: string; devUrl: string };
+};
 const exampleEnv = readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
 
 function envValue(name: string): string {
@@ -64,6 +70,17 @@ describe('the Tauri CSP', () => {
     expect(csp).toContain("default-src 'self'");
     expect(csp).not.toContain('*');
     expect(csp).not.toContain('unsafe-eval');
+  });
+
+  it('opens the main window maximized, without losing its minimum size', () => {
+    // A clinic workstation is the target: the agenda and visit workspace are
+    // built for a wide screen, and launching at 1366×768 on a larger monitor
+    // wastes it. The minimum size still bounds a manual un-maximize.
+    const [mainWindow] = tauriConfig.app.windows;
+
+    expect(mainWindow?.maximized).toBe(true);
+    expect(mainWindow?.minWidth).toBeGreaterThanOrEqual(1024);
+    expect(mainWindow?.minHeight).toBeGreaterThanOrEqual(720);
   });
 
   it('loads bundled assets rather than a dev server in a build', () => {

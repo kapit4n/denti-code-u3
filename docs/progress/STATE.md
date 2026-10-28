@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 50 (Milestone 12 — development sign-in chooser)
+> Last updated: session 51 (desktop window opens maximized)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -3175,3 +3175,11 @@ credentials, sign in as a chosen user and use its token, inactive/malformed refu
 **44 passed / 273 skipped** · typecheck 12/12 · lint 12/12 + guard · format clean · root
 test 12/12 tasks · build 5/5 · e2e **145/145** · db unchanged (no migration).
 Docs: ADR 0030, `security.md`, `roadmap.md`.
+
+---
+
+Session 51: the desktop shell opens **maximized**. `apps/desktop/src-tauri/tauri.conf.json`
+sets `maximized: true` on the main window, keeping the 1024×720 minimum so a manual
+un-maximize still lands on a usable size. The agenda and visit workspace are built for a
+wide screen; starting at 1366×768 left a larger clinic monitor unused. `tauri-config.test.ts`
+pins the flag and the minimum size alongside the CSP assertions. Desktop tests **4/4**.
