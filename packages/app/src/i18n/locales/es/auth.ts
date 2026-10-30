@@ -1,0 +1,18 @@
+export const auth = {
+  'auth.signIn.subtitle': 'Inicia sesión en el espacio de la clínica',
+  'auth.signIn.formAria': 'Iniciar sesión',
+  'auth.signIn.email': 'Correo electrónico',
+  'auth.signIn.password': 'Contraseña',
+  'auth.signIn.submit': 'Iniciar sesión',
+  'auth.signIn.submitting': 'Iniciando sesión…',
+  'auth.signIn.invalid': 'El correo o la contraseña son incorrectos.',
+  'auth.signIn.rateLimited': 'Demasiados intentos de acceso. Inténtalo más tarde.',
+  'auth.dev.title': 'Desarrollo',
+  'auth.dev.description': 'Inicia sesión como un usuario de prueba, sin contraseña.',
+  'auth.dev.signInAs': 'Iniciar sesión como {name}',
+  'auth.dev.failure': 'El acceso de desarrollo falló.',
+  'auth.role.ADMINISTRATOR': 'Administrador',
+  'auth.role.DENTIST': 'Odontólogo',
+  'auth.role.ASSISTANT': 'Asistente',
+  'auth.role.RECEPTIONIST': 'Recepcionista',
+} as const;

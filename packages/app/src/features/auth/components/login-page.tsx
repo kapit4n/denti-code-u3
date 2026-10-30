@@ -18,10 +18,13 @@ import { ApiClientError } from '@denti-code-u3/api-client';
 import { Button, Input, Label } from '@denti-code-u3/ui';
 import { Stethoscope } from 'lucide-react';
 
+import { useTranslation, type Translate, type TranslationKey } from '../../../i18n/index.js';
+import type { SessionUser } from '../session-storage.js';
 import { useSession } from '../session-provider.js';
 import { useDevUsers } from '../queries/use-dev-users.js';
 
 export function LoginPage(): React.ReactNode {
+  const { t } = useTranslation();
   const { signIn, signInAs } = useSession();
   const devUsers = useDevUsers();
   const [email, setEmail] = useState('');
@@ -39,8 +42,8 @@ export function LoginPage(): React.ReactNode {
     } catch (error) {
       setError(
         error instanceof ApiClientError && error.code === 'RATE_LIMITED'
-          ? 'Too many sign-in attempts. Try again later.'
-          : 'The email or password is incorrect.',
+          ? t('auth.signIn.rateLimited')
+          : t('auth.signIn.invalid'),
       );
     } finally {
       setSubmitting(false);
@@ -53,7 +56,7 @@ export function LoginPage(): React.ReactNode {
     try {
       await signInAs(userId);
     } catch {
-      setError('The development sign-in failed.');
+      setError(t('auth.dev.failure'));
     } finally {
       setSubmitting(false);
     }
@@ -69,12 +72,16 @@ export function LoginPage(): React.ReactNode {
             <Stethoscope aria-hidden className="h-6 w-6" />
           </span>
           <h1 className="text-lg font-semibold tracking-tight">Denti-Code U3</h1>
-          <p className="text-sm text-muted-foreground">Sign in to the clinic workspace</p>
+          <p className="text-sm text-muted-foreground">{t('auth.signIn.subtitle')}</p>
         </div>
 
-        <form className="flex flex-col gap-4" onSubmit={onSubmit} aria-label="Sign in">
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={onSubmit}
+          aria-label={t('auth.signIn.formAria')}
+        >
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="login-email">Email</Label>
+            <Label htmlFor="login-email">{t('auth.signIn.email')}</Label>
             <Input
               id="login-email"
               type="email"
@@ -86,7 +93,7 @@ export function LoginPage(): React.ReactNode {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="login-password">Password</Label>
+            <Label htmlFor="login-password">{t('auth.signIn.password')}</Label>
             <Input
               id="login-password"
               type="password"
@@ -104,7 +111,7 @@ export function LoginPage(): React.ReactNode {
           ) : null}
 
           <Button type="submit" disabled={submitting} className="w-full">
-            {submitting ? 'Signing in…' : 'Sign in'}
+            {submitting ? t('auth.signIn.submitting') : t('auth.signIn.submit')}
           </Button>
         </form>
 
@@ -113,14 +120,12 @@ export function LoginPage(): React.ReactNode {
             <div className="my-6 flex items-center gap-3" aria-hidden>
               <span className="h-px flex-1 bg-border" />
               <span className="text-xs tracking-wide text-muted-foreground uppercase">
-                Development
+                {t('auth.dev.title')}
               </span>
               <span className="h-px flex-1 bg-border" />
             </div>
             <div className="flex flex-col gap-2" data-testid="dev-login">
-              <p className="text-xs text-muted-foreground">
-                Sign in as a seeded user, without a password.
-              </p>
+              <p className="text-xs text-muted-foreground">{t('auth.dev.description')}</p>
               {devUserList.map((user) => (
                 <Button
                   key={user.id}
@@ -130,8 +135,10 @@ export function LoginPage(): React.ReactNode {
                   onClick={() => void onDevLogin(user.id)}
                   className="w-full justify-between"
                 >
-                  <span className="truncate">Sign in as {user.fullName}</span>
-                  <span className="text-xs text-muted-foreground">{roleLabel(user.role)}</span>
+                  <span className="truncate">
+                    {t('auth.dev.signInAs', { name: user.fullName })}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{roleLabel(t, user.role)}</span>
                 </Button>
               ))}
             </div>
@@ -142,7 +149,13 @@ export function LoginPage(): React.ReactNode {
   );
 }
 
-/** `ADMINISTRATOR` → `Administrator`, without a second table to drift. */
-function roleLabel(role: string): string {
-  return role.charAt(0) + role.slice(1).toLowerCase();
+const ROLE_KEY: Readonly<Record<SessionUser['role'], TranslationKey>> = {
+  ADMINISTRATOR: 'auth.role.ADMINISTRATOR',
+  DENTIST: 'auth.role.DENTIST',
+  ASSISTANT: 'auth.role.ASSISTANT',
+  RECEPTIONIST: 'auth.role.RECEPTIONIST',
+};
+
+function roleLabel(t: Translate, role: SessionUser['role']): string {
+  return t(ROLE_KEY[role]);
 }

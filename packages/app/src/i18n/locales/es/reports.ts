@@ -1,0 +1,52 @@
+export const reports = {
+  'reports.title': 'Informes',
+  'reports.description': 'Citas, producción, cobros y ocupación del periodo que elijas.',
+
+  'reports.filters.title': 'Periodo y filtros',
+  'reports.filters.description':
+    'Las fechas se leen en la zona horaria de la clínica{timeZone}. Se incluye el último día.',
+  'reports.filters.from': 'Desde',
+  'reports.filters.to': 'Hasta',
+  'reports.filters.clinician': 'Odontólogo',
+  'reports.filters.allClinicians': 'Todos los odontólogos',
+  'reports.filters.inactiveSuffix': ' (inactivo)',
+  'reports.filters.rangeError': 'La fecha de inicio debe ser anterior o igual a la de fin.',
+
+  'reports.export': 'Exportar CSV',
+  'reports.export.saved': 'Guardado {name}',
+  'reports.export.failure': 'No se pudo guardar el informe en este dispositivo.',
+  'reports.loadError': 'No se pudo generar el informe para este periodo.',
+
+  'reports.summary.aria': 'Resumen del informe',
+  'reports.stat.appointments.title': 'Citas',
+  'reports.stat.appointments.description': 'Reservadas en el periodo',
+  'reports.stat.completed.title': 'Completadas',
+  'reports.stat.completed.description': 'Citas finalizadas',
+  'reports.stat.cancelled.title': 'Canceladas',
+  'reports.stat.cancelled.description': 'Citas canceladas',
+  'reports.stat.noShow.title': 'No asistió',
+  'reports.stat.noShow.description': 'Pacientes que no acudieron',
+  'reports.stat.production.title': 'Producción',
+  'reports.stat.production.description': 'Valor neto de los cobros registrados',
+  'reports.stat.collections.title': 'Cobros',
+  'reports.stat.collections.description': 'Pagos recibidos en toda la clínica',
+  'reports.stat.outstanding.title': 'Pendiente',
+  'reports.stat.outstanding.description': 'Facturas abiertas, a la fecha',
+  'reports.stat.occupancy.title': 'Ocupación',
+  'reports.stat.occupancy.description': '{booked} de {capacity} min',
+  'reports.stat.occupancy.noHours': 'Sin horario de apertura registrado',
+
+  'reports.performance.title': 'Rendimiento por odontólogo',
+  'reports.performance.description':
+    'Las citas y la producción se atribuyen al odontólogo de la fila. Los cobros no se dividen aquí: los pagos no llevan odontólogo.',
+  'reports.performance.empty': 'Sin actividad de odontólogos en este periodo.',
+
+  'reports.column.clinician': 'Odontólogo',
+  'reports.column.appointments': 'Citas',
+  'reports.column.completed': 'Completadas',
+  'reports.column.cancelled': 'Canceladas',
+  'reports.column.noShow': 'No asistió',
+  'reports.column.bookedMinutes': 'Min. reservados',
+  'reports.column.production': 'Producción',
+  'reports.column.occupancy': 'Ocupación',
+} as const;

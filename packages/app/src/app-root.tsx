@@ -15,10 +15,12 @@ export interface AppRootProps {
 }
 
 function RuntimeBadge(): React.ReactNode {
+  const { t } = useTranslation();
   const platform = usePlatform();
   return (
     <span className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
-      {platform.hasNativeShell ? 'Desktop' : 'Web'} · {platform.timeZone}
+      {t(platform.hasNativeShell ? 'common.runtime.desktop' : 'common.runtime.web')} ·{' '}
+      {platform.timeZone}
     </span>
   );
 }

@@ -1,0 +1,18 @@
+export const auth = {
+  'auth.signIn.subtitle': 'Sign in to the clinic workspace',
+  'auth.signIn.formAria': 'Sign in',
+  'auth.signIn.email': 'Email',
+  'auth.signIn.password': 'Password',
+  'auth.signIn.submit': 'Sign in',
+  'auth.signIn.submitting': 'Signing in…',
+  'auth.signIn.invalid': 'The email or password is incorrect.',
+  'auth.signIn.rateLimited': 'Too many sign-in attempts. Try again later.',
+  'auth.dev.title': 'Development',
+  'auth.dev.description': 'Sign in as a seeded user, without a password.',
+  'auth.dev.signInAs': 'Sign in as {name}',
+  'auth.dev.failure': 'The development sign-in failed.',
+  'auth.role.ADMINISTRATOR': 'Administrator',
+  'auth.role.DENTIST': 'Dentist',
+  'auth.role.ASSISTANT': 'Assistant',
+  'auth.role.RECEPTIONIST': 'Receptionist',
+} as const;

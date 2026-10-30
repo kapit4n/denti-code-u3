@@ -1,0 +1,73 @@
+export const inventory = {
+  'inventory.title': 'Inventario',
+  'inventory.description':
+    'Consumibles, sus niveles de existencias y los movimientos que los cambian',
+
+  'inventory.lowStock.title': 'Existencias bajas',
+  'inventory.lowStock.count.one': '{count} ítem en el mínimo o por debajo',
+  'inventory.lowStock.count.other': '{count} ítems en el mínimo o por debajo',
+  'inventory.lowStock.none': 'Todo está por encima de su mínimo',
+  'inventory.lowStock.loading': 'Cargando las existencias…',
+  'inventory.lowStock.allAbove': 'Todos los ítems tienen más que su mínimo en el estante.',
+  'inventory.lowStock.badge': 'Existencias bajas',
+
+  'inventory.loadError': 'No se pudo cargar el inventario.',
+  'inventory.empty': 'Todavía no hay ítems en el inventario.',
+
+  'inventory.add.title': 'Añadir un ítem',
+  'inventory.add.description':
+    'Las existencias iniciales se registran como un ajuste en el libro del ítem.',
+  'inventory.add.submit': 'Añadir ítem',
+  'inventory.add.invalidCost': 'Introduce un costo como 45.00',
+  'inventory.add.failure': 'No se pudo añadir el ítem del inventario.',
+  'inventory.add.notFound': 'Esta clínica ya no está disponible. No se añadió el ítem.',
+
+  'inventory.field.name': 'Nombre',
+  'inventory.field.namePlaceholder': 'p. ej. Resina compuesta A2',
+  'inventory.field.sku': 'SKU (opcional)',
+  'inventory.field.skuPlaceholder': 'p. ej. COMP-A2',
+  'inventory.field.unit': 'Unidad (opcional)',
+  'inventory.field.unitPlaceholder': 'unidad',
+  'inventory.field.openingStock': 'Existencias iniciales (opcional)',
+  'inventory.field.minStock': 'Existencias mínimas (opcional)',
+  'inventory.field.cost': 'Costo unitario (opcional)',
+  'inventory.field.costPlaceholder': 'p. ej. 45.00',
+  'inventory.field.description': 'Descripción (opcional)',
+  'inventory.field.descriptionPlaceholder': 'Para qué se usa el ítem',
+
+  'inventory.stock.title': 'Existencias',
+  'inventory.stock.count.one': '{count} ítem en el inventario',
+  'inventory.stock.count.other': '{count} ítems en el inventario',
+  'inventory.stock.descriptionEmpty': 'Lo que esta clínica guarda en sus estantes',
+  'inventory.stock.loading': 'Cargando el inventario…',
+  'inventory.stock.minEach': 'mín. {min} · {cost} c/u',
+
+  'inventory.movement.title': 'Registrar un movimiento',
+  'inventory.movement.description':
+    'El uso y el vencimiento sacan existencias; las compras, devoluciones y ajustes las ingresan.',
+  'inventory.movement.item': 'Ítem',
+  'inventory.movement.chooseItem': 'Elige un ítem',
+  'inventory.movement.type': 'Tipo',
+  'inventory.movement.chooseType': 'Elige un tipo',
+  'inventory.movement.quantity': 'Cantidad',
+  'inventory.movement.reference': 'Referencia (opcional)',
+  'inventory.movement.referencePlaceholder': 'p. ej. Visita 42',
+  'inventory.movement.submit': 'Registrar movimiento',
+  'inventory.movement.saving': 'Guardando…',
+  'inventory.movement.selectItemError': 'Elige el ítem que se movió.',
+  'inventory.movement.loading': 'Cargando los movimientos…',
+  'inventory.movement.loadError': 'No se pudieron cargar los movimientos.',
+  'inventory.movement.empty': 'Todavía no hay movimientos registrados.',
+  'inventory.movement.heading': 'Movimientos de {name}',
+  'inventory.movement.inStock': '{count} {unit} en existencia',
+  'inventory.movement.failure': 'No se pudo registrar el movimiento de existencias.',
+  'inventory.movement.notFound': 'Ese ítem ya no está en el inventario.',
+
+  'inventory.failure.network': 'No se pudo conectar con el servidor. No se guardó nada.',
+
+  'inventory.movementType.PURCHASE': 'Compra',
+  'inventory.movementType.USAGE': 'Uso',
+  'inventory.movementType.ADJUSTMENT': 'Ajuste',
+  'inventory.movementType.RETURN': 'Devolución',
+  'inventory.movementType.EXPIRED': 'Vencido',
+} as const;

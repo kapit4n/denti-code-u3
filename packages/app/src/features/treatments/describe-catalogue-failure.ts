@@ -28,7 +28,16 @@ import { ApiClientError } from '@denti-code-u3/api-client';
  * messages were written for a person by the API, and anything else is developer
  * noise in front of whoever was filling in the form.
  */
-export function describeCatalogueFailure(error: unknown, fallback: string): string | undefined {
+export interface CatalogueFailureMessages {
+  readonly notFound?: string;
+  readonly network?: string;
+}
+
+export function describeCatalogueFailure(
+  error: unknown,
+  fallback: string,
+  messages?: CatalogueFailureMessages,
+): string | undefined {
   if (!error) {
     return undefined;
   }
@@ -45,9 +54,11 @@ export function describeCatalogueFailure(error: unknown, fallback: string): stri
       return message;
     case 'NOT_FOUND':
       // The clinic was on screen when the treatment was filed and is not there now.
-      return 'This clinic is no longer available. The treatment was not added.';
+      return (
+        messages?.notFound ?? 'This clinic is no longer available. The treatment was not added.'
+      );
     case 'NETWORK_ERROR':
-      return 'Could not reach the server. The treatment was not added.';
+      return messages?.network ?? 'Could not reach the server. The treatment was not added.';
     default:
       return message;
   }

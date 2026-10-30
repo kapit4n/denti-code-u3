@@ -38,6 +38,7 @@ import {
   TableRow,
 } from '@denti-code-u3/ui';
 
+import { useTranslation } from '../../../i18n/index.js';
 import { usePlatform } from '../../../providers.js';
 import { useDentists } from '../../agenda/queries/bookable-resources-query.js';
 import { useClinicSettings } from '../../clinic/queries/clinic-settings-query.js';
@@ -55,6 +56,7 @@ function percent(rate: number | null): string {
 }
 
 export function ReportsPage() {
+  const { t } = useTranslation();
   const platform = usePlatform();
   const clinic = useClinicSettings();
   const dentists = useDentists({ onlyActive: false });
@@ -112,9 +114,9 @@ export function ReportsPage() {
         reportFileName(report.data),
         buildReportCsv(report.data),
       );
-      setExportMessage(`Saved ${savedName}`);
+      setExportMessage(t('reports.export.saved', { name: savedName }));
     } catch {
-      setExportFailure('The report could not be saved on this device.');
+      setExportFailure(t('reports.export.failure'));
     }
   };
 
@@ -124,27 +126,26 @@ export function ReportsPage() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-3xl font-bold tracking-tight">Reports</h1>
-        <p className="mt-1 text-muted-foreground">
-          Appointments, production, collections and occupancy for the period you choose.
-        </p>
+        <h1 className="text-3xl font-bold tracking-tight">{t('reports.title')}</h1>
+        <p className="mt-1 text-muted-foreground">{t('reports.description')}</p>
       </header>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <CalendarRange aria-hidden className="h-5 w-5 text-muted-foreground" />
-            Period and filters
+            {t('reports.filters.title')}
           </CardTitle>
           <CardDescription>
-            Dates are read in the clinic’s time zone
-            {timeZone ? ` (${timeZone})` : ''}. The last day is included.
+            {t('reports.filters.description', {
+              timeZone: timeZone ? ` (${timeZone})` : '',
+            })}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="grid gap-4 md:grid-cols-4" onSubmit={handleExport}>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="report-from">From</Label>
+              <Label htmlFor="report-from">{t('reports.filters.from')}</Label>
               <Input
                 id="report-from"
                 data-testid="report-from"
@@ -154,7 +155,7 @@ export function ReportsPage() {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="report-to">To</Label>
+              <Label htmlFor="report-to">{t('reports.filters.to')}</Label>
               <Input
                 id="report-to"
                 data-testid="report-to"
@@ -164,7 +165,7 @@ export function ReportsPage() {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="report-dentist">Clinician</Label>
+              <Label htmlFor="report-dentist">{t('reports.filters.clinician')}</Label>
               <select
                 id="report-dentist"
                 data-testid="report-dentist"
@@ -172,11 +173,11 @@ export function ReportsPage() {
                 value={dentistId}
                 onChange={(event) => setDentistId(event.target.value)}
               >
-                <option value="">All clinicians</option>
+                <option value="">{t('reports.filters.allClinicians')}</option>
                 {(dentists.data?.items ?? []).map((dentist) => (
                   <option key={dentist.id} value={dentist.id}>
                     {dentist.fullName}
-                    {dentist.isActive ? '' : ' (inactive)'}
+                    {dentist.isActive ? '' : t('reports.filters.inactiveSuffix')}
                   </option>
                 ))}
               </select>
@@ -188,14 +189,14 @@ export function ReportsPage() {
                 disabled={!report.data || !rangeIsValid || report.isFetching}
               >
                 <Download aria-hidden className="mr-2 h-4 w-4" />
-                Export CSV
+                {t('reports.export')}
               </Button>
             </div>
           </form>
 
           {!rangeIsValid && from && to ? (
             <p className="mt-3 text-sm text-destructive" data-testid="report-range-error">
-              The start date must be on or before the end date.
+              {t('reports.filters.rangeError')}
             </p>
           ) : null}
 
@@ -216,82 +217,96 @@ export function ReportsPage() {
         <Card>
           <CardContent className="flex items-center gap-3 py-6 text-sm text-destructive">
             <AlertCircle aria-hidden className="h-5 w-5" />
-            <span data-testid="report-error">The report could not be built for this period.</span>
+            <span data-testid="report-error">{t('reports.loadError')}</span>
           </CardContent>
         </Card>
       ) : null}
 
-      <section aria-label="Report summary" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section
+        aria-label={t('reports.summary.aria')}
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+      >
         <StatCard
-          title="Appointments"
+          title={t('reports.stat.appointments.title')}
+          testId="Appointments"
           value={report.data?.appointments.total ?? 0}
-          description={selectedDentistName ?? 'Booked in the period'}
+          description={selectedDentistName ?? t('reports.stat.appointments.description')}
           icon={CalendarRange}
           accent="blue"
           isLoading={isPending}
           error={failure}
         />
         <StatCard
-          title="Completed"
+          title={t('reports.stat.completed.title')}
+          testId="Completed"
           value={report.data?.appointments.completed ?? 0}
-          description="Finished appointments"
+          description={t('reports.stat.completed.description')}
           accent="green"
           isLoading={isPending}
           error={failure}
         />
         <StatCard
-          title="Cancelled"
+          title={t('reports.stat.cancelled.title')}
+          testId="Cancelled"
           value={report.data?.appointments.cancelled ?? 0}
-          description="Cancelled appointments"
+          description={t('reports.stat.cancelled.description')}
           accent="rose"
           isLoading={isPending}
           error={failure}
         />
         <StatCard
-          title="No-show"
+          title={t('reports.stat.noShow.title')}
+          testId="No-show"
           value={report.data?.appointments.noShow ?? 0}
-          description="Patients who did not attend"
+          description={t('reports.stat.noShow.description')}
           accent="slate"
           isLoading={isPending}
           error={failure}
         />
         <StatCard
-          title="Production"
+          title={t('reports.stat.production.title')}
+          testId="Production"
           value={
             report.data ? money(report.data.production.totalMinor, report.data.currencyCode) : '—'
           }
-          description="Net charge value raised"
+          description={t('reports.stat.production.description')}
           accent="violet"
           isLoading={isPending}
           error={failure}
         />
         <StatCard
-          title="Collections"
+          title={t('reports.stat.collections.title')}
+          testId="Collections"
           value={
             report.data ? money(report.data.collections.totalMinor, report.data.currencyCode) : '—'
           }
-          description="Payments received, clinic-wide"
+          description={t('reports.stat.collections.description')}
           accent="green"
           isLoading={isPending}
           error={failure}
         />
         <StatCard
-          title="Outstanding"
+          title={t('reports.stat.outstanding.title')}
+          testId="Outstanding"
           value={
             report.data ? money(report.data.outstanding.totalMinor, report.data.currencyCode) : '—'
           }
-          description="Open invoices, as of now"
+          description={t('reports.stat.outstanding.description')}
           accent="amber"
           isLoading={isPending}
           error={failure}
         />
         <StatCard
-          title="Occupancy"
+          title={t('reports.stat.occupancy.title')}
+          testId="Occupancy"
           value={report.data ? percent(report.data.occupancy.rate) : '—'}
           description={
             report.data?.occupancy.capacityMinutes
-              ? `${report.data.occupancy.bookedMinutes} of ${report.data.occupancy.capacityMinutes} min`
-              : 'No recorded opening hours'
+              ? t('reports.stat.occupancy.description', {
+                  booked: report.data.occupancy.bookedMinutes,
+                  capacity: report.data.occupancy.capacityMinutes,
+                })
+              : t('reports.stat.occupancy.noHours')
           }
           icon={Gauge}
           accent="blue"
@@ -304,29 +319,28 @@ export function ReportsPage() {
       {!report.data ? null : (
         <Card>
           <CardHeader>
-            <CardTitle>Clinician performance</CardTitle>
-            <CardDescription>
-              Appointments and production are attributed to the clinician on the row. Collections
-              are not split here: payments carry no clinician.
-            </CardDescription>
+            <CardTitle>{t('reports.performance.title')}</CardTitle>
+            <CardDescription>{t('reports.performance.description')}</CardDescription>
           </CardHeader>
           <CardContent>
             {report.data.dentists.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
-                No clinician activity in this period.
+                {t('reports.performance.empty')}
               </p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Clinician</TableHead>
-                    <TableHead className="text-right">Appointments</TableHead>
-                    <TableHead className="text-right">Completed</TableHead>
-                    <TableHead className="text-right">Cancelled</TableHead>
-                    <TableHead className="text-right">No-show</TableHead>
-                    <TableHead className="text-right">Booked min</TableHead>
-                    <TableHead className="text-right">Production</TableHead>
-                    <TableHead className="text-right">Occupancy</TableHead>
+                    <TableHead>{t('reports.column.clinician')}</TableHead>
+                    <TableHead className="text-right">{t('reports.column.appointments')}</TableHead>
+                    <TableHead className="text-right">{t('reports.column.completed')}</TableHead>
+                    <TableHead className="text-right">{t('reports.column.cancelled')}</TableHead>
+                    <TableHead className="text-right">{t('reports.column.noShow')}</TableHead>
+                    <TableHead className="text-right">
+                      {t('reports.column.bookedMinutes')}
+                    </TableHead>
+                    <TableHead className="text-right">{t('reports.column.production')}</TableHead>
+                    <TableHead className="text-right">{t('reports.column.occupancy')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

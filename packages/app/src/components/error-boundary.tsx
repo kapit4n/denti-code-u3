@@ -1,5 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
+import { useTranslation } from '../i18n/index.js';
+
 interface Props {
   children?: ReactNode;
 }
@@ -7,6 +9,32 @@ interface Props {
 interface State {
   hasError: boolean;
   error?: Error;
+}
+
+interface ErrorFallbackProps {
+  readonly error?: Error;
+  readonly onRetry: () => void;
+}
+
+function ErrorFallback({ error, onRetry }: ErrorFallbackProps) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex h-screen flex-col items-center justify-center">
+      <div className="text-center">
+        <h1 className="text-2xl font-bold tracking-tight">{t('common.error.title')}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {error?.message ?? t('common.error.fallback')}
+        </p>
+        <button
+          className="mt-4 inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+          onClick={onRetry}
+        >
+          {t('common.error.retry')}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -25,20 +53,10 @@ export class ErrorBoundary extends Component<Props, State> {
   override render() {
     if (this.state.hasError) {
       return (
-        <div className="flex h-screen flex-col items-center justify-center">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold tracking-tight">Something went wrong</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {this.state.error?.message ?? 'An unexpected error occurred'}
-            </p>
-            <button
-              className="mt-4 inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-              onClick={() => this.setState({ hasError: false })}
-            >
-              Try again
-            </button>
-          </div>
-        </div>
+        <ErrorFallback
+          error={this.state.error}
+          onRetry={() => this.setState({ hasError: false })}
+        />
       );
     }
 

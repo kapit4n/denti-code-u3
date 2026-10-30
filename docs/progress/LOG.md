@@ -3810,3 +3810,23 @@ passed / 277 skipped** · typecheck 12/12 · lint 12/12 + boundary guard (one pr
 React Compiler warning) · format clean · root test 12/12 tasks · build 5/5 · e2e
 **160/160** · db unchanged (no migration). Docs: ADR 0033, `roadmap.md`,
 `open-questions.md` #22.
+
+---
+
+Session 60: the rest of the UI now reads from the typed catalogue. Five new locale
+modules — `treatments`, `inventory`, `reports`, `odontogram`, `auth` — and extra `common`
+keys cover the treatment catalogue, inventory page and its client-built failure sentences,
+reports filters/stat cards/performance table, odontogram shell, login screen with role
+labels, error and 404 fallbacks, theme toggle and runtime badge. The dashboard's
+`today-appointments` empty state had a key already but still hardcoded English; it now uses
+it.
+
+Two structural points: the error boundary is still a class, so its fallback became a
+function component that can call `useTranslation`, which required moving `I18nProvider`
+above `ErrorBoundary` in `RootLayout`; `notFoundComponent` renders outside that tree, so it
+wraps its content in its own provider. Reports stat cards pass explicit `testId`s so the
+English test IDs survive translated titles.
+
+English copy was preserved verbatim where tests pin it, and no tests were added or changed.
+Verification: typecheck 12/12, lint 12/12 plus boundary guard (one pre-existing React
+Compiler warning), formatting clean, build 5/5, app **365** tests, e2e **160/160**.

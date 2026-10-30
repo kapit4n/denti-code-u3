@@ -11,7 +11,17 @@
 
 import { ApiClientError } from '@denti-code-u3/api-client';
 
-function describe(error: unknown, fallback: string, notFound: string): string | undefined {
+export interface InventoryFailureMessages {
+  readonly notFound?: string;
+  readonly network?: string;
+}
+
+function describe(
+  error: unknown,
+  fallback: string,
+  notFound: string,
+  messages?: InventoryFailureMessages,
+): string | undefined {
   if (!error) {
     return undefined;
   }
@@ -24,18 +34,31 @@ function describe(error: unknown, fallback: string, notFound: string): string | 
     case 'DOMAIN_RULE_VIOLATION':
       return error.message || fallback;
     case 'NOT_FOUND':
-      return notFound;
+      return messages?.notFound ?? notFound;
     case 'NETWORK_ERROR':
-      return 'Could not reach the server. Nothing was saved.';
+      return messages?.network ?? 'Could not reach the server. Nothing was saved.';
     default:
       return error.message || fallback;
   }
 }
 
-export function describeAddItemFailure(error: unknown, fallback: string): string | undefined {
-  return describe(error, fallback, 'This clinic is no longer available. The item was not added.');
+export function describeAddItemFailure(
+  error: unknown,
+  fallback: string,
+  messages?: InventoryFailureMessages,
+): string | undefined {
+  return describe(
+    error,
+    fallback,
+    'This clinic is no longer available. The item was not added.',
+    messages,
+  );
 }
 
-export function describeMovementFailure(error: unknown, fallback: string): string | undefined {
-  return describe(error, fallback, 'That item is no longer in the inventory.');
+export function describeMovementFailure(
+  error: unknown,
+  fallback: string,
+  messages?: InventoryFailureMessages,
+): string | undefined {
+  return describe(error, fallback, 'That item is no longer in the inventory.', messages);
 }

@@ -102,7 +102,9 @@ export function TodayAppointments() {
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-metric-blue-soft text-metric-blue">
               <CalendarDays aria-hidden className="h-6 w-6" />
             </span>
-            <p className="text-sm text-muted-foreground">No appointments scheduled for today.</p>
+            <p className="text-sm text-muted-foreground">
+              {t('dashboard.todayAppointments.empty')}
+            </p>
             <Button asChild variant="outline" size="sm">
               <Link to="/agenda">{t('dashboard.todayAppointments.openAgenda')}</Link>
             </Button>

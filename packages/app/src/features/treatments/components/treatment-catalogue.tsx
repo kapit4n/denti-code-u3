@@ -37,6 +37,7 @@ import {
   CardTitle,
   Label,
 } from '@denti-code-u3/ui';
+import { useTranslation } from '../../../i18n/index.js';
 import { parseMajorUnitsToMinor } from '../../visits/charge-presentation.js';
 import { useTreatments } from '../queries/catalogue-query.js';
 import { useAddTreatment } from '../mutations/use-add-treatment.js';
@@ -46,6 +47,7 @@ import { describeCatalogueFailure } from '../describe-catalogue-failure.js';
 type FieldErrors = Readonly<Record<string, string>>;
 
 export function TreatmentCatalogue() {
+  const { t } = useTranslation();
   const catalogueQuery = useTreatments();
   const addTreatment = useAddTreatment();
 
@@ -56,7 +58,10 @@ export function TreatmentCatalogue() {
   const [priceMajor, setPriceMajor] = useState('');
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
-  const failure = describeCatalogueFailure(addTreatment.error, 'The treatment could not be added.');
+  const failure = describeCatalogueFailure(addTreatment.error, t('treatments.add.failure'), {
+    notFound: t('treatments.add.notFound'),
+    network: t('treatments.add.network'),
+  });
 
   /**
    * What the boxes hold, as the API's own schema reads them.
@@ -82,7 +87,7 @@ export function TreatmentCatalogue() {
     // meant to give, and `parseMajorUnitsToMinor` answers `undefined` for it —
     // which the schema would read as "absent" and file as no price at all.
     if (priceMajor.trim() && parseMajorUnitsToMinor(priceMajor.trim()) === undefined) {
-      setFieldErrors({ defaultPriceMinor: 'Enter a price like 450.00' });
+      setFieldErrors({ defaultPriceMinor: t('treatments.add.invalidPrice') });
       return;
     }
 
@@ -117,25 +122,20 @@ export function TreatmentCatalogue() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-3xl font-bold tracking-tight">Treatments</h1>
-        <p className="text-muted-foreground">
-          The procedures this clinic offers, and what each one is priced at
-        </p>
+        <h1 className="text-3xl font-bold tracking-tight">{t('treatments.title')}</h1>
+        <p className="text-muted-foreground">{t('treatments.description')}</p>
       </header>
 
       <Card>
         <CardHeader>
-          <CardTitle>Add a treatment</CardTitle>
-          <CardDescription>
-            A code is optional, unique per clinic; a name is required. Prices are in the
-            clinic&rsquo;s currency.
-          </CardDescription>
+          <CardTitle>{t('treatments.add.title')}</CardTitle>
+          <CardDescription>{t('treatments.add.description')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-3" onSubmit={handleSubmit} noValidate>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
-                <Label htmlFor="treatment-code">Code (optional)</Label>
+                <Label htmlFor="treatment-code">{t('treatments.field.code')}</Label>
                 <input
                   id="treatment-code"
                   data-testid="treatment-code"
@@ -143,7 +143,7 @@ export function TreatmentCatalogue() {
                   onChange={(event) => setCode(event.target.value)}
                   disabled={addTreatment.isPending}
                   maxLength={50}
-                  placeholder="e.g. COMPO-ANTERIOR"
+                  placeholder={t('treatments.field.codePlaceholder')}
                   className="w-full rounded-md border bg-background p-2 text-sm"
                 />
                 {fieldErrors.code ? (
@@ -154,7 +154,7 @@ export function TreatmentCatalogue() {
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="treatment-name">Name</Label>
+                <Label htmlFor="treatment-name">{t('treatments.field.name')}</Label>
                 <input
                   id="treatment-name"
                   data-testid="treatment-name"
@@ -162,7 +162,7 @@ export function TreatmentCatalogue() {
                   onChange={(event) => setName(event.target.value)}
                   disabled={addTreatment.isPending}
                   maxLength={200}
-                  placeholder="e.g. Composite restoration, posterior"
+                  placeholder={t('treatments.field.namePlaceholder')}
                   className="w-full rounded-md border bg-background p-2 text-sm"
                 />
                 {fieldErrors.name ? (
@@ -173,7 +173,7 @@ export function TreatmentCatalogue() {
               </div>
 
               <div className="space-y-1 sm:col-span-2">
-                <Label htmlFor="treatment-description">Description (optional)</Label>
+                <Label htmlFor="treatment-description">{t('treatments.field.description')}</Label>
                 <textarea
                   id="treatment-description"
                   data-testid="treatment-description"
@@ -182,7 +182,7 @@ export function TreatmentCatalogue() {
                   disabled={addTreatment.isPending}
                   rows={2}
                   maxLength={2_000}
-                  placeholder="What the procedure covers"
+                  placeholder={t('treatments.field.descriptionPlaceholder')}
                   className="w-full rounded-md border bg-background p-2 text-sm"
                 />
                 {fieldErrors.description ? (
@@ -193,7 +193,7 @@ export function TreatmentCatalogue() {
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="treatment-duration">Duration in minutes (optional)</Label>
+                <Label htmlFor="treatment-duration">{t('treatments.field.duration')}</Label>
                 <input
                   id="treatment-duration"
                   data-testid="treatment-duration"
@@ -205,7 +205,7 @@ export function TreatmentCatalogue() {
                   max={1_440}
                   step={1}
                   inputMode="numeric"
-                  placeholder="e.g. 45"
+                  placeholder={t('treatments.field.durationPlaceholder')}
                   className="w-full rounded-md border bg-background p-2 text-sm"
                 />
                 {fieldErrors.defaultDurationMinutes ? (
@@ -216,7 +216,7 @@ export function TreatmentCatalogue() {
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="treatment-price">Default price (optional)</Label>
+                <Label htmlFor="treatment-price">{t('treatments.field.price')}</Label>
                 <input
                   id="treatment-price"
                   data-testid="treatment-price"
@@ -227,7 +227,7 @@ export function TreatmentCatalogue() {
                   min={0}
                   step="0.01"
                   inputMode="decimal"
-                  placeholder="e.g. 450.00"
+                  placeholder={t('treatments.field.pricePlaceholder')}
                   className="w-full rounded-md border bg-background p-2 text-sm"
                 />
                 {fieldErrors.defaultPriceMinor ? (
@@ -241,12 +241,12 @@ export function TreatmentCatalogue() {
             <div className="flex flex-wrap items-center gap-2">
               <Button type="submit" data-testid="add-treatment" disabled={addTreatment.isPending}>
                 <Plus aria-hidden className="mr-2 h-4 w-4" />
-                Add treatment
+                {t('treatments.add.submit')}
               </Button>
               {addTreatment.isPending ? (
                 <p className="text-sm text-muted-foreground" role="status">
                   <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
-                  Saving…
+                  {t('treatments.add.saving')}
                 </p>
               ) : null}
             </div>
@@ -266,19 +266,24 @@ export function TreatmentCatalogue() {
 
       <Card data-testid="treatments-catalogue">
         <CardHeader>
-          <CardTitle>Catalogue</CardTitle>
+          <CardTitle>{t('treatments.catalogue.title')}</CardTitle>
           <CardDescription>
             {items.length > 0
-              ? `${items.length} treatment${items.length === 1 ? '' : 's'} offered`
-              : 'What this clinic offers'}
+              ? t(
+                  items.length === 1
+                    ? 'treatments.catalogue.offerCount.one'
+                    : 'treatments.catalogue.offerCount.other',
+                  { count: items.length },
+                )
+              : t('treatments.catalogue.descriptionEmpty')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {catalogueQuery.isPending ? (
-            <p className="text-sm text-muted-foreground">Loading the catalogue…</p>
+            <p className="text-sm text-muted-foreground">{t('treatments.catalogue.loading')}</p>
           ) : catalogueQuery.error ? (
             <p role="alert" className="text-sm text-destructive">
-              The catalogue could not be loaded.
+              {t('treatments.catalogue.loadError')}
             </p>
           ) : items.length > 0 ? (
             <ul className="space-y-2">
@@ -300,14 +305,18 @@ export function TreatmentCatalogue() {
                     ) : null}
                   </span>
                   <span className="shrink-0 text-right text-muted-foreground">
-                    {item.defaultDurationMinutes ? `${item.defaultDurationMinutes} min` : ''}
+                    {item.defaultDurationMinutes
+                      ? t('treatments.catalogue.duration', {
+                          count: item.defaultDurationMinutes,
+                        })
+                      : ''}
                     <span className="block">{formatMinorUnits(item.defaultPriceMinor)}</span>
                   </span>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-muted-foreground">No treatments in the catalogue yet.</p>
+            <p className="text-sm text-muted-foreground">{t('treatments.catalogue.empty')}</p>
           )}
         </CardContent>
       </Card>

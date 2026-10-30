@@ -222,9 +222,11 @@ The header switch persists the choice under `denti-code-locale` and updates
 `document.documentElement.lang`. Interpolation is limited to `{name}`; plural
 sentences use explicit `.one` / `.other` keys. Domain enum values go through
 `enumLabel(t, prefix, value)` rather than a per-component label map. The shell,
-dashboard, patient pages, agenda/calendar and visits are translated so far; the
-remaining screens keep their English copy until their own slice. FullCalendar
-receives its bundled Spanish locale plus the catalogue's view/today labels.
+dashboard, patient pages, agenda/calendar, visits, payments, treatments, inventory,
+reports, odontogram and login are translated, along with the 404 and error
+fallbacks, the theme toggle and the runtime badge; only the product name and domain
+data stay literal. FullCalendar receives its bundled Spanish locale plus the
+catalogue's view/today labels.
 Failure describers take optional translated messages while keeping English
 defaults, so an isolated component test still reads the sentence it was written
 against. Browser specs pin English unless they are testing the Spanish flow.

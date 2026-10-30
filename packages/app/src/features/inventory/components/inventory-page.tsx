@@ -37,6 +37,7 @@ import {
   Label,
 } from '@denti-code-u3/ui';
 
+import { useTranslation, type TranslationKey } from '../../../i18n/index.js';
 import { useClinicSettings } from '../../clinic/queries/clinic-settings-query.js';
 import { formatClinicDayTime, READING_THE_CLINIC_CLOCK } from '../../clinic/format-clinic-time.js';
 import { parseMajorUnitsToMinor } from '../../visits/charge-presentation.js';
@@ -47,17 +48,13 @@ import { useInventory, useStockMovements } from '../queries/inventory-query.js';
 
 type FieldErrors = Readonly<Record<string, string>>;
 
-const MOVEMENT_LABELS: Readonly<Record<StockMovementType, string>> = {
-  PURCHASE: 'Purchase',
-  USAGE: 'Usage',
-  ADJUSTMENT: 'Adjustment',
-  RETURN: 'Return',
-  EXPIRED: 'Expired',
+const MOVEMENT_LABEL_KEYS: Readonly<Record<StockMovementType, TranslationKey>> = {
+  PURCHASE: 'inventory.movementType.PURCHASE',
+  USAGE: 'inventory.movementType.USAGE',
+  ADJUSTMENT: 'inventory.movementType.ADJUSTMENT',
+  RETURN: 'inventory.movementType.RETURN',
+  EXPIRED: 'inventory.movementType.EXPIRED',
 };
-
-const MOVEMENT_OPTIONS = (
-  Object.entries(MOVEMENT_LABELS) as readonly [StockMovementType, string][]
-).map(([value, label]) => ({ value, label }));
 
 function fieldErrorsFrom(issues: readonly { path: readonly PropertyKey[]; message: string }[]) {
   const errors: Record<string, string> = {};
@@ -71,6 +68,7 @@ function fieldErrorsFrom(issues: readonly { path: readonly PropertyKey[]; messag
 }
 
 export function InventoryPage() {
+  const { t } = useTranslation();
   const inventoryQuery = useInventory();
   const { data: clinic } = useClinicSettings();
 
@@ -97,20 +95,28 @@ export function InventoryPage() {
   const lowStock = items.filter(isLowStock);
   const selectedItem = items.find((item) => item.id === selectedItemId);
 
-  const addFailure = describeAddItemFailure(
-    addItem.error,
-    'The inventory item could not be added.',
+  const movementOptions = (Object.keys(MOVEMENT_LABEL_KEYS) as StockMovementType[]).map(
+    (value) => ({ value, label: t(MOVEMENT_LABEL_KEYS[value]) }),
   );
+
+  const addFailure = describeAddItemFailure(addItem.error, t('inventory.add.failure'), {
+    notFound: t('inventory.add.notFound'),
+    network: t('inventory.failure.network'),
+  });
   const movementFailure = describeMovementFailure(
     recordMovement.error,
-    'The stock movement could not be recorded.',
+    t('inventory.movement.failure'),
+    {
+      notFound: t('inventory.movement.notFound'),
+      network: t('inventory.failure.network'),
+    },
   );
 
   const handleAddItem = (event: FormEvent) => {
     event.preventDefault();
 
     if (costMajor.trim() && parseMajorUnitsToMinor(costMajor.trim()) === undefined) {
-      setItemErrors({ costMinor: 'Enter a cost like 45.00' });
+      setItemErrors({ costMinor: t('inventory.add.invalidCost') });
       return;
     }
 
@@ -162,7 +168,7 @@ export function InventoryPage() {
     setMovementErrors({});
 
     if (!selectedItemId) {
-      setMovementErrors({ itemId: 'Choose the item that moved.' });
+      setMovementErrors({ itemId: t('inventory.movement.selectItemError') });
       return;
     }
 
@@ -177,27 +183,30 @@ export function InventoryPage() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-3xl font-bold tracking-tight">Inventory</h1>
-        <p className="text-muted-foreground">
-          Consumables, their stock levels and the movements that change them
-        </p>
+        <h1 className="text-3xl font-bold tracking-tight">{t('inventory.title')}</h1>
+        <p className="text-muted-foreground">{t('inventory.description')}</p>
       </header>
 
       <Card data-testid="inventory-low-stock">
         <CardHeader>
-          <CardTitle>Low stock</CardTitle>
+          <CardTitle>{t('inventory.lowStock.title')}</CardTitle>
           <CardDescription>
             {lowStock.length > 0
-              ? `${lowStock.length} item${lowStock.length === 1 ? '' : 's'} at or below the minimum`
-              : 'Everything is above its minimum'}
+              ? t(
+                  lowStock.length === 1
+                    ? 'inventory.lowStock.count.one'
+                    : 'inventory.lowStock.count.other',
+                  { count: lowStock.length },
+                )
+              : t('inventory.lowStock.none')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {inventoryQuery.isPending ? (
-            <p className="text-sm text-muted-foreground">Loading the stock…</p>
+            <p className="text-sm text-muted-foreground">{t('inventory.lowStock.loading')}</p>
           ) : inventoryQuery.error ? (
             <p role="alert" className="text-sm text-destructive">
-              The inventory could not be loaded.
+              {t('inventory.loadError')}
             </p>
           ) : lowStock.length > 0 ? (
             <ul className="space-y-2">
@@ -221,9 +230,7 @@ export function InventoryPage() {
             </ul>
           ) : (
             <p className="text-sm text-muted-foreground">
-              {items.length > 0
-                ? 'Every item has more than its minimum on the shelf.'
-                : 'No items in the inventory yet.'}
+              {items.length > 0 ? t('inventory.lowStock.allAbove') : t('inventory.empty')}
             </p>
           )}
         </CardContent>
@@ -232,16 +239,14 @@ export function InventoryPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Add an item</CardTitle>
-            <CardDescription>
-              Opening stock is recorded as an adjustment on the item&rsquo;s ledger.
-            </CardDescription>
+            <CardTitle>{t('inventory.add.title')}</CardTitle>
+            <CardDescription>{t('inventory.add.description')}</CardDescription>
           </CardHeader>
           <CardContent>
             <form className="space-y-3" onSubmit={handleAddItem} noValidate>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
-                  <Label htmlFor="inventory-name">Name</Label>
+                  <Label htmlFor="inventory-name">{t('inventory.field.name')}</Label>
                   <input
                     id="inventory-name"
                     data-testid="inventory-name"
@@ -249,7 +254,7 @@ export function InventoryPage() {
                     onChange={(event) => setName(event.target.value)}
                     disabled={addItem.isPending}
                     maxLength={200}
-                    placeholder="e.g. Composite resin A2"
+                    placeholder={t('inventory.field.namePlaceholder')}
                     className="w-full rounded-md border bg-background p-2 text-sm"
                   />
                   {itemErrors.name ? (
@@ -260,7 +265,7 @@ export function InventoryPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <Label htmlFor="inventory-sku">SKU (optional)</Label>
+                  <Label htmlFor="inventory-sku">{t('inventory.field.sku')}</Label>
                   <input
                     id="inventory-sku"
                     data-testid="inventory-sku"
@@ -268,7 +273,7 @@ export function InventoryPage() {
                     onChange={(event) => setSku(event.target.value)}
                     disabled={addItem.isPending}
                     maxLength={50}
-                    placeholder="e.g. COMP-A2"
+                    placeholder={t('inventory.field.skuPlaceholder')}
                     className="w-full rounded-md border bg-background p-2 text-sm"
                   />
                   {itemErrors.sku ? (
@@ -279,7 +284,7 @@ export function InventoryPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <Label htmlFor="inventory-unit">Unit (optional)</Label>
+                  <Label htmlFor="inventory-unit">{t('inventory.field.unit')}</Label>
                   <input
                     id="inventory-unit"
                     data-testid="inventory-unit"
@@ -287,7 +292,7 @@ export function InventoryPage() {
                     onChange={(event) => setUnit(event.target.value)}
                     disabled={addItem.isPending}
                     maxLength={50}
-                    placeholder="unit"
+                    placeholder={t('inventory.field.unitPlaceholder')}
                     className="w-full rounded-md border bg-background p-2 text-sm"
                   />
                   {itemErrors.unit ? (
@@ -298,7 +303,9 @@ export function InventoryPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <Label htmlFor="inventory-opening-stock">Opening stock (optional)</Label>
+                  <Label htmlFor="inventory-opening-stock">
+                    {t('inventory.field.openingStock')}
+                  </Label>
                   <input
                     id="inventory-opening-stock"
                     data-testid="inventory-opening-stock"
@@ -320,7 +327,7 @@ export function InventoryPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <Label htmlFor="inventory-min-stock">Minimum stock (optional)</Label>
+                  <Label htmlFor="inventory-min-stock">{t('inventory.field.minStock')}</Label>
                   <input
                     id="inventory-min-stock"
                     data-testid="inventory-min-stock"
@@ -342,7 +349,7 @@ export function InventoryPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <Label htmlFor="inventory-cost">Unit cost (optional)</Label>
+                  <Label htmlFor="inventory-cost">{t('inventory.field.cost')}</Label>
                   <input
                     id="inventory-cost"
                     data-testid="inventory-cost"
@@ -353,7 +360,7 @@ export function InventoryPage() {
                     min={0}
                     step="0.01"
                     inputMode="decimal"
-                    placeholder="e.g. 45.00"
+                    placeholder={t('inventory.field.costPlaceholder')}
                     className="w-full rounded-md border bg-background p-2 text-sm"
                   />
                   {itemErrors.costMinor ? (
@@ -364,7 +371,7 @@ export function InventoryPage() {
                 </div>
 
                 <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="inventory-description">Description (optional)</Label>
+                  <Label htmlFor="inventory-description">{t('inventory.field.description')}</Label>
                   <textarea
                     id="inventory-description"
                     data-testid="inventory-description"
@@ -373,7 +380,7 @@ export function InventoryPage() {
                     disabled={addItem.isPending}
                     rows={2}
                     maxLength={2_000}
-                    placeholder="What the item is used for"
+                    placeholder={t('inventory.field.descriptionPlaceholder')}
                     className="w-full rounded-md border bg-background p-2 text-sm"
                   />
                   {itemErrors.description ? (
@@ -387,12 +394,12 @@ export function InventoryPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <Button type="submit" data-testid="add-inventory-item" disabled={addItem.isPending}>
                   <Plus aria-hidden className="mr-2 h-4 w-4" />
-                  Add item
+                  {t('inventory.add.submit')}
                 </Button>
                 {addItem.isPending ? (
                   <p className="text-sm text-muted-foreground" role="status">
                     <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
-                    Saving…
+                    {t('common.saving')}
                   </p>
                 ) : null}
               </div>
@@ -412,19 +419,24 @@ export function InventoryPage() {
 
         <Card data-testid="inventory-catalogue">
           <CardHeader>
-            <CardTitle>Stock</CardTitle>
+            <CardTitle>{t('inventory.stock.title')}</CardTitle>
             <CardDescription>
               {items.length > 0
-                ? `${items.length} item${items.length === 1 ? '' : 's'} in the inventory`
-                : 'What this clinic keeps on its shelves'}
+                ? t(
+                    items.length === 1
+                      ? 'inventory.stock.count.one'
+                      : 'inventory.stock.count.other',
+                    { count: items.length },
+                  )
+                : t('inventory.stock.descriptionEmpty')}
             </CardDescription>
           </CardHeader>
           <CardContent>
             {inventoryQuery.isPending ? (
-              <p className="text-sm text-muted-foreground">Loading the inventory…</p>
+              <p className="text-sm text-muted-foreground">{t('inventory.stock.loading')}</p>
             ) : inventoryQuery.error ? (
               <p role="alert" className="text-sm text-destructive">
-                The inventory could not be loaded.
+                {t('inventory.loadError')}
               </p>
             ) : items.length > 0 ? (
               <ul className="space-y-2">
@@ -451,7 +463,10 @@ export function InventoryPage() {
                           {item.stock} {item.unit}
                         </span>
                         <span className="block text-xs text-muted-foreground">
-                          min {item.minStock} · {formatMinorUnits(item.costMinor)} each
+                          {t('inventory.stock.minEach', {
+                            min: item.minStock,
+                            cost: formatMinorUnits(item.costMinor),
+                          })}
                         </span>
                       </span>
                     </div>
@@ -461,7 +476,7 @@ export function InventoryPage() {
                         className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
                       >
                         <Warehouse aria-hidden className="size-3" />
-                        Low stock
+                        {t('inventory.lowStock.badge')}
                       </span>
                     ) : null}
                   </li>
@@ -469,7 +484,7 @@ export function InventoryPage() {
               </ul>
             ) : (
               <p data-testid="inventory-empty" className="text-sm text-muted-foreground">
-                No items in the inventory yet.
+                {t('inventory.empty')}
               </p>
             )}
           </CardContent>
@@ -478,16 +493,14 @@ export function InventoryPage() {
 
       <Card data-testid="inventory-movements">
         <CardHeader>
-          <CardTitle>Record a movement</CardTitle>
-          <CardDescription>
-            Usage and expiry take stock out; purchases, returns and adjustments put it in.
-          </CardDescription>
+          <CardTitle>{t('inventory.movement.title')}</CardTitle>
+          <CardDescription>{t('inventory.movement.description')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-3" onSubmit={handleMovement} noValidate>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1">
-                <Label htmlFor="movement-item">Item</Label>
+                <Label htmlFor="movement-item">{t('inventory.movement.item')}</Label>
                 <select
                   id="movement-item"
                   data-testid="movement-item"
@@ -496,7 +509,7 @@ export function InventoryPage() {
                   disabled={recordMovement.isPending}
                   className="w-full rounded-md border bg-background p-2 text-sm"
                 >
-                  <option value="">Choose an item</option>
+                  <option value="">{t('inventory.movement.chooseItem')}</option>
                   {items.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
@@ -511,7 +524,7 @@ export function InventoryPage() {
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="movement-type">Type</Label>
+                <Label htmlFor="movement-type">{t('inventory.movement.type')}</Label>
                 <select
                   id="movement-type"
                   data-testid="movement-type"
@@ -522,8 +535,8 @@ export function InventoryPage() {
                   disabled={recordMovement.isPending}
                   className="w-full rounded-md border bg-background p-2 text-sm"
                 >
-                  <option value="">Choose a type</option>
-                  {MOVEMENT_OPTIONS.map((option) => (
+                  <option value="">{t('inventory.movement.chooseType')}</option>
+                  {movementOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -537,7 +550,7 @@ export function InventoryPage() {
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="movement-quantity">Quantity</Label>
+                <Label htmlFor="movement-quantity">{t('inventory.movement.quantity')}</Label>
                 <input
                   id="movement-quantity"
                   data-testid="movement-quantity"
@@ -559,7 +572,7 @@ export function InventoryPage() {
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="movement-reference">Reference (optional)</Label>
+                <Label htmlFor="movement-reference">{t('inventory.movement.reference')}</Label>
                 <input
                   id="movement-reference"
                   data-testid="movement-reference"
@@ -567,7 +580,7 @@ export function InventoryPage() {
                   onChange={(event) => setReference(event.target.value)}
                   disabled={recordMovement.isPending}
                   maxLength={200}
-                  placeholder="e.g. Visit 42"
+                  placeholder={t('inventory.movement.referencePlaceholder')}
                   className="w-full rounded-md border bg-background p-2 text-sm"
                 />
                 {movementErrors.reference ? (
@@ -585,12 +598,12 @@ export function InventoryPage() {
                 disabled={recordMovement.isPending || items.length === 0}
               >
                 <Plus aria-hidden className="mr-2 h-4 w-4" />
-                Record movement
+                {t('inventory.movement.submit')}
               </Button>
               {recordMovement.isPending ? (
                 <p className="text-sm text-muted-foreground" role="status">
                   <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
-                  Saving…
+                  {t('common.saving')}
                 </p>
               ) : null}
             </div>
@@ -609,16 +622,21 @@ export function InventoryPage() {
           {selectedItem ? (
             <div className="mt-4 border-t pt-4">
               <h3 className="text-sm font-medium">
-                {selectedItem.name} movements
+                {t('inventory.movement.heading', { name: selectedItem.name })}
                 <span className="ml-2 font-normal text-muted-foreground">
-                  {selectedItem.stock} {selectedItem.unit} in stock
+                  {t('inventory.movement.inStock', {
+                    count: selectedItem.stock,
+                    unit: selectedItem.unit,
+                  })}
                 </span>
               </h3>
               {movementsQuery.isPending ? (
-                <p className="mt-2 text-sm text-muted-foreground">Loading the movements…</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {t('inventory.movement.loading')}
+                </p>
               ) : movementsQuery.error ? (
                 <p role="alert" className="mt-2 text-sm text-destructive">
-                  The movements could not be loaded.
+                  {t('inventory.movement.loadError')}
                 </p>
               ) : (movementsQuery.data?.items.length ?? 0) > 0 ? (
                 <ul className="mt-2 space-y-2">
@@ -629,7 +647,7 @@ export function InventoryPage() {
                       className="flex items-center justify-between gap-3 rounded-md border p-2 text-sm"
                     >
                       <span className="min-w-0">
-                        <span className="font-medium">{MOVEMENT_LABELS[movement.type]}</span>
+                        <span className="font-medium">{t(MOVEMENT_LABEL_KEYS[movement.type])}</span>
                         {movement.reference ? (
                           <span className="ml-2 text-xs text-muted-foreground">
                             {movement.reference}
@@ -653,7 +671,9 @@ export function InventoryPage() {
                   ))}
                 </ul>
               ) : (
-                <p className="mt-2 text-sm text-muted-foreground">No movements recorded yet.</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {t('inventory.movement.empty')}
+                </p>
               )}
             </div>
           ) : null}

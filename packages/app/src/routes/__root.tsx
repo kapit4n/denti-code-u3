@@ -15,7 +15,7 @@ import { AppRoot } from '../app-root.js';
 import type { PlatformCapabilities } from '../platform/index.js';
 import { ThemeProvider } from '../features/theme/theme-provider.js';
 import { ErrorBoundary } from '../components/error-boundary.js';
-import { I18nProvider } from '../i18n/index.js';
+import { I18nProvider, useTranslation } from '../i18n/index.js';
 import { Shell } from '../components/shell/index.js';
 import { useSession } from '../features/auth/session-provider.js';
 import { LoginPage } from '../features/auth/components/login-page.js';
@@ -67,24 +67,34 @@ function RootLayout(): React.ReactNode {
   const { isAuthenticated } = useSession();
 
   return (
-    <ErrorBoundary>
-      <I18nProvider>
+    <I18nProvider>
+      <ErrorBoundary>
         <AppRoot capabilities={capabilities}>
           <ThemeProvider defaultTheme="light" storageKey="denti-code-theme">
             {isAuthenticated ? <Shell /> : <LoginPage />}
           </ThemeProvider>
         </AppRoot>
-      </I18nProvider>
-    </ErrorBoundary>
+      </ErrorBoundary>
+    </I18nProvider>
   );
 }
 
 function NotFoundComponent(): React.ReactNode {
   return (
+    <I18nProvider>
+      <NotFoundContent />
+    </I18nProvider>
+  );
+}
+
+function NotFoundContent(): React.ReactNode {
+  const { t } = useTranslation();
+
+  return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4">
       <div className="text-center">
-        <h1 className="text-4xl font-bold tracking-tight">404</h1>
-        <p className="mt-2 text-lg text-muted-foreground">Page not found</p>
+        <h1 className="text-4xl font-bold tracking-tight">{t('common.notFound.title')}</h1>
+        <p className="mt-2 text-lg text-muted-foreground">{t('common.notFound.description')}</p>
       </div>
     </div>
   );

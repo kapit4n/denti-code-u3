@@ -19,21 +19,21 @@
 import { useState } from 'react';
 import { Card, CardContent } from '@denti-code-u3/ui';
 
+import { useTranslation } from '../../../i18n/index.js';
 import { useClinicSettings } from '../../clinic/queries/clinic-settings-query.js';
 import { PatientPicker, type SelectedPatient } from '../../patients/components/patient-picker.js';
 import { PatientOdontogramSection } from '../../patients/components/patient-odontogram-section.js';
 
 export function OdontogramPage() {
+  const { t } = useTranslation();
   const [patient, setPatient] = useState<SelectedPatient | undefined>(undefined);
   const { data: clinic } = useClinicSettings();
 
   return (
     <div className="flex flex-col gap-6" data-testid="odontogram-page">
       <header>
-        <h1 className="text-3xl font-bold tracking-tight">Odontogram</h1>
-        <p className="text-muted-foreground">
-          Chart a patient’s teeth and read the findings already on record.
-        </p>
+        <h1 className="text-3xl font-bold tracking-tight">{t('odontogram.page.title')}</h1>
+        <p className="text-muted-foreground">{t('odontogram.page.description')}</p>
       </header>
 
       <Card>
@@ -55,7 +55,7 @@ export function OdontogramPage() {
       ) : (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Choose a patient to open their odontogram.
+            {t('odontogram.page.choosePatient')}
           </CardContent>
         </Card>
       )}

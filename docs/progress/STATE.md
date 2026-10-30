@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 59 (clinic-wide payment ledger)
+> Last updated: session 60 (remaining UI translated)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -11,8 +11,10 @@
 > including FullCalendar's own controls, the booking dialog and the quick panel. **Session
 > 58** translated the visit directory and workspace. **Session 59** added the read-only
 > clinic-wide payment ledger at `/payments` (ADR 0033) and translated it in both
-> languages. Treatments, inventory, reports, settings and the login screen still render
-> English until their own slice.
+> languages. **Session 60** closed the catalogue: treatments, inventory, reports,
+> odontogram, login, the 404 and error fallbacks, the theme toggle and the runtime badge
+> now read from `t()`. Every user-facing screen is translated; only the product name and
+> domain data remain literal.
 
 ## Phase
 
@@ -3373,3 +3375,21 @@ flows and the Spanish ledger in `i18n.spec.ts`). App **365** · domain 376 · de
 API unit **129** · API integration **46 passed / 277 skipped** · typecheck 12/12 · lint
 12/12 + guard · format clean · root test 12/12 tasks · build 5/5 · e2e **160/160** · db
 unchanged (no migration). Docs: ADR 0033, `roadmap.md`, `open-questions.md` #22.
+
+---
+
+Session 60: the remaining UI joined the Spanish catalogue. New `treatments`, `inventory`,
+`reports`, `odontogram` and `auth` modules cover the treatment catalogue, the inventory
+page and its failure sentences, the reports filters/stat cards/performance table, the
+odontogram shell, and the login screen including role labels. `common` gained the runtime,
+theme, error and not-found keys. The hardcoded dashboard empty state was fixed to use the
+key that already existed.
+
+The error boundary now renders a functional fallback through `useTranslation`, so
+`I18nProvider` had to move outside `ErrorBoundary` in `RootLayout`; the 404 component gets
+its own provider because TanStack replaces the root component when it renders. English
+strings were kept byte-for-byte where tests pin them, and the existing 365 app tests pass
+unchanged.
+
+**Verification.** Typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing React
+Compiler warning) · format clean · build 5/5 · app **365** tests · e2e **160/160**.
