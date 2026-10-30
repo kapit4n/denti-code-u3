@@ -4003,3 +4003,92 @@ Compiler warnings; the boundary scanner also reports an existing false positive 
 doc comment in `editable-patient-details.ts`) · build 5/5 · root tests 12/12 tasks (domain
 397, app 370, API unit 130, API integration 132 passed / 281 skipped, desktop 4, database 6) · SQLite smoke 31/31 · full e2e 165/165. No commit. Docs: ADR 0033 amended, ADR 0034
 added, open question 22 answered for `/payments`, roadmap and STATE updated.
+
+---
+
+Session 68: the `/payments` ledger can record a payment without leaving the ledger. The
+header's **Record payment** action opens a dialog that chooses a patient through the shared
+`PatientPicker`, then lists only that patient's collectible invoices: `DRAFT`, `VOID` and
+zero-balance documents are excluded. Choosing an invoice fills the amount with its
+outstanding balance; the operator can change it, choose a method and add an optional
+reference. Submit goes through the existing
+`POST /api/v1/invoices/:invoiceId/payments`, so the payment, full allocation and status
+change stay in the existing `payInvoice` transaction. A settled or overpaid document is
+refused by the same domain checks; the dialog keeps the draft and quotes the failure. No
+API, domain, validation or database change was needed.
+
+A patient with no open invoice is told so instead of being offered an inert amount field.
+The dialog also states when invoices are loading or the read failed. Success uses the
+existing `usePayInvoice` invalidation, so the patient profile, invoices, balance,
+statement, ledger and visit payment registers all redraw from fresh reads.
+
+**Tests.** +3 component tests for the dialog (patient-gated invoice read, open-invoice
+filtering and submit body; empty state; rejected payment keeps the draft) and +1 payments
+page test proving the action opens without changing the ledger request, app 370 → **374**.
+E2E gained a recording fixture and a spec that selects the open invoice, submits, and sees
+the new ledger row: 165 → **166**.
+
+**Verification.** Typecheck 12/12 · lint 12/12 + boundary guard (two pre-existing React
+Compiler warnings and the existing boundary-scanner false positive) · format clean ·
+build 5/5 · root tests 12/12 tasks (domain **397**, app **374**, API **132** passed /
+281 skipped, desktop **4**, database **6**) · full e2e **166/166**. No commit. Docs: ADR
+0035 added, ADR 0033 and 0034 amended, open question 22 updated, roadmap, STATE and this
+file updated.
+
+---
+
+Session 69: the patient profile gained the payment entry point that session 68 put on the
+`/payments` ledger. The **Balance** card now offers **Record payment**; it opens the same
+`RecordPaymentDialog`, but with the patient fixed, so the operator cannot choose a
+different patient from the profile. "Patients view" was interpreted as the profile route
+`/patients/:patientId`; the patient list was left unchanged.
+
+The dialog now names the patient, shows their server-computed balance, and lists the
+chosen invoice's charge lines as the treatment breakdown. The lines come from
+`InvoiceDetail.charges`, not the treatment plan, because unbilled clinical work is not
+money owed. A new `useInvoiceDetail` query loads the lines, and `usePayInvoice` invalidates
+the invoice-detail key after settlement. Loading and failed detail reads are shown rather
+than leaving an unexplained empty list.
+
+The write path is unchanged: only non-`DRAFT`, non-`VOID` invoices with a positive
+balance are offered, and submission still goes through
+`POST /api/v1/invoices/:invoiceId/payments`. No API, domain, validation or database change
+was needed.
+
+**Tests.** The dialog component tests now cover the patient balance, treatment lines and
+fixed-patient mode; app 374 → **375**. The browser fixture gained the patient balance and
+invoice detail, and a new patient-profile spec asserts that the action opens without a
+patient picker, shows the outstanding amount and treatment descriptions, and posts against
+the displayed invoice. E2E 166 → **167**.
+
+**Verification.** Root tests 12/12 tasks (validation 163, domain **397**, api-client 15,
+database 6, API **132** passed / 281 skipped, app **375**, desktop 4) · full e2e
+**167/167** · web build passed · typecheck, lint, boundary guard and format check clean
+apart from the two pre-existing React Compiler warnings and the existing boundary-scanner
+false positive. No commit. Docs: STATE and this file updated for the profile placement.
+
+---
+
+Session 70: fixed the patient-profile **Registrar pago** action opening a form whose every
+field was disabled.
+
+The action had been attached to the older balance card, which subtracts payments from
+charges and can therefore show an amount owed even when the patient has no invoice. The
+dialog can only apply money to an invoice, so with zero invoices the invoice select was
+empty and the amount, method, reference and submit controls stayed disabled.
+
+The action now belongs to the server-computed **Balance** card and is rendered only while
+`balanceMinor > 0`, so it cannot open for a patient with no collectible document. The
+older card remains; it no longer owns the payment action. The dialog also handles the
+edge directly: when exactly one invoice is collectible it is selected and its outstanding
+amount fills the field without an effect-driven state write, and when none are collectible
+it shows the existing explanation plus a next-step hint instead of an unusable form.
+Invoice detail is read from that same derived selection.
+
+**Tests.** app 375 → **376**: a new balance-card test proves the action appears while money
+is owed and is absent when settled, and the dialog's no-invoice test now asserts that the
+invoice, amount, method and submit controls are not rendered. Root tests 12/12 tasks
+(validation 163, domain 397, api-client 15, database 6, API 132 passed / 281 skipped, app
+**376**, desktop 4) · full e2e **167/167** · build 5/5 · typecheck, lint, boundary guard
+and format check clean apart from the two pre-existing React Compiler warnings and the
+existing boundary-scanner false positive. No API, domain, validation or database change.

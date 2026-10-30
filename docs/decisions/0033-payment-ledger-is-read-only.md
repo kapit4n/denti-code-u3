@@ -1,6 +1,6 @@
 # ADR 0033 — The payment ledger is a read-only view; recording starts at the visit
 
-- **Status:** Accepted; recording widened by [ADR 0034](./0034-invoice-scoped-payments-come-from-the-patient-ledger.md)
+- **Status:** Accepted; recording widened by [ADR 0034](./0034-invoice-scoped-payments-come-from-the-patient-ledger.md) and [ADR 0035](./0035-payment-ledger-can-record-against-a-chosen-invoice.md); the ledger itself remains a read model
 - **Date:** 2026-10-28
 - **Deciders:** Principal Architect, Product Owner
 - **Affects:** `apps/api` (payment repository, HTTP route), `packages/domain` (ledger read model), `packages/validation`, `packages/app` payments feature, `packages/ui` (reused `Table`)
@@ -22,12 +22,14 @@ what a valid payment is.
 
 ## Decision
 
-> **Amended by ADR 0034.** This ADR still governs `/payments`: it remains a read-only
-> clinic-wide view. Recording did not stay at the visit forever. A later slice added
+> **Amended by ADR 0034 and ADR 0035.** This ADR still governs `/payments` as a read
+> model: the rows, clinic-local window, method filter, paging and server-side total are
+> unchanged. Recording did not stay at the visit forever. ADR 0034 added
 > `POST /api/v1/invoices/:invoiceId/payments`, which lets the patient's own invoices
-> card settle one existing document. The narrower door does not choose a patient or an
-> open document from the clinic; it pays a document already in front of the user. The
-> reasoning below remains the reason `/payments` has no form.
+> card settle one existing document. ADR 0035 added a **Record payment** action to
+> `/payments` itself, but it opens the same invoice-scoped door: the operator chooses a
+> patient and one existing open invoice. The ledger still does not invent an unattached
+> payment, compute a balance, or write a row itself.
 
 ### 1. The ledger is a read model over the payment rows
 
@@ -62,30 +64,35 @@ read it is convenience only — the API remains the barrier. The ledger is clini
 because payments carry no clinician; it is not a per-dentist collection view (the same
 attribution limit ADR 0027 records).
 
-### 4. The UI reads, filters and links; it does not take money
+### 4. The UI reads, filters and links; recording names an existing invoice
 
 `/payments` defaults to the clinic's month-to-date, offers an inclusive date range and a
 method filter, pages the rows, and links each row to its patient. The total comes from
-the server. There is no "record payment" button: money is recorded where the charges,
-invoice and allocation are already in hand — the visit workspace, and since ADR 0034 the
-patient's own invoices card.
+the server. Since ADR 0035 the header also offers **Record payment**, but it is not a
+free-form clinic-wide form: it chooses a patient and one of that patient's open invoices,
+then submits through the same invoice-scoped endpoint as the patient card (ADR 0034).
+Money is still recorded where the invoice and allocation are in hand — the visit
+workspace, the patient's invoices card, or this ledger door. The ledger itself only reads
+money; it never invents an unattached payment or recomputes a balance.
 
 ## Consequences
 
 - The ledger cannot disagree with the payments the clinic recorded.
-- The page is a window on settled rows, not a cash-register screen. Receipt printing,
-  editing, deleting and recording unattached money are still absent.
+- The page is still a window on settled rows, not a free-form cash-register screen.
+  Receipt printing, editing, deleting and recording unattached money are still absent.
 - Collections by clinician remain impossible from this schema; the clinic-wide total is
   the honest figure.
 - A wide period costs a real query, bounded by the 366-day cap.
 - Recording money with no visit or no invoice is still an explicit product gap (open
-  question 22), not an accidental omission. Invoice-scoped payments are ADR 0034.
+  question 22), not an accidental omission. Invoice-scoped payments are ADR 0034; the
+  ledger's invoice-choosing door is ADR 0035.
 
 ## Alternatives rejected
 
-- **A recording form on `/payments`.** It would duplicate the settlement rules or create
-  money with no invoice and no allocation. ADR 0034 later added a narrower form on the
-  patient's invoices card, where the invoice is already selected.
+- **A free-form recording form on `/payments`.** It would duplicate the settlement rules
+  or create money with no invoice and no allocation. ADR 0034 later added a narrower form
+  on the patient's invoices card, where the invoice is already selected; ADR 0035 added
+  the same invoice-choosing action to the ledger itself.
 - **A per-dentist ledger.** Payments carry no clinician; inventing an attribution would
   make the total wrong in a way the screen cannot explain.
 - **A summary table or nightly total.** Fast, but stale, and a second source of truth for

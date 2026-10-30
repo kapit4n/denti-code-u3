@@ -6,10 +6,11 @@
  * cannot make the period's takings look smaller, and the currency travels with the
  * answer rather than being assumed from the browser.
  *
- * Recording money is deliberately absent. A payment belongs to the visit whose bill
- * it settles, where the domain can refuse more than is owed and write the invoice,
- * payment and allocation together. This screen answers "what came in", not "take
- * this much".
+ * Recording is a door to the existing invoice payment use case: the dialog chooses a
+ * patient and one of that patient's open invoices, then posts through the invoice
+ * endpoint, where the domain refuses more than is owed and writes the payment,
+ * allocation and status together. The ledger itself still only reads money; it never
+ * invents an unattached payment or recomputes a balance.
  *
  * The default period is the clinic's month to date. The clinic's zone arrives in a
  * separate request, so the fields stay empty and the query stays disabled until
@@ -19,7 +20,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { formatMinorUnits } from '@denti-code-u3/domain';
-import { AlertCircle, CalendarRange, Receipt } from 'lucide-react';
+import { AlertCircle, CalendarRange, Plus, Receipt } from 'lucide-react';
 
 import {
   Button,
@@ -44,6 +45,7 @@ import { formatClinicDayTime } from '../../clinic/format-clinic-time.js';
 import { useClinicSettings } from '../../clinic/queries/clinic-settings-query.js';
 import { paymentMethodLabel, paymentMethodOptions } from '../payment-method-presentation.js';
 import { usePaymentLedger } from '../queries/payment-ledger-query.js';
+import { RecordPaymentDialog } from './record-payment-dialog.js';
 
 const PAGE_SIZE = 20;
 
@@ -64,6 +66,7 @@ export function PaymentsPage() {
   const [editedPeriod, setEditedPeriod] = useState<ClinicDatePeriod | null>(null);
   const [method, setMethod] = useState('');
   const [page, setPage] = useState(1);
+  const [isRecording, setIsRecording] = useState(false);
 
   const timeZone = clinic.data?.timeZone;
   const period = useMemo(
@@ -102,9 +105,15 @@ export function PaymentsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-3xl font-bold tracking-tight">{t('payments.title')}</h1>
-        <p className="mt-1 text-muted-foreground">{t('payments.description')}</p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">{t('payments.title')}</h1>
+          <p className="mt-1 text-muted-foreground">{t('payments.description')}</p>
+        </div>
+        <Button type="button" onClick={() => setIsRecording(true)} data-testid="payments-record">
+          <Plus aria-hidden className="size-4" />
+          {t('payments.record.trigger')}
+        </Button>
       </header>
 
       <Card>
@@ -295,6 +304,7 @@ export function PaymentsPage() {
           )}
         </CardContent>
       </Card>
+      {isRecording ? <RecordPaymentDialog onClose={() => setIsRecording(false)} /> : null}
     </div>
   );
 }

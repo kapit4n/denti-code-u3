@@ -59,6 +59,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 interface HarnessOptions {
   readonly balance?: Record<string, unknown>;
   readonly readFailure?: { readonly status: number; readonly body: unknown };
+  readonly onRecordPayment?: () => void;
 }
 
 function renderSection(options: HarnessOptions = {}) {
@@ -91,7 +92,10 @@ function renderSection(options: HarnessOptions = {}) {
   render(
     <QueryClientProvider client={queryClient}>
       <ApiClientProvider baseUrl={BASE_URL} client={client}>
-        <PatientBalanceSection patientId={PATIENT_ID} />
+        <PatientBalanceSection
+          patientId={PATIENT_ID}
+          {...(options.onRecordPayment ? { onRecordPayment: options.onRecordPayment } : {})}
+        />
       </ApiClientProvider>
     </QueryClientProvider>,
   );
@@ -114,14 +118,22 @@ describe('PatientBalanceSection', () => {
     expect(screen.getByTestId('patient-balance-outstanding')).toHaveTextContent('220.00 USD');
   });
 
+  it('offers recording when the server says money is owed', async () => {
+    const onRecordPayment = vi.fn();
+    renderSection({ onRecordPayment });
+
+    expect(await screen.findByTestId('patient-record-payment')).toBeEnabled();
+  });
+
   it('says nothing is owed rather than showing a bare zero', async () => {
-    renderSection({ balance: SETTLED });
+    renderSection({ balance: SETTLED, onRecordPayment: vi.fn() });
 
     expect(await screen.findByTestId('patient-balance-value')).toHaveTextContent('0.00 USD');
     expect(screen.getByTestId('patient-balance-state')).toHaveTextContent('Nothing owed');
     // A settled ledger has no unapplied money, so the row that would report credit
     // is not drawn at all.
     expect(screen.queryByTestId('patient-balance-unallocated')).toBeNull();
+    expect(screen.queryByTestId('patient-record-payment')).toBeNull();
   });
 
   it('names money in credit as credit, with the payments that caused it', async () => {

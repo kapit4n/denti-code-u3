@@ -35,6 +35,7 @@ export function usePayInvoice() {
         queryClient.invalidateQueries({ queryKey: ['patients', 'invoices', patientId] }),
         queryClient.invalidateQueries({ queryKey: ['patients', 'balance', patientId] }),
         queryClient.invalidateQueries({ queryKey: ['patients', 'statement', patientId] }),
+        queryClient.invalidateQueries({ queryKey: ['invoices', 'detail'] }),
         queryClient.invalidateQueries({ queryKey: ['payments'] }),
         queryClient.invalidateQueries({ queryKey: ['visits', 'payments'] }),
       ]);

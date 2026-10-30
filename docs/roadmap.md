@@ -290,7 +290,8 @@ treatments` names it so the workspace's third row can resolve a record's name
   - **Not done at this point:** editing or deleting a payment; allocation across a
     bill that spans invoices; partial invoice settlement; invoice numbering and
     statements. Milestone 9 closed partial settlement, numbering and statements;
-    invoice-scoped payments from the patient ledger arrived in session 67 (ADR 0034).
+    invoice-scoped payments from the patient ledger arrived in session 67 (ADR 0034),
+    and `/payments` gained the same invoice-scoped action in session 68 (ADR 0035).
     Editing/deleting and cross-invoice allocation are still absent.
 - Visit completion / reopening
   - **Done (session 24), minus the audit.** `POST /api/v1/visits/:visitId/complete` and
@@ -396,11 +397,13 @@ ledger (ADR 0034). See `docs/progress/LOG.md`.
 
 **Session 59** closed the sidebar's dangling **Payments** link with `/payments`: a
 read-only clinic-wide ledger over the stored payments, filtered by clinic-local period
-and method, paged, with a server-side total. `/payments` stays read only (ADR 0033);
-**session 67** added recording against one existing invoice from the patient's invoices
-card (`POST /api/v1/invoices/:invoiceId/payments`, ADR 0034), so the front desk no longer
-has to open the visit to collect a follow-up payment. Unattached money and cross-invoice
-allocation remain open question 22.
+and method, paged, with a server-side total. **Session 67** added recording against one
+existing invoice from the patient's invoices card (`POST /api/v1/invoices/:invoiceId/payments`,
+ADR 0034), so the front desk no longer has to open the visit to collect a follow-up
+payment. **Session 68** added the same invoice-scoped recording action to `/payments`
+itself: the dialog selects a patient and one open invoice, then uses that same route
+(ADR 0035). The ledger still cannot record unattached money or split a payment across
+invoices; both remain open question 22.
 
 - Charges → invoices
 - Invoice numbering and status

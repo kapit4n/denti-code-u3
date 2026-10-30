@@ -47,6 +47,7 @@ import { ArrowLeft, CalendarPlus } from 'lucide-react';
 import { AppointmentBookingDialog } from '../features/agenda/components/appointment-booking-dialog.js';
 import { formatClinicDay, formatClinicDayTime } from '../features/clinic/format-clinic-time.js';
 import { useClinicSettings } from '../features/clinic/queries/clinic-settings-query.js';
+import { RecordPaymentDialog } from '../features/payments/components/record-payment-dialog.js';
 import { usePatient } from '../features/patients/hooks/use-patients.js';
 import { PatientTreatmentPlansSection } from '../features/patients/components/patient-treatment-plans-section.js';
 import { PatientInvoicesSection } from '../features/patients/components/patient-invoices-section.js';
@@ -66,6 +67,7 @@ function PatientProfile() {
   // The clinic, for the booking dialog and for every time drawn on this page.
   const { data: clinic } = useClinicSettings();
   const [isBooking, setIsBooking] = useState(false);
+  const [isRecordingPayment, setIsRecordingPayment] = useState(false);
 
   if (isPending) {
     return <p className="text-sm text-muted-foreground">{t('patients.profile.loading')}</p>;
@@ -339,7 +341,10 @@ function PatientProfile() {
         a second answer to the same question, and a payment that has not reached a
         document yet would have nowhere to appear.
       */}
-      <PatientBalanceSection patientId={patient.id} />
+      <PatientBalanceSection
+        patientId={patient.id}
+        onRecordPayment={() => setIsRecordingPayment(true)}
+      />
       <PatientInvoicesSection patientId={patient.id} clinicTimeZone={timeZone} />
       {/*
         The history behind the two cards above, opened on demand: the same documents
@@ -371,6 +376,22 @@ function PatientProfile() {
             label: `${patient.firstName} ${patient.lastName}`,
           }}
           onClose={() => setIsBooking(false)}
+        />
+      ) : null}
+
+      {/*
+        The payment dialog with this patient fixed. It lists the patient's open
+        invoices and the treatments on the chosen one; the profile remains the only
+        place that knows who is on screen, so the dialog cannot record money against
+        a second patient picked by mistake.
+      */}
+      {isRecordingPayment ? (
+        <RecordPaymentDialog
+          fixedPatient={{
+            id: patient.id,
+            label: `${patient.firstName} ${patient.lastName}`,
+          }}
+          onClose={() => setIsRecordingPayment(false)}
         />
       ) : null}
     </div>

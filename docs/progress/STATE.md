@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 67 (patient allergies and invoice-scoped payments)
+> Last updated: session 70 (patient-profile payment action moved to the server balance)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -54,9 +54,35 @@ compuesta` and descriptions read as aesthetic fillings. Remaining seeded composi
 > and edited with **allergies**, stored on both engines and shown on the profile. The
 > invoices card can also **record a payment against one outstanding invoice** through
 > `POST /api/v1/invoices/:invoiceId/payments` (ADR 0034), so collecting a follow-up no
-> longer requires finding the visit; `/payments` stays read only (ADR 0033). The payment
-> is fully allocated to that invoice in the same transaction, with overpayment refused.
-> `InvoiceSummary` now carries its `patientId`, which the invoice-scoped write needs.
+> longer requires finding the visit; `/payments` stayed read only in that slice (ADR
+> 0033). The payment is fully allocated to that invoice in the same transaction, with
+> overpayment refused. `InvoiceSummary` now carries its `patientId`, which the
+> invoice-scoped write needs.
+>
+> **Session 68** gave the `/payments` ledger the same invoice-scoped recording door. The
+> header's **Record payment** action opens a dialog that chooses a patient and one open
+> invoice, defaults the amount to the outstanding balance, and submits through the
+> existing `POST /api/v1/invoices/:invoiceId/payments` (ADR 0035). No API, domain,
+> validation or database change was needed. The ledger still cannot record unattached
+> money or split a payment across invoices.
+>
+> **Session 69** put the recording action on the patient profile. The balance card now
+> opens the same dialog with the patient fixed, so the operator cannot record against a
+> different patient from that screen. The dialog shows the selected patient and their
+> server-computed balance, then lists the chosen invoice's charge lines as the treatment
+> breakdown; it reads invoiced charges rather than treatment-plan estimates, so pending
+> clinical work is not presented as debt. The write still goes through the invoice-scoped
+> endpoint, and loading or failed invoice details are stated instead of silently leaving
+> an empty list. No API, domain, validation or database change.
+>
+> **Session 70** fixed the profile action opening an all-disabled payment form. The action
+> had sat on the older charges-minus-payments card, so it could open for a patient with no
+> invoices; the invoice-scoped dialog then had nothing to select and every field stayed
+> disabled. The action now lives on the server-computed **Balance** card and appears only
+> while that balance is positive. When exactly one invoice is collectible the dialog
+> selects it and defaults the amount; when none are collectible it shows an explanation and
+> no disabled controls instead of a dead form. The older balance card remains, but it no
+> longer owns the action. No API, domain, validation or database change.
 
 ## Phase
 
@@ -3548,3 +3574,56 @@ Compiler warnings and an existing parser warning on the domain comment scanner) 
 132 passed / 281 skipped, desktop 4, database 6) · SQLite smoke **31/31** · full e2e
 **165/165**. No commit. Docs: ADR 0033 amended, ADR 0034 added, open question 22 closed
 for `/payments`, roadmap and this file updated.
+
+---
+
+Session 68: `/payments` can now start a payment. The header action opens
+`RecordPaymentDialog`, which uses the shared `PatientPicker` and reads that patient's
+invoices with `usePatientInvoices`. It offers only documents that are not `DRAFT` or
+`VOID` and still have a positive balance, defaults the amount to the outstanding balance,
+and submits method, amount and optional reference through the existing
+`POST /api/v1/invoices/:invoiceId/payments`. The payment, allocation and status remain the
+existing `payInvoice` transaction; no API, domain, validation or database change was made.
+A patient with no open invoice sees an empty-state message, and a refused payment keeps the
+dialog open with the server's reason.
+
+**Tests.** Three dialog tests cover the patient-gated invoice read, open-invoice filtering,
+amount prefill and POST body, the no-open-invoice state, and a rejected payment; one
+payments-page test proves the action opens without adding a ledger request. App **374**.
+A browser fixture and spec cover selecting the open invoice, submitting, and reading the
+new ledger row. E2E **166/166**.
+
+**Verification.** Typecheck 12/12 · lint 12/12 + boundary guard (two pre-existing React
+Compiler warnings and the existing boundary-scanner false positive) · format clean ·
+build 5/5 · root tests 12/12 tasks (domain **397**, app **374**, API **132** passed /
+281 skipped, desktop **4**, database **6**) · full e2e **166/166**. No commit. Docs: ADR
+0035 added, ADR 0033 and 0034 amended, open question 22 updated, roadmap and this file
+updated.
+
+---
+
+Session 69: the patient profile can now start a payment from its **Balance** card.
+"Patients view" was read as `/patients/:patientId` rather than the patient list; the list
+is unchanged. The action opens the shared `RecordPaymentDialog` with the patient fixed,
+so that screen cannot record money against a different patient. The dialog shows the
+patient summary and their server-computed balance, then the selected invoice's charge
+lines as the treatment breakdown. It reads actual invoiced charges, not treatment-plan
+estimates, so clinical work that has not been billed is not shown as debt.
+
+The dialog still offers only collectible invoices and submits through the existing
+`POST /api/v1/invoices/:invoiceId/payments`; no API, domain, validation or database change
+was made. A new `useInvoiceDetail` query supplies the charge lines, and
+`usePayInvoice` now also invalidates the invoice-detail key. Loading and failed details
+are stated instead of leaving the treatment list silently empty.
+
+**Tests.** App **375** across 44 files: the dialog tests cover balance, treatment lines
+and fixed-patient mode. A browser fixture supplies the balance and invoice detail, and a
+patient-profile spec proves the action opens with no patient picker, displays the
+outstanding amount and treatment descriptions, and records against the displayed
+invoice. Full e2e **167/167**.
+
+**Verification.** Root tests 12/12 tasks (validation 163, domain **397**, api-client 15,
+database 6, API **132** passed / 281 skipped, app **375**, desktop 4) · full e2e
+**167/167** · web build passed · typecheck, lint, boundary guard and format check clean
+apart from the two pre-existing React Compiler warnings and the existing boundary-scanner
+false positive. No commit.

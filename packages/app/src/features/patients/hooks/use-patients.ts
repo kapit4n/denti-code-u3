@@ -15,6 +15,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import type {
+  InvoiceDetail,
   InvoiceSummary,
   PatientBalance,
   PatientListEntry,
@@ -123,6 +124,24 @@ export function usePatientInvoices(patientId: string) {
     queryKey: ['patients', 'invoices', patientId],
     queryFn: () => client.get<PatientInvoicesResponse>(`/patients/${patientId}/invoices`),
     enabled: patientId.length > 0,
+  });
+}
+
+/**
+ * One invoice with the charges it folded in.
+ *
+ * The list read carries only a charge count, so the payment dialog asks for the
+ * document's own detail when an invoice is chosen. The rows are the treatments the
+ * patient is being asked to pay for — descriptions written when the charge was
+ * raised, not a title this screen invents from a treatment id.
+ */
+export function useInvoiceDetail(invoiceId: string) {
+  const client = useApiClient();
+
+  return useQuery({
+    queryKey: ['invoices', 'detail', invoiceId],
+    queryFn: () => client.get<InvoiceDetail>(`/invoices/${invoiceId}`),
+    enabled: invoiceId.length > 0,
   });
 }
 

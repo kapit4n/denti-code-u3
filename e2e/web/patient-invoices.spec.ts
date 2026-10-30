@@ -16,6 +16,7 @@ import { expect, test } from './fixtures/frozen-clock.js';
 import {
   ANA_ID,
   anaBalance,
+  anaInvoiceDetail,
   anaInvoices,
   anaOdontogram,
   anaProfile,
@@ -126,6 +127,50 @@ test.describe('Patient invoices', () => {
       amountMinor: 23000,
       reference: 'front desk',
     });
+    expect(errors).toEqual([]);
+  });
+
+  test('opens a patient-fixed payment dialog from the balance card', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...clinicFixture(),
+      ...profileSections(anaInvoices),
+      [`/api/v1/invoices/${OUTSTANDING_ID}`]: { body: anaInvoiceDetail },
+      [`POST /api/v1/invoices/${OUTSTANDING_ID}/payments`]: { status: 201, body: invoicePayment },
+    });
+
+    await page.goto(`/patients/${ANA_ID}`);
+
+    await page.getByTestId('patient-record-payment').click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByTestId('payments-record-patient')).toContainText('Ana García');
+    await expect(dialog.getByTestId('payments-record-patient-balance')).toHaveText(
+      'Owes 230.00 USD',
+    );
+    await expect(dialog.locator('#payments-record-patient')).toHaveCount(0);
+
+    await dialog.getByTestId('payments-record-invoice').click();
+    await page.getByRole('option', { name: /F001-00001/ }).click();
+
+    await expect(dialog.getByTestId('payments-record-treatments')).toContainText(
+      'Composite filling',
+    );
+    await expect(dialog.getByTestId('payments-record-treatments')).toContainText(
+      'Scaling and prophylaxis',
+    );
+
+    await dialog.getByTestId('payments-record-method').click();
+    await page.getByRole('option', { name: 'Cash' }).click();
+    await dialog.getByTestId('payments-record-submit').click();
+
+    await expect(dialog).toBeHidden();
+    const posted = api.recorded.find(
+      (request) =>
+        request.method === 'POST' &&
+        new URL(request.url).pathname === `/api/v1/invoices/${OUTSTANDING_ID}/payments`,
+    );
+    expect(posted?.body).toEqual({ method: 'CASH', amountMinor: 23000 });
     expect(errors).toEqual([]);
   });
 

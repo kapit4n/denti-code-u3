@@ -38,6 +38,7 @@ export const patients = {
   'patients.profile.backToAll': 'Todos los pacientes',
   'patients.profile.book': 'Reservar cita',
   'patients.profile.edit': 'Editar datos',
+  'patients.profile.recordPayment': 'Registrar pago',
   'patients.profile.contact': 'Contacto',
   'patients.profile.phone': 'Teléfono: {value}',
   'patients.profile.email': 'Correo: {value}',

@@ -171,4 +171,19 @@ describe('PaymentsPage', () => {
     expect(screen.getAllByTestId('payment-row')[0]).toHaveTextContent('Tarjeta');
     expect(screen.getByText('Todos los métodos')).toBeVisible();
   });
+
+  it('opens the payment dialog without changing the ledger read', async () => {
+    const user = userEvent.setup();
+    const { requests } = renderPayments();
+
+    await screen.findByText('180.00 PEN');
+    const ledgerRequests = requests.filter((url) => url.includes('/api/v1/payments'));
+
+    await user.click(screen.getByTestId('payments-record'));
+
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Record a payment');
+    expect(requests.filter((url) => url.includes('/api/v1/payments'))).toHaveLength(
+      ledgerRequests.length,
+    );
+  });
 });

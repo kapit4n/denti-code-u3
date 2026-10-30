@@ -18,16 +18,30 @@
  */
 
 import { formatMinorUnits } from '@denti-code-u3/domain';
+import { Wallet } from 'lucide-react';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@denti-code-u3/ui';
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@denti-code-u3/ui';
 import { usePatientBalance } from '../hooks/use-patients.js';
 import { useTranslation } from '../../../i18n/index.js';
 
 interface PatientBalanceSectionProps {
   readonly patientId: string;
+  /**
+   * Opens the payment dialog. Offered only when the server says money is owed:
+   * a payment needs one of those open invoices, so a settled profile must not
+   * show a door that leads to a form with nothing to pay.
+   */
+  readonly onRecordPayment?: () => void;
 }
 
-export function PatientBalanceSection({ patientId }: PatientBalanceSectionProps) {
+export function PatientBalanceSection({ patientId, onRecordPayment }: PatientBalanceSectionProps) {
   const { t } = useTranslation();
   const balanceQuery = usePatientBalance(patientId);
   const balance = balanceQuery.data;
@@ -66,6 +80,20 @@ export function PatientBalanceSection({ patientId }: PatientBalanceSectionProps)
                   ? t('patients.balance.credit')
                   : t('patients.balance.nothing')}
             </p>
+
+            {onRecordPayment && balance.balanceMinor > 0 ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={onRecordPayment}
+                data-testid="patient-record-payment"
+              >
+                <Wallet aria-hidden className="mr-2 h-4 w-4" />
+                {t('patients.profile.recordPayment')}
+              </Button>
+            ) : null}
 
             <dl className="mt-4 space-y-1 text-sm">
               <div className="flex justify-between gap-4">

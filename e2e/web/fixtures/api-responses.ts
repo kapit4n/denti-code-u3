@@ -912,6 +912,52 @@ export const anaInvoices = {
   ],
 } as const;
 
+/**
+ * The open invoice with the treatments it folded in.
+ *
+ * The payment dialog reads this when an invoice is chosen: the list read only
+ * carries a count, while this read names the clinical work the balance is for.
+ */
+export const anaInvoiceDetail = {
+  ...anaInvoices.items[1],
+  charges: [
+    {
+      id: '11111111-cccc-4a11-9ccc-000000000011',
+      clinicId: '11111111-1111-4111-8111-111111111111',
+      patientId: ANA_ID,
+      visitId: null,
+      invoiceId: '11111111-cccc-4a11-9ccc-000000000001',
+      invoicedAt: '2026-10-05T02:00:00.000Z',
+      createdAt: '2026-10-05T01:00:00.000Z',
+      treatmentId: null,
+      treatmentPlanItemId: null,
+      description: 'Composite filling',
+      quantity: 1,
+      unitPriceMinor: 12000,
+      discountMinor: 0,
+      taxRatePercent: 0,
+      currency: 'USD',
+    },
+    {
+      id: '11111111-cccc-4a11-9ccc-000000000012',
+      clinicId: '11111111-1111-4111-8111-111111111111',
+      patientId: ANA_ID,
+      visitId: null,
+      invoiceId: '11111111-cccc-4a11-9ccc-000000000001',
+      invoicedAt: '2026-10-05T02:00:00.000Z',
+      createdAt: '2026-10-05T01:30:00.000Z',
+      treatmentId: null,
+      treatmentPlanItemId: null,
+      description: 'Scaling and prophylaxis',
+      quantity: 2,
+      unitPriceMinor: 6000,
+      discountMinor: 1000,
+      taxRatePercent: 0,
+      currency: 'USD',
+    },
+  ],
+} as const;
+
 /** A patient with nothing billed — the section's empty sentence. */
 export const noInvoices = { items: [] } as const;
 
@@ -1592,5 +1638,22 @@ export function paymentsFixtures(): MockedResponses {
   return {
     ...clinicFixture(),
     '/api/v1/payments': { body: paymentLedger },
+  };
+}
+
+/** The ledger plus the patient search, open invoice and write a recording uses. */
+export function paymentRecordingFixtures(): MockedResponses {
+  const openInvoice = anaInvoices.items[1];
+
+  return {
+    ...paymentsFixtures(),
+    '/api/v1/patients': { body: { items: [patientSummaries[1]] } },
+    [`/api/v1/patients/${ANA_ID}/invoices`]: { body: anaInvoices },
+    [`/api/v1/patients/${ANA_ID}/balance`]: { body: anaBalance },
+    [`/api/v1/invoices/${openInvoice.id}`]: { body: anaInvoiceDetail },
+    [`POST /api/v1/invoices/${openInvoice.id}/payments`]: {
+      status: 201,
+      body: invoicePayment,
+    },
   };
 }
