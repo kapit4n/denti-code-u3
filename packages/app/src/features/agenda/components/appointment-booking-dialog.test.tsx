@@ -194,6 +194,17 @@ async function chooseFrom(user: UserEvent, trigger: string, optionName: RegExp):
   await user.click(await screen.findByRole('option', { name: optionName }));
 }
 
+async function chooseDateTime(
+  user: UserEvent,
+  date: string,
+  hour: string,
+  minute: string,
+): Promise<void> {
+  fireEvent.change(screen.getByTestId('booking-date'), { target: { value: date } });
+  await chooseFrom(user, 'booking-hour', new RegExp(`^${hour}$`));
+  await chooseFrom(user, 'booking-minute', new RegExp(`^${minute}$`));
+}
+
 describe('AppointmentBookingDialog', () => {
   /**
    * Radix sets `body { pointer-events: none }` while one of its dropdowns is open, and
@@ -235,7 +246,9 @@ describe('AppointmentBookingDialog', () => {
 
     expect(screen.getByRole('heading', { name: 'Nueva cita' })).toBeInTheDocument();
     expect(screen.getByText('lun, 5 oct, 09:00 · 09:00 – 09:30')).toBeInTheDocument();
-    expect(screen.getByLabelText('Fecha y hora')).toBeInTheDocument();
+    expect(screen.getByLabelText('Fecha')).toBeInTheDocument();
+    expect(screen.getByLabelText('Hora')).toBeInTheDocument();
+    expect(screen.getByLabelText('Minuto')).toBeInTheDocument();
     expect(screen.getByText('Odontólogo')).toBeInTheDocument();
     expect(screen.getByText('Sillón')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reservar cita' })).toBeInTheDocument();
@@ -352,16 +365,16 @@ describe('AppointmentBookingDialog', () => {
     // Pre-filled rather than locked: the click decides where the typing starts, not
     // where it stops. The month view names only a day, and a mistyped lane is
     // corrected here rather than by closing the dialog and starting over.
-    const field = screen.getByTestId('booking-starts-at');
-    expect(field).toHaveValue('2026-10-05T09:00');
-    expect(field).not.toHaveAttribute('readonly');
+    const date = screen.getByTestId('booking-date');
+    expect(date).toHaveValue('2026-10-05');
+    expect(date).not.toHaveAttribute('readonly');
+    expect(screen.getByTestId('booking-hour')).toHaveTextContent('09');
+    expect(screen.getByTestId('booking-minute')).toHaveTextContent('00');
     expect(screen.getByText(/from the slot you clicked/i)).toBeInTheDocument();
 
     await choosePatient(user);
     await chooseFrom(user, 'booking-dentist', /Dra\. Rivera/);
-    // `fireEvent` rather than `user.type`: a `datetime-local` input is edited through
-    // the browser's own segment editor, which jsdom does not implement.
-    fireEvent.change(field, { target: { value: '2026-10-05T10:30' } });
+    await chooseDateTime(user, '2026-10-05', '10', '30');
     await user.click(screen.getByTestId('booking-submit'));
 
     // The hour the person chose, not the one the slot happened to hold.
@@ -378,8 +391,9 @@ describe('AppointmentBookingDialog', () => {
     // Nothing here can answer "when", so the field is the person's. Empty rather than
     // filled with a guess: a dialog that defaults to an hour nobody chose is a booking
     // nobody made.
-    expect(screen.getByTestId('booking-starts-at')).toHaveValue('');
-    expect(screen.getByTestId('booking-starts-at')).not.toHaveAttribute('readonly');
+    expect(screen.getByTestId('booking-date')).toHaveValue('');
+    expect(screen.getByTestId('booking-hour')).toHaveTextContent('--');
+    expect(screen.getByTestId('booking-minute')).toHaveTextContent('--');
   });
 
   it('says whose clock the typed time is in, since a bare wall clock is ambiguous', () => {
@@ -406,12 +420,7 @@ describe('AppointmentBookingDialog', () => {
 
     await choosePatient(user);
     await chooseFrom(user, 'booking-dentist', /Dra\. Rivera/);
-    // `fireEvent` rather than `user.type`: a `datetime-local` input is typed through
-    // the browser's own segment editor, which jsdom does not implement, so keystrokes
-    // would produce nothing and the test would pass for the wrong reason.
-    fireEvent.change(screen.getByTestId('booking-starts-at'), {
-      target: { value: '2026-10-05T09:00' },
-    });
+    await chooseDateTime(user, '2026-10-05', '09', '00');
     await user.click(screen.getByTestId('booking-submit'));
 
     await waitFor(() => expect(postedBodies(fetchImplementation)).toHaveLength(1));
@@ -437,9 +446,7 @@ describe('AppointmentBookingDialog', () => {
 
     await choosePatient(user);
     await chooseFrom(user, 'booking-dentist', /Dra\. Rivera/);
-    fireEvent.change(screen.getByTestId('booking-starts-at'), {
-      target: { value: '2026-03-08T02:30' },
-    });
+    await chooseDateTime(user, '2026-03-08', '02', '30');
     await user.click(screen.getByTestId('booking-submit'));
 
     // The only check the dialog makes itself, and it names the zone so the person can
@@ -464,9 +471,7 @@ describe('AppointmentBookingDialog', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /patient/i })).toHaveValue('Ana Torres');
 
-    fireEvent.change(screen.getByTestId('booking-starts-at'), {
-      target: { value: '2026-10-05T09:00' },
-    });
+    await chooseDateTime(user, '2026-10-05', '09', '00');
     await chooseFrom(user, 'booking-dentist', /Dra\. Rivera/);
     await user.click(screen.getByTestId('booking-submit'));
 

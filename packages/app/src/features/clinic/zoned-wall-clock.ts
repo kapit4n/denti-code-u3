@@ -29,14 +29,14 @@
 
 import { DateTime } from 'luxon';
 
-/** The shape an `<input type="datetime-local">` reports: `YYYY-MM-DDTHH:mm`. */
+/** The shape the booking form holds: `YYYY-MM-DDTHH:mm`. */
 const WALL_CLOCK_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
 
 /**
- * The clinic's wall clock for an instant, ready for a `datetime-local` input.
+ * The clinic's wall clock for an instant, ready for the booking form.
  *
- * The same pattern the browser reports, so a value that came from here can go straight
- * back through `zonedWallClockToInstant` without the user typing anything.
+ * The form's pattern, so a value that came from here can go straight back through
+ * `zonedWallClockToInstant` without the user typing anything.
  *
  * `undefined` for something that is not an instant, rather than Luxon's `Invalid
  * DateTime` — that string is not a time, and a caller that puts it in a form has

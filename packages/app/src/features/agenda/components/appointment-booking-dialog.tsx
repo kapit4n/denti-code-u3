@@ -2,16 +2,17 @@
  * The booking dialog: a slot, and who is coming to it.
  *
  * Two doors, one dialog. Opened from the **grid**, it arrives with a slot: the click
- * was the choice of when, and the field below starts there so nobody retypes what the
- * grid already answered. It starts there rather than stopping there — the field stays
- * editable, because a receptionist who meant 10:30 and clicked 10:00 should fix it in
- * place instead of closing the dialog and hunting for another empty lane, and in the
- * month view a click can only ever name a *day*, leaving the hour to be stated here.
- * Opened from a **patient's profile** or the **dashboard** there is no slot behind it
- * and nothing else on the screen can answer "when", so the same field starts empty and
- * the person types the time. Either way the value is a clinic wall clock.
+ * was the choice of when, and the date and time fields below start there so nobody
+ * retypes what the grid already answered. They start there rather than stopping there
+ * — they stay editable, because a receptionist who meant 10:30 and clicked 10:00
+ * should fix it in place instead of closing the dialog and hunting for another empty
+ * lane, and in the month view a click can only ever name a *day*, leaving the hour to
+ * be stated here. Opened from a **patient's profile** or the **dashboard** there is no
+ * slot behind it and nothing else on the screen can answer "when", so the same fields
+ * start empty and the person chooses the time. Either way the value is a clinic wall
+ * clock.
  *
- * **The time is always the clinic's clock, whatever the machine says.** The field holds
+ * **The time is always the clinic's clock, whatever the machine says.** The form holds
  * a wall clock (`2026-10-06T09:00`) and the dialog turns it into the instant the API
  * stores using the zone on the clinic record, via `zonedWallClock.ts`. That is the same
  * reason the grid renders in `clinic.timeZone`: a receptionist in another country
@@ -19,7 +20,7 @@
  *
  * **A time the zone skipped is refused here rather than shifted.** Twice a year the
  * clocks jump an hour forward and some wall clocks never arrive; the conversion says so
- * and the dialog puts the sentence under the field, because the alternative is booking
+ * and the dialog puts the sentence under the fields, because the alternative is booking
  * a patient for an hour they did not choose and mentioning it nowhere.
  *
  * **It decides nothing about whether the booking is allowed.** The slot is not checked
@@ -59,6 +60,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  Input,
   Label,
   Select,
   SelectContent,
@@ -117,12 +119,15 @@ const DEFAULT_DURATION_MINUTES = BOOKABLE_DURATIONS.includes(30) ? 30 : BOOKABLE
  */
 const NO_CHAIR = 'none';
 
+const HOURS = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0'));
+const MINUTES = Array.from({ length: 60 }, (_, minute) => String(minute).padStart(2, '0'));
+
 export interface AppointmentBookingDialogProps {
   /**
    * The clicked slot, as an ISO instant, when the grid opened this dialog.
    *
-   * Optional, and its absence is what leaves the field empty rather than pre-filled —
-   * the whole of what the prop decides. It seeds the field and does not lock it, so
+   * Optional, and its absence is what leaves the fields empty rather than pre-filled
+   * — the whole of what the prop decides. It seeds them and does not lock them, so
    * there is no `readOnly` flag and no caller can pass one that contradicts the other.
    */
   readonly startsAt?: string;
@@ -156,12 +161,12 @@ export function AppointmentBookingDialog({
   const chairs = useChairs({ onlyActive: true });
 
   /**
-   * The clicked slot as the field's starting value.
+   * The clicked slot as the fields' starting value.
    *
    * `undefined` means the grid did not open this dialog — or the instant was not an
-   * instant, which lands in the same place: a field that starts empty is a form
+   * instant, which lands in the same place: fields that start empty are a form
    * somebody can finish, where one holding `Invalid DateTime` is not. Either way the
-   * field is the person's; the slot is where the typing starts, not where it stops.
+   * time is the person's; the slot is where the choice starts, not where it stops.
    */
   const slotWallClock =
     startsAt === undefined ? undefined : instantToZonedWallClock(startsAt, clinic.timeZone);
@@ -176,6 +181,9 @@ export function AppointmentBookingDialog({
    * dialog was just opened for.
    */
   const [patientLabel, setPatientLabel] = useState<string | undefined>(patient?.label);
+  const [bookingDate, setBookingDate] = useState(slotWallClock?.slice(0, 10) ?? '');
+  const [bookingHour, setBookingHour] = useState(slotWallClock?.slice(11, 13) ?? '');
+  const [bookingMinute, setBookingMinute] = useState(slotWallClock?.slice(14, 16) ?? '');
 
   const form = useForm<CreateAppointmentFormValues, unknown, CreateAppointmentFormOutput>({
     resolver: zodResolver(createAppointmentFormSchema),
@@ -194,6 +202,14 @@ export function AppointmentBookingDialog({
   const durationMinutes = form.watch('durationMinutes');
   const patientId = form.watch('patientId');
   const localStartsAt = form.watch('localStartsAt');
+
+  function updateWallClock(date: string, hour: string, minute: string) {
+    const value = date && hour !== '' && minute !== '' ? `${date}T${hour}:${minute}` : '';
+    form.setValue('localStartsAt', value, { shouldDirty: true });
+    if (form.formState.errors.localStartsAt) {
+      form.clearErrors('localStartsAt');
+    }
+  }
 
   /**
    * When this booking would be, in the clinic's own words.
@@ -302,22 +318,77 @@ export function AppointmentBookingDialog({
         ) : null}
 
         <form onSubmit={onSubmit} noValidate className="space-y-4">
-          <div className="space-y-1">
-            <Label htmlFor="booking-starts-at">{t('agenda.booking.dateTime')}</Label>
-            <input
-              id="booking-starts-at"
-              type="datetime-local"
-              // Editable whether or not a slot seeded it. The click is a starting
-              // point, not a verdict: the month view names only a day, a mistyped lane
-              // is corrected here rather than by starting over, and a field that
-              // refuses the very hour it is asking for is a form that cannot be
-              // finished on its own terms.
-              disabled={create.isPending}
-              aria-describedby="booking-starts-at-hint"
-              className="w-full rounded-md border bg-background p-2 text-sm"
-              data-testid="booking-starts-at"
-              {...form.register('localStartsAt')}
-            />
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-[minmax(0,1fr)_7rem_7rem]">
+              <div className="col-span-2 space-y-1 sm:col-span-1">
+                <Label htmlFor="booking-date">{t('agenda.booking.date')}</Label>
+                <Input
+                  id="booking-date"
+                  type="date"
+                  disabled={create.isPending}
+                  aria-describedby="booking-starts-at-hint"
+                  data-testid="booking-date"
+                  value={bookingDate}
+                  onChange={(event) => {
+                    const date = event.target.value;
+                    setBookingDate(date);
+                    updateWallClock(date, bookingHour, bookingMinute);
+                  }}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="booking-hour">{t('agenda.booking.hour')}</Label>
+                <Select
+                  value={bookingHour}
+                  onValueChange={(hour) => {
+                    setBookingHour(hour);
+                    updateWallClock(bookingDate, hour, bookingMinute);
+                  }}
+                  disabled={create.isPending}
+                >
+                  <SelectTrigger
+                    id="booking-hour"
+                    data-testid="booking-hour"
+                    aria-describedby="booking-starts-at-hint"
+                  >
+                    <SelectValue placeholder="--" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {HOURS.map((hour) => (
+                      <SelectItem key={hour} value={hour}>
+                        {hour}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="booking-minute">{t('agenda.booking.minute')}</Label>
+                <Select
+                  value={bookingMinute}
+                  onValueChange={(minute) => {
+                    setBookingMinute(minute);
+                    updateWallClock(bookingDate, bookingHour, minute);
+                  }}
+                  disabled={create.isPending}
+                >
+                  <SelectTrigger
+                    id="booking-minute"
+                    data-testid="booking-minute"
+                    aria-describedby="booking-starts-at-hint"
+                  >
+                    <SelectValue placeholder="--" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MINUTES.map((minute) => (
+                      <SelectItem key={minute} value={minute}>
+                        {minute}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             {/* Says whose clock, because a wall clock with no zone is ambiguous and
                 the person filling this in may be a thousand miles from the clinic —
                 and the zone matters most when the hour is theirs to change. */}

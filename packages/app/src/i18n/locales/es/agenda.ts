@@ -54,7 +54,9 @@ export const agenda = {
   'agenda.booking.newForPatient': 'Nueva cita para {patient}',
   'agenda.booking.new': 'Nueva cita',
   'agenda.booking.chooseTime': 'Elige la fecha y hora a la que viene el paciente.',
-  'agenda.booking.dateTime': 'Fecha y hora',
+  'agenda.booking.date': 'Fecha',
+  'agenda.booking.hour': 'Hora',
+  'agenda.booking.minute': 'Minuto',
   'agenda.booking.hintFromSlot':
     'Desde el hueco que pulsaste en la agenda, en la hora propia de la clínica, {timeZone}.',
   'agenda.booking.hintTyped': 'La hora propia de la clínica, {timeZone}.',

@@ -54,7 +54,9 @@ export const agenda = {
   'agenda.booking.newForPatient': 'New appointment for {patient}',
   'agenda.booking.new': 'New appointment',
   'agenda.booking.chooseTime': 'Choose the date and time the patient is coming.',
-  'agenda.booking.dateTime': 'Date and time',
+  'agenda.booking.date': 'Date',
+  'agenda.booking.hour': 'Hour',
+  'agenda.booking.minute': 'Minute',
   'agenda.booking.hintFromSlot':
     "From the slot you clicked on the agenda, in the clinic's own time, {timeZone}.",
   'agenda.booking.hintTyped': "The clinic's own time, {timeZone}.",

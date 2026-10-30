@@ -50,7 +50,7 @@ const CREATE_PATH = 'POST /api/v1/appointments';
  */
 const HALF_PAST_ELEVEN_LIMA = '2026-10-06T16:30:00.000Z';
 
-/** What a person types into a `datetime-local` field: the clinic's own wall clock. */
+/** The clinic's own wall clock. */
 const TYPED_LOCAL = '2026-10-06T11:30';
 
 /** The dialog, as a locator. Scoped because the header has its own patient search. */
@@ -58,14 +58,18 @@ function dialog(page: Page) {
   return page.getByTestId('appointment-booking-dialog');
 }
 
-/**
- * Types the time the way a person does: the field's own value, in the format the
- * browser reports it. `fill` is used rather than a sequence of keystrokes because a
- * `datetime-local` input is edited through the browser's segment editor, and typing
- * "11:30" into it one character at a time is a different act from setting a value.
- */
+async function chooseTime(page: Page, hour: string, minute: string): Promise<void> {
+  await dialog(page).getByTestId('booking-hour').click();
+  await page.getByRole('option', { name: hour, exact: true }).click();
+  await dialog(page).getByTestId('booking-minute').click();
+  await page.getByRole('option', { name: minute, exact: true }).click();
+}
+
 async function typeClinicTime(page: Page, wallClock: string): Promise<void> {
-  await dialog(page).getByLabel('Date and time').fill(wallClock);
+  const [date = '', time = ''] = wallClock.split('T');
+  const [hour = '', minute = ''] = time.split(':');
+  await dialog(page).getByLabel('Date').fill(date);
+  await chooseTime(page, hour, minute);
 }
 
 /** Picks the clinician. */

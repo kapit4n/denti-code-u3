@@ -75,6 +75,15 @@ async function choose(page: import('@playwright/test').Page, trigger: string, op
   await page.getByRole('option', { name: option }).click();
 }
 
+async function chooseTime(
+  page: import('@playwright/test').Page,
+  hour: string,
+  minute: string,
+): Promise<void> {
+  await choose(page, 'booking-hour', new RegExp(`^${hour}$`));
+  await choose(page, 'booking-minute', new RegExp(`^${minute}$`));
+}
+
 /** Fills the optional notes field. */
 async function fillNotes(page: import('@playwright/test').Page, notes: string): Promise<void> {
   await dialog(page).getByLabel('Notes').fill(notes);
@@ -139,12 +148,14 @@ test.describe('Booking an appointment', () => {
     // The click decides where the typing starts, not where it stops — and this browser
     // runs on America/New_York while the clinic is in America/Lima, so the seeded
     // value is the clinic's 10:00 (15:00Z), not a New York one.
-    const startsAtField = dialog(page).getByLabel('Date and time');
-    await expect(startsAtField).toHaveValue('2026-10-05T10:00');
-    await expect(startsAtField).not.toHaveAttribute('readonly');
+    const startsAtDate = dialog(page).getByLabel('Date');
+    await expect(startsAtDate).toHaveValue('2026-10-05');
+    await expect(startsAtDate).not.toHaveAttribute('readonly');
+    await expect(dialog(page).getByTestId('booking-hour')).toContainText('10');
+    await expect(dialog(page).getByTestId('booking-minute')).toContainText('00');
 
     // 14:45 in Lima — an hour the grid never offered, reached from inside the dialog.
-    await startsAtField.fill('2026-10-05T14:45');
+    await chooseTime(page, '14', '45');
     await choosePatient(page);
     await choose(page, 'booking-dentist', /Dra\. Rivera/);
     await dialog(page).getByTestId('booking-submit').click();
