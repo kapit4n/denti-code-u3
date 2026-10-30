@@ -122,6 +122,7 @@ function aCharge(overrides: Partial<Charge> = {}): Charge {
 function aDocument(id: InvoiceId, overrides: Partial<InvoiceDetail> = {}): InvoiceDetail {
   const base = {
     id,
+    patientId: asPatientId('11111111-1111-4111-8111-111111111111'),
     number: 'F001-00001',
     status: 'ISSUED' as const,
     currency: 'PEN' as const,

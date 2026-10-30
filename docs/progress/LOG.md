@@ -3922,3 +3922,84 @@ reset. A clean seed produces the same catalogue.
 
 **Verification.** Format clean · database typecheck and lint · root tests 12/12 tasks ·
 live SQLite catalogue read back as Spanish.
+
+---
+
+Session 65: the dashboard is easier to scan. The eight metrics are grouped under visible
+**Today** and **Clinic** headings instead of appearing as two undifferentiated rows. Quick
+Actions became a full-width band between the metrics and the schedule, Upcoming Visits moved
+above Recent Patients in the right column, and both schedule cards now link onward:
+Upcoming Visits has **View all** (`/visits`) and Calendar Preview has **Open agenda**
+(`/agenda`). The calendar bars also gained their counts above and weekday/day labels below,
+so the fourteen-day chart can be read without hovering.
+
+Only presentation changed. The dashboard queries, API read model and domain are untouched,
+and the section `aria-label`s were preserved so the existing browser specs still locate the
+regions. A new e2e case asserts the two headings and both links.
+
+**Verification.** Typecheck 12/12 · lint 12/12 + boundary guard (two pre-existing React
+Compiler warnings) · format clean · build 5/5 · root tests 12/12 tasks (app 368, domain 385,
+API unit 130, API integration 130 passed / 281 skipped, desktop 4, database 6) · e2e
+**164/164**. No commit.
+
+---
+
+Session 66: the booking dialog no longer asks for a date and time through one native
+`datetime-local` control. That picker made the hour and minute difficult to reach, so the
+dialog now separates the three parts: a date input, an hour dropdown (00–23) and a minute
+dropdown (00–59). The controls stay editable after a slot seeds them and compose the same
+`YYYY-MM-DDTHH:mm` wall clock that validation and the timezone conversion already use.
+The empty dialog shows a placeholder in both dropdowns.
+
+English and Spanish gained `agenda.booking.date`, `agenda.booking.hour` and
+`agenda.booking.minute`; the old `agenda.booking.dateTime` key was removed. The component
+tests and both booking browser specs now select the hour and minute through the dropdowns,
+including the DST-gap refusal and the clinic-clock conversion cases.
+
+**Verification.** Typecheck 12/12 · lint 12/12 + boundary guard (two pre-existing React
+Compiler warnings) · format clean · build 5/5 · root tests 12/12 tasks (app 368, domain 385,
+API unit 130, API integration 130 passed / 281 skipped, desktop 4, database 6) · e2e
+**164/164**. No commit.
+
+---
+
+Session 67: the patient record gained two missing pieces.
+
+**Allergies.** `Patient`, `PatientDetailsInput`, `EditablePatientDetails`, the patient
+validation schema, both patient repositories and the shared register/edit form now carry
+an optional allergy text. The value is trimmed on the way in; an omitted or blank value is
+stored as `null`, never as an empty string, so the profile can distinguish "known to have
+no recorded allergies" from "not known". The profile renders the stored text in both
+languages.
+
+**Invoice-scoped payments.** The patient's invoices card now offers **Record payment** on
+an outstanding row. `POST /api/v1/invoices/:invoiceId/payments` (`billing:write`) calls the
+new domain use case `payInvoice`, which loads the invoice inside `UnitOfWork`, refuses a
+DRAFT/VOID document, an empty balance, a non-positive/over-limit amount and an over-long
+reference, saves the payment plus a full allocation to that invoice, and advances the
+status from the document's stored total and allocated total. A non-UUID path segment is a
+422 before any query. `InvoiceSummary` gained its `patientId` so the payment inherits the
+document's patient; both engines map the column. `/payments` remains a read-only ledger
+(ADR 0033); ADR 0034 records this narrower door and open question 22 was updated.
+
+**App.** `usePayInvoice` invalidates the patient profile, invoices, balance and statement,
+plus the clinic-wide `/payments` and visit payment registers. `InvoicePaymentDialog`
+reuses the existing method vocabulary and minor-unit parser, keeps the draft on refusal
+and closes only after the server answers. The profile's invoice card renders the action
+only when `balanceMinor > 0`.
+
+**Tests.** +12 domain tests for `payInvoice` (success, full payment, DRAFT/VOID, empty,
+non-positive, overpayment, reference trim/limit, missing invoice/foreign scope, status
+transitions), domain **397**; +2 app component tests for success and refusal, app **370**.
+The SQLite smoke suite grew to **31** cases, adding allergy registration/edit/clear and a
+payment block covering 201, PAID detail, zero patient balance, statement credit, overpay,
+zero, foreign invoice and malformed path id. PostgreSQL allergy assertions were added to
+the registration/update integration specs but skip without `TEST_DATABASE_URL`. Browser
+specs cover the allergy prefill/correction and the invoice payment request body; e2e
+**165/165**.
+
+**Verification.** Typecheck 12/12 · lint 12/12 + boundary guard (two pre-existing React
+Compiler warnings; the boundary scanner also reports an existing false positive on the
+doc comment in `editable-patient-details.ts`) · build 5/5 · root tests 12/12 tasks (domain
+397, app 370, API unit 130, API integration 132 passed / 281 skipped, desktop 4, database 6) · SQLite smoke 31/31 · full e2e 165/165. No commit. Docs: ADR 0033 amended, ADR 0034
+added, open question 22 answered for `/payments`, roadmap and STATE updated.

@@ -41,7 +41,7 @@ const patient: PatientProfile = {
   birthDate: '1990-04-17',
   isActive: true,
   address: null,
-  allergies: null,
+  allergies: 'Penicillin',
   additionalData: {},
   createdAt: '2024-01-15T09:30:00.000Z',
   updatedAt: '2024-01-15T09:30:00.000Z',
@@ -111,6 +111,7 @@ describe('PatientEditForm', () => {
     expect(screen.getByLabelText('Preferred name')).toHaveValue('Ana María');
     expect(screen.getByLabelText('Email')).toHaveValue('old@example.test');
     expect(screen.getByLabelText('Date of birth')).toHaveValue('1990-04-17');
+    expect(screen.getByLabelText('Allergies')).toHaveValue('Penicillin');
   });
 
   it('sends a PUT to the patient, not to the list', async () => {

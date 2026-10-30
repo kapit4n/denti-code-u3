@@ -104,6 +104,31 @@ export function PatientFields<T extends PatientFieldValues>({
             error={error('birthDate')}
           />
         </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="allergies">{t('patients.fields.allergies')}</Label>
+          <textarea
+            id="allergies"
+            rows={3}
+            placeholder={t('patients.fields.allergiesPlaceholder')}
+            aria-invalid={error('allergies') ? true : undefined}
+            aria-describedby={
+              [error('allergies') ? 'allergies-error' : undefined, 'allergies-hint']
+                .filter(Boolean)
+                .join(' ') || undefined
+            }
+            className="flex min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            {...form.register('allergies')}
+          />
+          <p id="allergies-hint" className="text-xs text-muted-foreground">
+            {t('patients.fields.allergiesHint')}
+          </p>
+          {error('allergies') ? (
+            <p id="allergies-error" role="alert" className="text-xs text-destructive">
+              {error('allergies')}
+            </p>
+          ) : null}
+        </div>
       </fieldset>
     </>
   );

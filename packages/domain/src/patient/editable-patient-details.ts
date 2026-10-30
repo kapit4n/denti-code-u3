@@ -24,6 +24,7 @@ export interface PatientDetailsInput {
   readonly email?: string;
   /** ISO calendar date, `YYYY-MM-DD`. */
   readonly birthDate?: IsoDate;
+  readonly allergies?: string;
 }
 
 /**
@@ -46,6 +47,7 @@ export interface EditablePatientDetails {
   readonly phone?: string;
   readonly email?: string;
   readonly birthDate?: IsoDate;
+  readonly allergies?: string;
 }
 
 /**
@@ -90,6 +92,7 @@ export function editablePatientDetailsFrom(
     phone: optionalText(input.phone),
     email: optionalText(input.email),
     birthDate,
+    allergies: optionalText(input.allergies),
   };
 }
 

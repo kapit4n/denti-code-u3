@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 64 (Spanish treatment catalogue)
+> Last updated: session 67 (patient allergies and invoice-scoped payments)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -36,6 +36,27 @@ compuesta` and descriptions read as aesthetic fillings. Remaining seeded composi
 > references (visits, odontogram, charges) and the Spanish UI placeholders are localized
 > too. The existing development SQLite rows were updated in place, so the running app no
 > longer needs a database reset to show Spanish.
+
+> **Session 65** refreshed the dashboard hierarchy without changing its data. The eight
+> metrics are grouped under visible **Today** and **Clinic** headings; Quick Actions is a
+> full-width band between the metrics and the schedule; Upcoming Visits moves above Recent
+> Patients and gains a **View all** link; Calendar Preview gains count labels, weekday/day
+> labels and an **Open agenda** link. Presentation only.
+
+> **Session 66** replaced the booking dialog's combined `datetime-local` field with a
+> separate date input and hour/minute dropdowns. The native picker made the hour and
+> minute hard to change, especially on desktop; the new controls always expose all 24
+> hours and 60 minutes while still composing the same `YYYY-MM-DDTHH:mm` wall clock the
+> validation and timezone conversion expect. The dialog, unit tests and browser specs
+> were updated; no API, domain or database change.
+
+> **Session 67** closed two gaps on the patient record. Patients can now be registered
+> and edited with **allergies**, stored on both engines and shown on the profile. The
+> invoices card can also **record a payment against one outstanding invoice** through
+> `POST /api/v1/invoices/:invoiceId/payments` (ADR 0034), so collecting a follow-up no
+> longer requires finding the visit; `/payments` stays read only (ADR 0033). The payment
+> is fully allocated to that invoice in the same transaction, with overpayment refused.
+> `InvoiceSummary` now carries its `patientId`, which the invoice-scoped write needs.
 
 ## Phase
 
@@ -3449,3 +3470,81 @@ four treatment names, two specialties, prescription and charges were read back i
 
 **Verification.** Format clean · database typecheck/lint · root tests 12/12 tasks · clean
 SQLite migrate + seed · full typecheck/lint + boundary guard earlier in the session.
+
+---
+
+Session 64: the treatment catalogue is now fully Spanish. The seed codes became
+`RESINA-ANTERIOR`, `RESINA-POSTERIOR`, `ENDO` and `PROFILAXIS`; names use `resina
+compuesta` and descriptions read as aesthetic fillings. Seeded composite references in
+visit summaries, odontogram notes and charge descriptions were localized, along with the
+Spanish treatment-code and odontogram-note placeholders. The existing development SQLite
+rows were updated in place, leaving user-created rows untouched, so the running app shows
+the new copy without a reset. Committed as `c9b580b`.
+
+**Verification.** Format clean · database typecheck and lint · root tests 12/12 tasks ·
+live SQLite catalogue read back as Spanish.
+
+---
+
+Session 65: the dashboard was reviewed and its hierarchy tightened. The eight metrics now
+sit under visible **Today** and **Clinic** headings rather than two undifferentiated rows;
+Quick Actions is a full-width band between the metrics and the schedule; Upcoming Visits
+moved above Recent Patients and gained a **View all** link to `/visits`; Calendar Preview
+gained count labels above each bar, weekday/day labels below them and an **Open agenda**
+link to `/agenda`. The section `aria-label`s were kept so existing dashboard specs still
+find the regions. Presentation only: no query, API or domain change.
+
+**Verification.** Typecheck 12/12 · lint 12/12 + boundary guard (two pre-existing React
+Compiler warnings) · format clean · build 5/5 · root tests 12/12 tasks (app 368) · full
+e2e **164/164**, including the new dashboard grouping/link assertion.
+
+---
+
+Session 66: the booking dialog now lets the hour and minute be chosen directly. The
+combined `datetime-local` input was replaced by a date field plus hour and minute
+dropdowns, each holding all 24 hours and all 60 minutes. The three controls compose the
+same clinic wall clock (`YYYY-MM-DDTHH:mm`) that `zonedWallClockSchema` validates and
+`zonedWallClockToInstant` converts, so daylight-saving gaps are still refused by the
+existing conversion. A seeded slot fills all three controls without locking them; an
+empty dialog starts with no date and both dropdowns on their placeholder.
+
+The English and Spanish catalogues gained `agenda.booking.date`, `agenda.booking.hour`
+and `agenda.booking.minute`, replacing `agenda.booking.dateTime`. Unit tests now choose
+the time through the dropdowns, and both booking browser specs do the same.
+
+**Verification.** Typecheck 12/12 · lint 12/12 + boundary guard (two pre-existing React
+Compiler warnings) · format clean · build 5/5 · root tests 12/12 tasks (app 368, domain
+385, API unit 130, API integration 130 passed / 281 skipped, desktop 4, database 6) ·
+e2e **164/164**. No commit.
+
+---
+
+Session 67: patients now carry **allergies** on both engines. The validation schema,
+domain input/editable details, both patient repositories and the shared register/edit
+form were extended; the profile shows the stored text, and clearing the field deletes the
+value rather than storing an empty string. The seed's Spanish allergy list is unchanged.
+
+The patient's invoices card also gained **Record payment**. `payInvoice` in the domain
+loads the invoice scoped to the clinic, refuses a DRAFT/VOID document, an empty balance,
+a non-positive or over-balance amount and an over-long reference, then saves the payment
+and a full allocation in the same `UnitOfWork` transaction and advances the document's
+status from its stored totals. `POST /api/v1/invoices/:invoiceId/payments` exposes it
+under `billing:write`; a non-UUID path is a 422 before any query. `InvoiceSummary` gained
+`patientId` so the payment inherits the document's patient and currency. The dialog keeps
+its draft and quotes the server on refusal; success invalidates the patient profile,
+invoices, balance, statement and the clinic-wide/visit payment registers.
+
+**Tests.** Domain +12 payment tests (397 total) and app 368 → 370, including a successful
+payment and a rejected payment that keeps the dialog open. The SQLite smoke suite now
+covers registration/edit allergy persistence and payment success, PAID status, patient
+balance/statement effects, overpay, zero amount, foreign invoice and malformed path id
+(31 tests). PostgreSQL allergy integration assertions were added but remain skipped
+without `TEST_DATABASE_URL`. Browser specs cover the allergy prefill/correction and the
+invoice payment POST body. E2E had 164 tests before this session and 165 after.
+
+**Verification.** Typecheck 12/12 · lint 12/12 + boundary guard (two pre-existing React
+Compiler warnings and an existing parser warning on the domain comment scanner) · build
+5/5 · root tests 12/12 tasks (domain **397**, app **370**, API unit 130, API integration
+132 passed / 281 skipped, desktop 4, database 6) · SQLite smoke **31/31** · full e2e
+**165/165**. No commit. Docs: ADR 0033 amended, ADR 0034 added, open question 22 closed
+for `/payments`, roadmap and this file updated.

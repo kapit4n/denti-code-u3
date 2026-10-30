@@ -44,6 +44,7 @@ import {
 } from '@denti-code-u3/domain';
 import {
   asInvoiceId,
+  asPatientId,
   type ClinicId,
   type CurrencyCode,
   type InvoiceId,
@@ -61,6 +62,7 @@ import { CHARGE_COLUMNS, toEntity as toChargeEntity } from './charge-repository.
 /** The invoice columns the two reads answer with. */
 const INVOICE_COLUMNS = {
   id: invoices.id,
+  patientId: invoices.patientId,
   number: invoices.number,
   status: invoices.status,
   currency: invoices.currency,
@@ -242,6 +244,7 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
 function toSummary(
   row: {
     id: string;
+    patientId: string;
     number: string | null;
     status: string;
     currency: string;
@@ -257,6 +260,7 @@ function toSummary(
 ): InvoiceSummary {
   return {
     id: asInvoiceId(row.id),
+    patientId: asPatientId(row.patientId),
     number: row.number,
     status: row.status as InvoiceStatus,
     currency: row.currency as CurrencyCode,

@@ -155,6 +155,7 @@ export class DrizzlePatientRepository implements PatientRepository {
           phone: patient.phone ?? null,
           email: patient.email ?? null,
           birthDate: patient.birthDate ?? null,
+          allergies: patient.allergies ?? null,
           isActive: patient.isActive,
         });
 
@@ -208,6 +209,7 @@ export class DrizzlePatientRepository implements PatientRepository {
         phone: details.phone ?? null,
         email: details.email ?? null,
         birthDate: details.birthDate ?? null,
+        allergies: details.allergies ?? null,
         updatedAt: new Date(),
       })
       .where(

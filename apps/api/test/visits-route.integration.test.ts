@@ -506,6 +506,9 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       invoices: new DrizzleInvoiceRepository(db),
       payments,
       clinics,
+      unitOfWork: new DrizzleUnitOfWork(db),
+      clock: { now: () => NOW },
+      ids: { nextId: () => crypto.randomUUID() },
     });
 
     await sql`

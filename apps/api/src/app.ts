@@ -285,6 +285,9 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     invoices: connection.repositories.invoices,
     payments: connection.repositories.payments,
     clinics: connection.repositories.clinics,
+    unitOfWork: connection.unitOfWork,
+    clock: systemClock,
+    ids: uuidGenerator,
   });
 
   // The clinic-wide payment ledger. A read of the same rows the visit register

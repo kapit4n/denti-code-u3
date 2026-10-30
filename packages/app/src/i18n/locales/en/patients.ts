@@ -98,6 +98,10 @@ export const patients = {
   'patients.editForm.failure': 'The changes could not be saved. Try again.',
 
   'patients.fields.identityLegend': 'Identity',
+  'patients.fields.allergiesLegend': 'Allergies',
+  'patients.fields.allergies': 'Allergies',
+  'patients.fields.allergiesHint': 'Anything to check before treatment',
+  'patients.fields.allergiesPlaceholder': 'e.g. penicillin',
   'patients.fields.contactLegend': 'Contact and birth date',
   'patients.fields.firstName': 'First name',
   'patients.fields.lastName': 'Last name',
@@ -158,6 +162,22 @@ export const patients = {
   'patients.invoices.issued': ' · issued {date}',
   'patients.invoices.outstanding': '{amount} {currency} outstanding',
   'patients.invoices.paidFull': 'Paid in full',
+  'patients.invoices.recordPayment': 'Record payment',
+  'patients.invoices.paymentTitle': 'Record a payment against {number}',
+  'patients.invoices.paymentDescription':
+    'The payment is allocated to this invoice. Up to {amount} {currency} is still outstanding.',
+  'patients.invoices.paymentAmount': 'Amount',
+  'patients.invoices.paymentMethod': 'Method',
+  'patients.invoices.paymentChooseMethod': 'Choose a method',
+  'patients.invoices.paymentReference': 'Reference (optional)',
+  'patients.invoices.paymentReferencePlaceholder': 'e.g. Last four card digits',
+  'patients.invoices.paymentRecord': 'Record payment',
+  'patients.invoices.paymentRecording': 'Recording…',
+  'patients.invoices.paymentCancel': 'Cancel',
+  'patients.invoices.paymentFailure': 'The payment could not be recorded.',
+  'patients.invoices.paymentInvoiceNotFound':
+    'This invoice no longer exists in the current clinic.',
+  'patients.invoices.paymentNetwork': 'Could not reach the server. The payment was not recorded.',
   'patients.invoices.empty': 'No invoices for this patient yet.',
 
   'patients.statement.title': 'Statement',

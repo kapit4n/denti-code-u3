@@ -48,6 +48,7 @@ interface StoredPatientRow {
   readonly phone: string | null;
   readonly email: string | null;
   readonly birth_date: string | null;
+  readonly allergies: string | null;
   readonly record_number: string;
   readonly is_active: boolean;
   readonly created_at: Date;
@@ -94,7 +95,7 @@ describeIntegration('patients: editing (PostgreSQL)', () => {
   async function storedRow(patient: string): Promise<StoredPatientRow> {
     const rows = await sql`
       select first_name, last_name, preferred_name, identification_number,
-             phone, email, birth_date, record_number, is_active, created_at, updated_at
+             phone, email, birth_date, allergies, record_number, is_active, created_at, updated_at
       from patients where id = ${patient}
     `;
     const row = rows[0] as
@@ -146,22 +147,23 @@ describeIntegration('patients: editing (PostgreSQL)', () => {
     await sql`
       insert into patients (
         id, clinic_id, record_number, first_name, last_name, preferred_name,
-        identification_number, phone, email, birth_date, is_active, created_at, updated_at
+        identification_number, phone, email, birth_date, allergies, is_active,
+        created_at, updated_at
       )
       values
         (
           ${patientId}, ${clinicId}, 'P-000500', 'Ana', 'García', 'Ana María',
-          'CC-OLD-1', '+57 300 111 1111', 'old@example.test', '1990-04-17', true,
+          'CC-OLD-1', '+57 300 111 1111', 'old@example.test', '1990-04-17', 'Penicillin', true,
           timestamptz '2024-01-15 09:30:00+00', timestamptz '2024-01-15 09:30:00+00'
         ),
         (
           ${otherClinicPatientId}, ${otherClinicId}, 'P-000900', 'Other', 'Clinic',
-          null, null, null, null, null, true,
+          null, null, null, null, null, null, true,
           timestamptz '2024-01-15 09:30:00+00', timestamptz '2024-01-15 09:30:00+00'
         ),
         (
           ${anonymisedPatientId}, ${clinicId}, 'P-000501', 'Gone', 'Record',
-          null, null, null, null, null, true,
+          null, null, null, null, null, null, true,
           timestamptz '2024-01-15 09:30:00+00', timestamptz '2024-01-15 09:30:00+00'
         )
     `;
@@ -185,6 +187,7 @@ describeIntegration('patients: editing (PostgreSQL)', () => {
       phone: '+57 300 222 2222',
       email: 'new@example.test',
       birthDate: '1990-04-17',
+      allergies: 'Penicillin, latex',
     });
 
     expect(response.statusCode).toBe(204);
@@ -200,6 +203,7 @@ describeIntegration('patients: editing (PostgreSQL)', () => {
       identification_number: 'CC-NEW-2',
       phone: '+57 300 222 2222',
       email: 'new@example.test',
+      allergies: 'Penicillin, latex',
     });
   });
 
@@ -216,6 +220,7 @@ describeIntegration('patients: editing (PostgreSQL)', () => {
     expect(row.email).toBeNull();
     expect(row.preferred_name).toBeNull();
     expect(row.identification_number).toBeNull();
+    expect(row.allergies).toBeNull();
     expect(row.phone).toBe('+57 300 333 3333');
   });
 
@@ -337,6 +342,7 @@ describeIntegration('patients: editing (PostgreSQL)', () => {
       firstName: 'Ana María',
       lastName: 'García Soto',
       email: 'shown@example.test',
+      allergies: 'Latex',
     });
 
     scopedClinicId = clinicId;
@@ -349,6 +355,7 @@ describeIntegration('patients: editing (PostgreSQL)', () => {
     expect(body.firstName).toBe('Ana María');
     expect(body.lastName).toBe('García Soto');
     expect(body.email).toBe('shown@example.test');
+    expect(body.allergies).toBe('Latex');
     // Unchanged by the edit, and worth asserting here because the profile is
     // assembled from several queries.
     expect(body.recordNumber).toBe('P-000500');

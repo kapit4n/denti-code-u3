@@ -879,6 +879,7 @@ export const anaInvoices = {
   items: [
     {
       id: '11111111-cccc-4a11-9ccc-000000000002',
+      patientId: ANA_ID,
       number: 'F001-00002',
       status: 'PAID',
       currency: 'USD',
@@ -894,6 +895,7 @@ export const anaInvoices = {
     },
     {
       id: '11111111-cccc-4a11-9ccc-000000000001',
+      patientId: ANA_ID,
       number: 'F001-00001',
       status: 'ISSUED',
       currency: 'USD',
@@ -912,6 +914,18 @@ export const anaInvoices = {
 
 /** A patient with nothing billed — the section's empty sentence. */
 export const noInvoices = { items: [] } as const;
+
+/** The payment the API answers when the outstanding invoice is settled from its card. */
+export const invoicePayment = {
+  id: '11111111-cccc-4a11-9ccc-000000000005',
+  clinicId: '11111111-1111-4111-8111-111111111111',
+  patientId: ANA_ID,
+  method: 'CASH',
+  currency: 'USD',
+  amountMinor: 23000,
+  reference: 'front desk',
+  receivedAt: '2026-10-06T16:00:00.000Z',
+} as const;
 
 /**
  * The balance the API answers for `anaInvoices`, added up by the domain.

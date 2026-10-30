@@ -56,6 +56,7 @@ function completeInput() {
     phone: '+57 300 000 0000',
     email: 'ana@example.test',
     birthDate: '1990-04-17' as IsoDate,
+    allergies: 'Penicillin',
   };
 }
 
@@ -83,6 +84,7 @@ describe('updatePatient', () => {
           phone: '+57 300 000 0000',
           email: 'ana@example.test',
           birthDate: '1990-04-17',
+          allergies: 'Penicillin',
         },
       },
     ]);
@@ -129,6 +131,7 @@ describe('updatePatient', () => {
     // old email on a record whose email was just corrected away.
     expect(patients.updates[0]?.details.email).toBeUndefined();
     expect(patients.updates[0]?.details.preferredName).toBeUndefined();
+    expect(patients.updates[0]?.details.allergies).toBeUndefined();
   });
 
   it.each([

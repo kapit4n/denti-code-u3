@@ -1,4 +1,5 @@
 export * from './invoice.js';
+export * from './invoice-payments.js';
 export * from './patient-balance.js';
 export * from './patient-statement.js';
 export * from './visit-invoices.js';

@@ -47,6 +47,23 @@ describe('createPatientSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('trims allergies and rejects an overlong note', () => {
+    const result = createPatientSchema.parse({
+      firstName: 'Ana',
+      lastName: 'Gómez',
+      allergies: '  Penicillin  ',
+    });
+
+    expect(result.allergies).toBe('Penicillin');
+    expect(
+      createPatientSchema.safeParse({
+        firstName: 'Ana',
+        lastName: 'Gómez',
+        allergies: 'x'.repeat(1001),
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects a phone number containing letters', () => {
     const result = createPatientSchema.safeParse({
       firstName: 'Ana',
@@ -152,6 +169,7 @@ describe('createPatientFormSchema', () => {
       phone: '',
       email: '',
       birthDate: '',
+      allergies: '',
     });
 
     expect(result.success).toBe(true);

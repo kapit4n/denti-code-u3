@@ -70,6 +70,7 @@ describeIntegration('patients: registration (PostgreSQL)', () => {
     phone: '+57 300 000 0000',
     email: 'ana@example.test',
     birthDate: '1990-04-17',
+    allergies: 'Penicillin',
   };
 
   beforeAll(async () => {
@@ -125,6 +126,11 @@ describeIntegration('patients: registration (PostgreSQL)', () => {
     expect(body.lastName).toBe('García');
     expect(body.isActive).toBe(true);
     expect(body.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+
+    const [stored] = (await sql`
+      select allergies from patients where id = ${body.id}
+    `) as [{ allergies: string | null }];
+    expect(stored.allergies).toBe('Penicillin');
   });
 
   it('writes the patient into the clinic the request was scoped to', async () => {

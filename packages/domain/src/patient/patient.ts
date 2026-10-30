@@ -15,6 +15,7 @@ export interface Patient {
   readonly phone?: string;
   readonly email?: string;
   readonly birthDate?: IsoDate;
+  readonly allergies?: string;
   readonly isActive: boolean;
 }
 

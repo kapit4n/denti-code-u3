@@ -287,9 +287,11 @@ treatments` names it so the workspace's third row can resolve a record's name
     A follow-up payment after a settlement is refused until Milestone 9's
     invoice-ledger — the boundary is told to the desk with words
     (open question 20) rather than answered as a 422.
-  - **Not done:** editing or deleting a payment; allocation across a bill that
-    spans invoices; partial invoice settlement; invoice numbering and statements.
-    That is Milestone 9, where the receipt becomes a balance.
+  - **Not done at this point:** editing or deleting a payment; allocation across a
+    bill that spans invoices; partial invoice settlement; invoice numbering and
+    statements. Milestone 9 closed partial settlement, numbering and statements;
+    invoice-scoped payments from the patient ledger arrived in session 67 (ADR 0034).
+    Editing/deleting and cross-invoice allocation are still absent.
 - Visit completion / reopening
   - **Done (session 24), minus the audit.** `POST /api/v1/visits/:visitId/complete` and
     `.../reopen`, both bodyless, both scoped to the request's clinic. The end time is the
@@ -387,13 +389,18 @@ validity rules, not a drawing hack.
 
 **Complete (session 45).** Every bullet is closed: charges → invoices (session 40),
 numbering and status (session 40, refined session 44), payments/methods/allocation
-(sessions 31–32, invoice-scoped follow-up in session 44), patient balances (session 43) and statements (session 45), and the visit workspace's invoice controls (session
-44). See `docs/progress/LOG.md`.
+(sessions 31–32, visit-scoped follow-up across open documents in session 44), patient
+balances (session 43) and statements (session 45), and the visit workspace's invoice
+controls (session 44). Session 67 later added invoice-scoped recording from the patient
+ledger (ADR 0034). See `docs/progress/LOG.md`.
 
 **Session 59** closed the sidebar's dangling **Payments** link with `/payments`: a
 read-only clinic-wide ledger over the stored payments, filtered by clinic-local period
-and method, paged, with a server-side total. Recording stays on the visit settlement flow
-(ADR 0033); a clinic-wide "record payment" door is open question 22, not an omission.
+and method, paged, with a server-side total. `/payments` stays read only (ADR 0033);
+**session 67** added recording against one existing invoice from the patient's invoices
+card (`POST /api/v1/invoices/:invoiceId/payments`, ADR 0034), so the front desk no longer
+has to open the visit to collect a follow-up payment. Unattached money and cross-invoice
+allocation remain open question 22.
 
 - Charges → invoices
 - Invoice numbering and status

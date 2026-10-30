@@ -55,6 +55,7 @@ export function PatientForm({ onRegistered }: PatientFormProps) {
       phone: '',
       email: '',
       birthDate: '',
+      allergies: '',
     },
   });
 

@@ -115,6 +115,7 @@ describe('registerPatient', () => {
         lastName: '  García ',
         preferredName: '   ',
         email: '',
+        allergies: '   ',
       },
       { patients, ids: sequentialIds(), clock: fixedClock('2026-10-03') },
     );
@@ -125,6 +126,7 @@ describe('registerPatient', () => {
     // as a blank line in the profile and fail a `?length > 0` check downstream.
     expect(patient.preferredName).toBeUndefined();
     expect(patient.email).toBeUndefined();
+    expect(patient.allergies).toBeUndefined();
   });
 
   it.each([

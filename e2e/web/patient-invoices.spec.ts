@@ -20,6 +20,7 @@ import {
   anaOdontogram,
   anaProfile,
   clinicFixture,
+  invoicePayment,
   noInvoices,
   noTreatmentPlans,
   settledBalance,
@@ -31,6 +32,7 @@ const PROFILE_PATH = `/api/v1/patients/${ANA_ID}`;
 const INVOICES_PATH = `${PROFILE_PATH}/invoices`;
 const BALANCE_PATH = `${PROFILE_PATH}/balance`;
 const ROWS = '[data-testid="patient-invoice"]';
+const OUTSTANDING_ID = '11111111-cccc-4a11-9ccc-000000000001';
 
 /**
  * The profile mounts every section at once, so a spec about one of them must still
@@ -88,6 +90,43 @@ test.describe('Patient invoices', () => {
     await expect(rows.nth(1)).toContainText('issued Oct 4, 2026');
 
     expect(errors.filter((e) => e.includes('Failed to load resource'))).toEqual([]);
+  });
+
+  test('records a payment against the selected outstanding invoice', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...clinicFixture(),
+      ...profileSections(anaInvoices),
+      [`POST /api/v1/invoices/${OUTSTANDING_ID}/payments`]: { status: 201, body: invoicePayment },
+    });
+
+    await page.goto(`/patients/${ANA_ID}`);
+
+    const card = page.getByTestId('patient-invoices');
+    await card.getByTestId(`invoice-pay-${OUTSTANDING_ID}`).click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('Record a payment against F001-00001');
+    await expect(dialog.getByTestId('invoice-payment-amount')).toHaveValue('230.00');
+
+    await dialog.getByTestId('invoice-payment-method').click();
+    await page.getByRole('option', { name: 'Cash' }).click();
+    await dialog.getByTestId('invoice-payment-reference').fill('front desk');
+    await dialog.getByRole('button', { name: 'Record payment' }).click();
+
+    await expect(dialog).toBeHidden();
+
+    const posted = api.recorded.find(
+      (request) =>
+        request.method === 'POST' &&
+        new URL(request.url).pathname === `/api/v1/invoices/${OUTSTANDING_ID}/payments`,
+    );
+    expect(posted?.body).toEqual({
+      method: 'CASH',
+      amountMinor: 23000,
+      reference: 'front desk',
+    });
+    expect(errors).toEqual([]);
   });
 
   test('shows an empty state when there are no invoices', async ({ page }) => {

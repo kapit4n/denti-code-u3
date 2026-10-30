@@ -47,6 +47,7 @@ function aClinic(overrides: Partial<Clinic> = {}): Clinic {
 function summary(overrides: Partial<InvoiceSummary> = {}): InvoiceSummary {
   return {
     id: 'invoice-1' as unknown as InvoiceId,
+    patientId: PATIENT_ID as unknown as InvoiceSummary['patientId'],
     number: 'F001-00001',
     status: 'ISSUED',
     currency: 'USD',

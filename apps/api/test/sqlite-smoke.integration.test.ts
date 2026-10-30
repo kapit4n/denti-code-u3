@@ -153,7 +153,7 @@ describe('API on SQLite', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/v1/patients',
-      payload: { firstName: 'Dee', lastName: 'Book' },
+      payload: { firstName: 'Dee', lastName: 'Book', allergies: 'Penicillin' },
     });
 
     expect(response.statusCode).toBe(201);
@@ -162,6 +162,38 @@ describe('API on SQLite', () => {
     expect(body.clinicId).toBe(clinicId);
     apiPatientId = body.id;
     expect(apiPatientId).toBeTruthy();
+
+    const profile = await app.inject({ method: 'GET', url: `/api/v1/patients/${apiPatientId}` });
+    expect(profile.statusCode).toBe(200);
+    expect(profile.json().allergies).toBe('Penicillin');
+  });
+
+  it('edits the patient’s allergies, clearing them when the edit leaves the field out', async () => {
+    const changed = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/patients/${apiPatientId}`,
+      payload: { firstName: 'Dee', lastName: 'Book', allergies: '  Latex  ' },
+    });
+    expect(changed.statusCode).toBe(204);
+
+    const withLatex = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}`,
+    });
+    expect(withLatex.json().allergies).toBe('Latex');
+
+    const cleared = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/patients/${apiPatientId}`,
+      payload: { firstName: 'Dee', lastName: 'Book' },
+    });
+    expect(cleared.statusCode).toBe(204);
+
+    const withoutAllergies = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}`,
+    });
+    expect(withoutAllergies.json().allergies).toBeNull();
   });
 
   it('finds the patient by an accented-then-folded search', async () => {
@@ -1541,6 +1573,106 @@ describe('API on SQLite', () => {
       currency: 'PEN',
     });
     expect(read.json().operatingHours).toHaveLength(2);
+  });
+
+  it('records a payment against one invoice, settling it without a visit', async () => {
+    // The open F001-00002 from the ledger test above is the subject: its invoice id
+    // is all a client or patient screen has, and the selected document is what this
+    // payment is for — not a settlement that picks documents itself.
+    const list = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/invoices`,
+    });
+    const invoice = (
+      list.json() as { items: { id: string; number: string; balanceMinor: number }[] }
+    ).items.find((entry) => entry.number === 'F001-00002');
+    expect(invoice).toMatchObject({ balanceMinor: 22_000 });
+
+    const payment = await app.inject({
+      method: 'POST',
+      url: `/api/v1/invoices/${invoice!.id}/payments`,
+      payload: { method: 'CASH', amountMinor: 22_000, reference: 'closing cash' },
+    });
+    expect(payment.statusCode).toBe(201);
+    expect(payment.json()).toMatchObject({
+      clinicId,
+      patientId: apiPatientId,
+      method: 'CASH',
+      currency: 'USD',
+      amountMinor: 22_000,
+      reference: 'closing cash',
+    });
+
+    // The document is settled by the allocation and its stored status moves with it;
+    // the read is the same one the screen draws.
+    const detail = await app.inject({ method: 'GET', url: `/api/v1/invoices/${invoice!.id}` });
+    expect(detail.json()).toMatchObject({
+      status: 'PAID',
+      allocatedMinor: 22_000,
+      balanceMinor: 0,
+    });
+
+    // The patient's whole ledger now closes at zero, and the statement ends with the
+    // payment that closed it.
+    const balance = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/balance`,
+    });
+    expect(balance.json()).toMatchObject({
+      billedMinor: 45_000,
+      allocatedMinor: 45_000,
+      outstandingMinor: 0,
+      balanceMinor: 0,
+    });
+
+    const statement = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/statement`,
+    });
+    expect(statement.json().entries.at(-1)).toMatchObject({
+      kind: 'PAYMENT',
+      creditMinor: 22_000,
+      balanceMinor: 0,
+    });
+
+    // A second payment cannot exceed what the document still owes, and zero is not
+    // money: both are refused at the boundary with no row written.
+    const overpaid = await app.inject({
+      method: 'POST',
+      url: `/api/v1/invoices/${invoice!.id}/payments`,
+      payload: { method: 'CASH', amountMinor: 1 },
+    });
+    expect(overpaid.statusCode).toBe(422);
+    expect(overpaid.json().error.code).toBe('VALIDATION_ERROR');
+
+    const zero = await app.inject({
+      method: 'POST',
+      url: `/api/v1/invoices/${invoice!.id}/payments`,
+      payload: { method: 'CASH', amountMinor: 0 },
+    });
+    expect(zero.statusCode).toBe(422);
+
+    // An invoice another clinic holds is unknown here, so its money is not ours to take.
+    const foreign = await app.inject({
+      method: 'POST',
+      url: '/api/v1/invoices/00000000-0000-4000-8000-000000000001/payments',
+      payload: { method: 'CASH', amountMinor: 100 },
+    });
+    expect(foreign.statusCode).toBe(404);
+    expect(foreign.json().error.code).toBe('NOT_FOUND');
+
+    // A hand-typed path id is refused before a query sees it, rather than reaching
+    // the engine as an invalid uuid and returning a 500.
+    const invalidPath = await app.inject({
+      method: 'POST',
+      url: '/api/v1/invoices/not-a-uuid/payments',
+      payload: { method: 'CASH', amountMinor: 100 },
+    });
+    expect(invalidPath.statusCode).toBe(422);
+    expect(invalidPath.json().error.details.issues[0]).toMatchObject({
+      path: ['invoiceId'],
+      code: 'invalid_uuid',
+    });
   });
 });
 

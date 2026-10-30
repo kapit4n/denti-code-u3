@@ -1,6 +1,6 @@
-# ADR 0033 — The payment ledger is a read-only view; recording stays at the visit
+# ADR 0033 — The payment ledger is a read-only view; recording starts at the visit
 
-- **Status:** Accepted
+- **Status:** Accepted; recording widened by [ADR 0034](./0034-invoice-scoped-payments-come-from-the-patient-ledger.md)
 - **Date:** 2026-10-28
 - **Deciders:** Principal Architect, Product Owner
 - **Affects:** `apps/api` (payment repository, HTTP route), `packages/domain` (ledger read model), `packages/validation`, `packages/app` payments feature, `packages/ui` (reused `Table`)
@@ -21,6 +21,13 @@ already owns those rules. Two doors that both take money would eventually disagr
 what a valid payment is.
 
 ## Decision
+
+> **Amended by ADR 0034.** This ADR still governs `/payments`: it remains a read-only
+> clinic-wide view. Recording did not stay at the visit forever. A later slice added
+> `POST /api/v1/invoices/:invoiceId/payments`, which lets the patient's own invoices
+> card settle one existing document. The narrower door does not choose a patient or an
+> open document from the clinic; it pays a document already in front of the user. The
+> reasoning below remains the reason `/payments` has no form.
 
 ### 1. The ledger is a read model over the payment rows
 
@@ -59,8 +66,9 @@ attribution limit ADR 0027 records).
 
 `/payments` defaults to the clinic's month-to-date, offers an inclusive date range and a
 method filter, pages the rows, and links each row to its patient. The total comes from
-the server. There is no "record payment" button: money is recorded from the visit
-workspace, where the charge, invoice and allocation can be written atomically.
+the server. There is no "record payment" button: money is recorded where the charges,
+invoice and allocation are already in hand — the visit workspace, and since ADR 0034 the
+patient's own invoices card.
 
 ## Consequences
 
@@ -70,13 +78,14 @@ workspace, where the charge, invoice and allocation can be written atomically.
 - Collections by clinician remain impossible from this schema; the clinic-wide total is
   the honest figure.
 - A wide period costs a real query, bounded by the 366-day cap.
-- Recording outside a visit is an explicit product gap (open question 22), not an
-  accidental omission.
+- Recording money with no visit or no invoice is still an explicit product gap (open
+  question 22), not an accidental omission. Invoice-scoped payments are ADR 0034.
 
 ## Alternatives rejected
 
 - **A recording form on `/payments`.** It would duplicate the settlement rules or create
-  money with no invoice and no allocation.
+  money with no invoice and no allocation. ADR 0034 later added a narrower form on the
+  patient's invoices card, where the invoice is already selected.
 - **A per-dentist ledger.** Payments carry no clinician; inventing an attribution would
   make the total wrong in a way the screen cannot explain.
 - **A summary table or nightly total.** Fast, but stale, and a second source of truth for

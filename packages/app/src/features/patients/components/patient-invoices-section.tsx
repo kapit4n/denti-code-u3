@@ -1,12 +1,6 @@
 /**
  * The patient's invoices: the documents the clinic has issued, and what is owed.
  *
- * Read-only, and its own request — the same ownership the plans and odontogram
- * sections have. Milestone 9's first slice raises a document and reads it back;
- * collecting the rest of one, issuing an installment or drawing a statement is the
- * ledger's next slice, so this card draws no control that would pretend to know a
- * rule the API does not have yet.
- *
  * **Every figure is the server's.** `totalMinor` and `balanceMinor` are the
  * document's stored numbers and the store's own arithmetic over its allocations,
  * never a sum this component does. A `null` number is drawn as an em dash rather
@@ -15,13 +9,22 @@
  * section asks for the clinic's zone — the same reason the profile's cards do.
  */
 
-import { formatMinorUnits } from '@denti-code-u3/domain';
+import { useState } from 'react';
+import { formatMinorUnits, type InvoiceSummary } from '@denti-code-u3/domain';
 import { ReceiptText } from 'lucide-react';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@denti-code-u3/ui';
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@denti-code-u3/ui';
 import { formatClinicDay } from '../../clinic/format-clinic-time.js';
 import { enumLabel, useTranslation } from '../../../i18n/index.js';
 import { usePatientInvoices } from '../hooks/use-patients.js';
+import { InvoicePaymentDialog } from './invoice-payment-dialog.js';
 
 interface PatientInvoicesSectionProps {
   readonly patientId: string;
@@ -32,6 +35,7 @@ interface PatientInvoicesSectionProps {
 export function PatientInvoicesSection({ patientId, clinicTimeZone }: PatientInvoicesSectionProps) {
   const { t } = useTranslation();
   const invoicesQuery = usePatientInvoices(patientId);
+  const [payingInvoice, setPayingInvoice] = useState<InvoiceSummary | null>(null);
 
   const invoices = invoicesQuery.data?.items ?? [];
 
@@ -85,12 +89,23 @@ export function PatientInvoicesSection({ patientId, clinicTimeZone }: PatientInv
                 </p>
 
                 {invoice.balanceMinor > 0 ? (
-                  <p className="mt-1 text-xs" data-testid="invoice-balance">
-                    {t('patients.invoices.outstanding', {
-                      amount: formatMinorUnits(invoice.balanceMinor),
-                      currency: invoice.currency,
-                    })}
-                  </p>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs" data-testid="invoice-balance">
+                      {t('patients.invoices.outstanding', {
+                        amount: formatMinorUnits(invoice.balanceMinor),
+                        currency: invoice.currency,
+                      })}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPayingInvoice(invoice)}
+                      data-testid={`invoice-pay-${invoice.id}`}
+                    >
+                      {t('patients.invoices.recordPayment')}
+                    </Button>
+                  </div>
                 ) : (
                   <p className="mt-1 text-xs text-muted-foreground" data-testid="invoice-balance">
                     {t('patients.invoices.paidFull')}
@@ -106,6 +121,13 @@ export function PatientInvoicesSection({ patientId, clinicTimeZone }: PatientInv
           </p>
         )}
       </CardContent>
+      {payingInvoice ? (
+        <InvoicePaymentDialog
+          invoice={payingInvoice}
+          patientId={patientId}
+          onClose={() => setPayingInvoice(null)}
+        />
+      ) : null}
     </Card>
   );
 }

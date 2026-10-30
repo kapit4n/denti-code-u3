@@ -11,8 +11,9 @@
 
 import { ApiClient } from '@denti-code-u3/api-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiClientProvider } from '../../../query/api-client-provider.js';
 import { formatClinicDay } from '../../clinic/format-clinic-time.js';
@@ -66,18 +67,45 @@ function jsonResponse(body: unknown, status = 200): Response {
 interface HarnessOptions {
   readonly invoices?: { readonly items: readonly Record<string, unknown>[] };
   readonly readFailure?: { readonly status: number; readonly body: unknown };
+  readonly paymentFailure?: { readonly status: number; readonly body: unknown };
 }
 
 function renderSection(options: HarnessOptions = {}) {
+  const requests: { readonly method: string; readonly path: string; readonly body: unknown }[] = [];
+
   const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
     const url = new URL(String(input));
     const method = (init?.method ?? 'GET').toUpperCase();
+    requests.push({
+      method,
+      path: url.pathname,
+      body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+    });
 
     if (url.pathname === INVOICES_PATH && method === 'GET') {
       if (options.readFailure) {
         return jsonResponse(options.readFailure.body, options.readFailure.status);
       }
       return jsonResponse(options.invoices ?? { items: [ISSUED_INVOICE, PAID_INVOICE] });
+    }
+
+    if (url.pathname === `/api/v1/invoices/${ISSUED_INVOICE.id}/payments` && method === 'POST') {
+      if (options.paymentFailure) {
+        return jsonResponse(options.paymentFailure.body, options.paymentFailure.status);
+      }
+      return jsonResponse(
+        {
+          id: 'payment-1',
+          clinicId: 'clinic-1',
+          patientId: PATIENT_ID,
+          currency: 'USD',
+          method: 'CASH',
+          amountMinor: 23_000,
+          reference: null,
+          receivedAt: '2026-10-07T12:00:00.000Z',
+        },
+        201,
+      );
     }
 
     return jsonResponse(
@@ -102,11 +130,28 @@ function renderSection(options: HarnessOptions = {}) {
       </ApiClientProvider>
     </QueryClientProvider>,
   );
+
+  return { requests };
 }
 
 describe('PatientInvoicesSection', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    Element.prototype.scrollIntoView = vi.fn();
+    Element.prototype.hasPointerCapture = () => false;
+    Element.prototype.releasePointerCapture = vi.fn();
+  });
+
   afterEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('draws each document with its stored total, balance and charge count', async () => {
@@ -163,5 +208,60 @@ describe('PatientInvoicesSection', () => {
 
     expect(screen.getByText('Loading the invoices…')).toBeTruthy();
     await screen.findAllByTestId('patient-invoice');
+  });
+
+  it('records the chosen amount against the invoice', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    const { requests } = renderSection();
+
+    await screen.findAllByTestId('patient-invoice');
+    await user.click(screen.getByTestId(`invoice-pay-${ISSUED_INVOICE.id}`));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Record a payment against F001-00001');
+    expect(within(dialog).getByTestId('invoice-payment-amount')).toHaveValue('230.00');
+
+    await user.click(within(dialog).getByTestId('invoice-payment-method'));
+    await user.click(await screen.findByRole('option', { name: 'Cash' }));
+    await user.type(within(dialog).getByTestId('invoice-payment-reference'), 'cash-1');
+    await user.click(within(dialog).getByRole('button', { name: 'Record payment' }));
+
+    await waitFor(() => {
+      expect(requests).toContainEqual({
+        method: 'POST',
+        path: `/api/v1/invoices/${ISSUED_INVOICE.id}/payments`,
+        body: { method: 'CASH', amountMinor: 23_000, reference: 'cash-1' },
+      });
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('keeps the dialog open and explains a rejected payment', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    const { requests } = renderSection({
+      paymentFailure: {
+        status: 422,
+        body: {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'The payment could not be recorded',
+            requestId: 't',
+          },
+        },
+      },
+    });
+
+    await screen.findAllByTestId('patient-invoice');
+    await user.click(screen.getByTestId(`invoice-pay-${ISSUED_INVOICE.id}`));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByTestId('invoice-payment-method'));
+    await user.click(await screen.findByRole('option', { name: 'Cash' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Record payment' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'The payment could not be recorded',
+    );
+    expect(requests.some((request) => request.method === 'POST')).toBe(true);
+    expect(screen.getByRole('dialog')).toBe(dialog);
   });
 });

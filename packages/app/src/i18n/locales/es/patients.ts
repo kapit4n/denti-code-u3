@@ -99,6 +99,10 @@ export const patients = {
   'patients.editForm.failure': 'No se pudieron guardar los cambios. Inténtalo de nuevo.',
 
   'patients.fields.identityLegend': 'Identidad',
+  'patients.fields.allergiesLegend': 'Alergias',
+  'patients.fields.allergies': 'Alergias',
+  'patients.fields.allergiesHint': 'Lo que hay que comprobar antes de cualquier tratamiento',
+  'patients.fields.allergiesPlaceholder': 'p. ej. penicilina',
   'patients.fields.contactLegend': 'Contacto y fecha de nacimiento',
   'patients.fields.firstName': 'Nombre',
   'patients.fields.lastName': 'Apellidos',
@@ -160,6 +164,22 @@ export const patients = {
   'patients.invoices.issued': ' · emitida el {date}',
   'patients.invoices.outstanding': '{amount} {currency} pendientes',
   'patients.invoices.paidFull': 'Pagada en su totalidad',
+  'patients.invoices.recordPayment': 'Registrar pago',
+  'patients.invoices.paymentTitle': 'Registrar un pago contra {number}',
+  'patients.invoices.paymentDescription':
+    'El pago se asigna a esta factura. Aún quedan {amount} {currency} pendientes.',
+  'patients.invoices.paymentAmount': 'Importe',
+  'patients.invoices.paymentMethod': 'Método',
+  'patients.invoices.paymentChooseMethod': 'Elige un método',
+  'patients.invoices.paymentReference': 'Referencia (opcional)',
+  'patients.invoices.paymentReferencePlaceholder': 'p. ej. Últimos cuatro dígitos de la tarjeta',
+  'patients.invoices.paymentRecord': 'Registrar pago',
+  'patients.invoices.paymentRecording': 'Registrando…',
+  'patients.invoices.paymentCancel': 'Cancelar',
+  'patients.invoices.paymentFailure': 'No se pudo registrar el pago.',
+  'patients.invoices.paymentInvoiceNotFound': 'Esta factura ya no existe en la clínica actual.',
+  'patients.invoices.paymentNetwork':
+    'No se pudo conectar con el servidor. No se registró el pago.',
   'patients.invoices.empty': 'Este paciente todavía no tiene facturas.',
 
   'patients.statement.title': 'Estado de cuenta',

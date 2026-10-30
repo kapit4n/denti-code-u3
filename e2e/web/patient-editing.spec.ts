@@ -91,6 +91,7 @@ test.describe('Patient editing', () => {
     await expect(page.getByLabel('Last name')).toHaveValue(anaProfile.lastName);
     await expect(page.getByLabel('Email')).toHaveValue(anaProfile.email ?? '');
     await expect(page.getByLabel('Phone')).toHaveValue(anaProfile.phone ?? '');
+    await expect(page.getByLabel('Allergies')).toHaveValue(anaProfile.allergies);
   });
 
   test('saves a correction and returns to the profile showing it', async ({ page }) => {
@@ -99,6 +100,7 @@ test.describe('Patient editing', () => {
 
     await page.goto(`${PROFILE_URL}/edit`);
     await page.getByLabel('Phone').fill('+57 300 999 0000');
+    await page.getByLabel('Allergies').fill('Penicillin, latex');
     await page.getByTestId('update-submit').click();
 
     await expect(page).toHaveURL(new RegExp(`${PROFILE_URL}$`));
@@ -106,7 +108,10 @@ test.describe('Patient editing', () => {
     // A PUT to the profile endpoint. A POST, or a PUT to the collection, would
     // both look fine in a mock that answers anything.
     expect(editRequest(api.recorded)?.url).toContain(PROFILE_PATH);
-    expect(editRequest(api.recorded)?.body).toMatchObject({ phone: '+57 300 999 0000' });
+    expect(editRequest(api.recorded)?.body).toMatchObject({
+      phone: '+57 300 999 0000',
+      allergies: 'Penicillin, latex',
+    });
     expect(errors).toEqual([]);
   });
 

@@ -43,6 +43,7 @@ export const createPatientSchema = z.object({
   phone: phoneSchema.optional(),
   email: emailSchema.optional(),
   birthDate: isoDateSchema.optional(),
+  allergies: z.string().trim().max(1000, 'Allergies are too long').optional(),
 });
 
 /**
@@ -96,6 +97,7 @@ export const createPatientFormSchema = z.object({
   phone: blankIsAbsent(createPatientSchema.shape.phone),
   email: blankIsAbsent(createPatientSchema.shape.email),
   birthDate: blankIsAbsent(createPatientSchema.shape.birthDate),
+  allergies: blankIsAbsent(createPatientSchema.shape.allergies),
 });
 
 /**

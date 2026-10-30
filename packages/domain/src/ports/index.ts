@@ -936,6 +936,7 @@ export interface ChargeRepository {
  */
 export interface InvoiceSummary {
   readonly id: InvoiceId;
+  readonly patientId: PatientId;
   readonly number: string | null;
   readonly status: InvoiceStatus;
   readonly currency: CurrencyCode;

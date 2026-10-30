@@ -62,6 +62,7 @@ export function PatientEditForm({ patient, onSaved, onCancel }: PatientEditFormP
       phone: patient.phone ?? '',
       email: patient.email ?? '',
       birthDate: patient.birthDate ?? '',
+      allergies: patient.allergies ?? '',
     },
   });
 
