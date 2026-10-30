@@ -122,7 +122,7 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 function seedSummary(): string {
-  return `clinic ${DEVELOPMENT_CLINIC_ID}, 10 patients, 2 dentists, 2 rooms, 4 chairs, 10 appointments, 10 visits (8 completed, 1 open, 1 cancelled), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 attachments, 10 odontogram entries, 3 charges, 2 payments`;
+  return `clinic ${DEVELOPMENT_CLINIC_ID}, 10 patients, 2 dentists, 2 rooms, 4 chairs, ${ALL_APPOINTMENTS.length} appointments (a week ahead), 10 visits (8 completed, 1 open, 1 cancelled), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 attachments, 10 odontogram entries, 3 charges, 2 payments`;
 }
 
 /**
@@ -622,10 +622,375 @@ const APPOINTMENTS = [
 
 type AppointmentInput = typeof pgSchema.appointments.$inferInsert;
 
+/** A seeded appointment always carries its own fixed id, unlike a generated insert. */
+type SeedAppointment = Omit<AppointmentInput, 'id'> & { readonly id: string };
+
+/**
+ * A week of bookings starting today, so a fresh seed fills every column of the
+ * week calendar rather than a handful of days.
+ *
+ * Room 1 always uses dentist 1 and chair 1; room 2 always uses dentist 2 and
+ * chair 3. Rooms are exclusive while a booking runs, so that pairing keeps every
+ * generated row clear of the others without a scheduler.
+ */
+const WEEK_AHEAD_SLOTS = [
+  // Today: three in each room, clear of the ten fixed bookings above.
+  {
+    dayOffset: 0,
+    hour: 9,
+    minute: 0,
+    durationMinutes: 30,
+    patient: 7,
+    room: 2,
+    status: 'COMPLETED',
+  },
+  {
+    dayOffset: 0,
+    hour: 10,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 8,
+    room: 2,
+    status: 'COMPLETED',
+  },
+  {
+    dayOffset: 0,
+    hour: 11,
+    minute: 30,
+    durationMinutes: 45,
+    patient: 4,
+    room: 1,
+    status: 'ARRIVED',
+  },
+  {
+    dayOffset: 0,
+    hour: 14,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 5,
+    room: 1,
+    status: 'SCHEDULED',
+  },
+  {
+    dayOffset: 0,
+    hour: 15,
+    minute: 0,
+    durationMinutes: 30,
+    patient: 9,
+    room: 2,
+    status: 'NO_SHOW',
+  },
+  {
+    dayOffset: 0,
+    hour: 16,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 6,
+    room: 1,
+    status: 'SCHEDULED',
+  },
+  // Tomorrow. The room-2 09:00 and room-1 10:30 bookings avoid the two
+  // appointments already seeded three days out, which fall on this date.
+  {
+    dayOffset: 1,
+    hour: 9,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 6,
+    room: 2,
+    status: 'SCHEDULED',
+  },
+  {
+    dayOffset: 1,
+    hour: 10,
+    minute: 30,
+    durationMinutes: 45,
+    patient: 10,
+    room: 1,
+    status: 'CONFIRMED',
+  },
+  {
+    dayOffset: 1,
+    hour: 12,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 4,
+    room: 1,
+    status: 'CANCELLED',
+  },
+  {
+    dayOffset: 1,
+    hour: 14,
+    minute: 0,
+    durationMinutes: 60,
+    patient: 7,
+    room: 2,
+    status: 'SCHEDULED',
+  },
+  {
+    dayOffset: 1,
+    hour: 15,
+    minute: 30,
+    durationMinutes: 60,
+    patient: 5,
+    room: 1,
+    status: 'CONFIRMED',
+  },
+  {
+    dayOffset: 1,
+    hour: 16,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 8,
+    room: 2,
+    status: 'CONFIRMED',
+  },
+  // Days two to seven, four each, alternating rooms across the day.
+  {
+    dayOffset: 2,
+    hour: 9,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 9,
+    room: 2,
+    status: 'CONFIRMED',
+  },
+  {
+    dayOffset: 2,
+    hour: 10,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 10,
+    room: 1,
+    status: 'SCHEDULED',
+  },
+  {
+    dayOffset: 2,
+    hour: 11,
+    minute: 30,
+    durationMinutes: 45,
+    patient: 4,
+    room: 2,
+    status: 'CONFIRMED',
+  },
+  {
+    dayOffset: 2,
+    hour: 14,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 5,
+    room: 1,
+    status: 'SCHEDULED',
+  },
+  {
+    dayOffset: 3,
+    hour: 9,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 6,
+    room: 1,
+    status: 'CONFIRMED',
+  },
+  {
+    dayOffset: 3,
+    hour: 10,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 7,
+    room: 2,
+    status: 'SCHEDULED',
+  },
+  {
+    dayOffset: 3,
+    hour: 11,
+    minute: 30,
+    durationMinutes: 45,
+    patient: 8,
+    room: 1,
+    status: 'CONFIRMED',
+  },
+  {
+    dayOffset: 3,
+    hour: 14,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 9,
+    room: 2,
+    status: 'SCHEDULED',
+  },
+  {
+    dayOffset: 4,
+    hour: 9,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 10,
+    room: 1,
+    status: 'CONFIRMED',
+  },
+  {
+    dayOffset: 4,
+    hour: 10,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 4,
+    room: 2,
+    status: 'SCHEDULED',
+  },
+  {
+    dayOffset: 4,
+    hour: 11,
+    minute: 30,
+    durationMinutes: 45,
+    patient: 5,
+    room: 1,
+    status: 'CONFIRMED',
+  },
+  {
+    dayOffset: 4,
+    hour: 14,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 6,
+    room: 2,
+    status: 'SCHEDULED',
+  },
+  {
+    dayOffset: 5,
+    hour: 9,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 7,
+    room: 1,
+    status: 'CONFIRMED',
+  },
+  {
+    dayOffset: 5,
+    hour: 10,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 8,
+    room: 2,
+    status: 'SCHEDULED',
+  },
+  {
+    dayOffset: 5,
+    hour: 11,
+    minute: 30,
+    durationMinutes: 45,
+    patient: 9,
+    room: 1,
+    status: 'CONFIRMED',
+  },
+  {
+    dayOffset: 5,
+    hour: 14,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 10,
+    room: 2,
+    status: 'SCHEDULED',
+  },
+  {
+    dayOffset: 6,
+    hour: 9,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 4,
+    room: 1,
+    status: 'CONFIRMED',
+  },
+  {
+    dayOffset: 6,
+    hour: 10,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 5,
+    room: 2,
+    status: 'SCHEDULED',
+  },
+  {
+    dayOffset: 6,
+    hour: 11,
+    minute: 30,
+    durationMinutes: 45,
+    patient: 6,
+    room: 1,
+    status: 'CONFIRMED',
+  },
+  {
+    dayOffset: 6,
+    hour: 14,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 7,
+    room: 2,
+    status: 'SCHEDULED',
+  },
+  {
+    dayOffset: 7,
+    hour: 9,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 8,
+    room: 1,
+    status: 'CONFIRMED',
+  },
+  {
+    dayOffset: 7,
+    hour: 10,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 9,
+    room: 2,
+    status: 'SCHEDULED',
+  },
+  {
+    dayOffset: 7,
+    hour: 11,
+    minute: 30,
+    durationMinutes: 45,
+    patient: 10,
+    room: 1,
+    status: 'CONFIRMED',
+  },
+  {
+    dayOffset: 7,
+    hour: 14,
+    minute: 0,
+    durationMinutes: 45,
+    patient: 4,
+    room: 2,
+    status: 'SCHEDULED',
+  },
+] as const;
+
+const WEEK_AHEAD_APPOINTMENTS: readonly SeedAppointment[] = WEEK_AHEAD_SLOTS.map((slot, index) => ({
+  id: `11111111-4444-4555-8666-${String(index + APPOINTMENTS.length + 1).padStart(12, '0')}`,
+  clinicId: DEVELOPMENT_CLINIC_ID,
+  patientId: PATIENTS[slot.patient - 1]!.id,
+  dentistId:
+    slot.room === 1
+      ? '11111111-2222-4333-8444-000000000001'
+      : '11111111-2222-4333-8444-000000000002',
+  chairId:
+    slot.room === 1
+      ? '11111111-4444-4555-8666-000000000001'
+      : '11111111-4444-4555-8666-000000000003',
+  roomId:
+    slot.room === 1
+      ? '11111111-3333-4444-8555-000000000001'
+      : '11111111-3333-4444-8555-000000000002',
+  startsAt: at(slot.dayOffset, slot.hour, slot.minute),
+  durationMinutes: slot.durationMinutes,
+  status: slot.status,
+}));
+
+const ALL_APPOINTMENTS = [...APPOINTMENTS, ...WEEK_AHEAD_APPOINTMENTS];
+
 async function insertAppointmentsPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
   await db
     .insert(pgSchema.appointments)
-    .values([...APPOINTMENTS])
+    .values([...ALL_APPOINTMENTS])
     .onConflictDoNothing();
 }
 
@@ -648,7 +1013,7 @@ async function insertAppointmentsSqlite(
     .from(sqliteSchema.appointments)
     .where(eq(sqliteSchema.appointments.clinicId, DEVELOPMENT_CLINIC_ID));
   const existingIds = new Set(existing.map((row) => row.id));
-  const rows = APPOINTMENTS.filter((row) => !existingIds.has(row.id));
+  const rows = ALL_APPOINTMENTS.filter((row) => !existingIds.has(row.id));
 
   if (rows.length === 0) {
     return;
