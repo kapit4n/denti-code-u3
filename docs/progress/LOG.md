@@ -3885,3 +3885,40 @@ cases but remain skipped without `TEST_DATABASE_URL`; this machine has no Postgr
 new spec's own heading assertion (`Settings` instead of `Clinic settings`); the page was
 correct, the assertion was fixed and the full suite rerun green. Database unchanged (no
 migration). Docs: `frontend.md` scaffold marker.
+
+---
+
+Session 63: the development seed is now written in the product's default language. The
+clinic is `Clínica de desarrollo Denti-Code`; specialties are `Odontología general` and
+`Endodoncia`; allergies are `Penicilina` and `Látex`. The four catalogue treatments, every
+seeded visit reason and summary, the odontogram notes, the `Plan restaurador`, treatment and
+clinical notes, the ibuprofen prescription instructions, the two attachment file names and
+the three charge descriptions are in Spanish. Treatment codes, enum values, login emails and
+the clinic currency stay as they were.
+
+Running the seed against a clean SQLite database exposed a latent scheduling bug in the
+week-ahead seed: on day +3 the generated room-1 09:00 booking overlapped fixed appointment
+4, and the generated room-2 10:00 booking overlapped fixed appointment 10, so the overlap
+trigger aborted the seed. Those two generated slots now use the opposite rooms; both rooms
+are clear at those hours. A fresh migration + seed completes with 46 appointments, and the
+localized treatments, specialties, prescription and charges were read back from the file.
+
+**Verification.** Format clean · database typecheck and lint · root tests 12/12 tasks
+(domain 385, app 368, API unit 130, API integration 130 passed / 281 skipped, desktop 4,
+database 6) · clean SQLite migrate + seed · full typecheck/lint + boundary guard earlier in
+the session. No commit.
+
+---
+
+Session 64: the treatment catalogue is now fully Spanish. The seed codes became
+`RESINA-ANTERIOR`, `RESINA-POSTERIOR`, `ENDO` and `PROFILAXIS`; the names use `resina
+compuesta` and the descriptions read as aesthetic fillings. Seeded composite references in
+visit summaries, odontogram notes and charge descriptions were localized as well, along
+with the Spanish treatment-code and odontogram-note placeholders.
+
+The existing development SQLite database was updated in place for the known seeded rows,
+leaving user-created rows untouched, so the running app reflects the new copy without a
+reset. A clean seed produces the same catalogue.
+
+**Verification.** Format clean · database typecheck and lint · root tests 12/12 tasks ·
+live SQLite catalogue read back as Spanish.

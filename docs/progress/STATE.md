@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 62 (editable clinic settings)
+> Last updated: session 64 (Spanish treatment catalogue)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -22,6 +22,20 @@
 > The domain use case validates and normalizes the record; both engines replace the whole
 > week atomically, absent days are deleted and the break columns are preserved. The page
 > is translated in English and Spanish. No migration was needed.
+
+> **Session 63** translated the development seed's clinic, clinical and billing data to
+> Spanish: specialties, allergies, treatments, visit reasons/summaries, odontogram notes,
+> plan titles, treatment notes, clinical notes, prescriptions, attachment names and charges
+> now read in Spanish on both engines. The seed run also exposed a room collision on day +3
+> between the fixed bookings and `WEEK_AHEAD_SLOTS`; the generated rooms were swapped, and a
+> clean SQLite database now seeds successfully with all 46 appointments.
+
+> **Session 64** finished the Spanish treatment catalogue. The four seed codes are now
+> `RESINA-ANTERIOR`, `RESINA-POSTERIOR`, `ENDO` and `PROFILAXIS`; names use `resina
+compuesta` and descriptions read as aesthetic fillings. Remaining seeded composite
+> references (visits, odontogram, charges) and the Spanish UI placeholders are localized
+> too. The existing development SQLite rows were updated in place, so the running app no
+> longer needs a database reset to show Spanish.
 
 ## Phase
 
@@ -3417,3 +3431,21 @@ holds 6 appointments today, 8 tomorrow and 4 on each following day through Nov 6
 
 **Verification.** Database typecheck and lint pass · format clean · seed run twice without
 error · live database totals 46 appointments (6 today, 8 tomorrow, 4/day through day +7).
+
+---
+
+Session 63: the development seed now carries Spanish clinical data. Its clinic name,
+dentist specialties and patient allergies are localized, along with the four treatment
+catalogue entries and their descriptions; visit reasons and summaries, odontogram notes,
+the restorative plan title, treatment-execution notes, the clinical note, the ibuprofen
+prescription, attachment file names and charge descriptions all read in Spanish. Codes,
+enum values, logins and the `US` dollar currency stay literal.
+
+Seeding a clean SQLite database then failed on the overlap trigger: the generated day +3
+09:00 booking in room 1 collided with fixed appointment 4, and its 10:00 booking in room 2
+collided with fixed appointment 10. The two generated slots swapped rooms, leaving both
+rooms free at those hours. A fresh migrated database now seeds all 46 appointments, and the
+four treatment names, two specialties, prescription and charges were read back in Spanish.
+
+**Verification.** Format clean · database typecheck/lint · root tests 12/12 tasks · clean
+SQLite migrate + seed · full typecheck/lint + boundary guard earlier in the session.

@@ -5,7 +5,7 @@ export const treatments = {
   'treatments.add.description':
     'El código es opcional y único por clínica; el nombre es obligatorio. Los precios están en la moneda de la clínica.',
   'treatments.field.code': 'Código (opcional)',
-  'treatments.field.codePlaceholder': 'p. ej. COMPO-ANTERIOR',
+  'treatments.field.codePlaceholder': 'p. ej. RESINA-ANTERIOR',
   'treatments.field.name': 'Nombre',
   'treatments.field.namePlaceholder': 'p. ej. Restauración compuesta, posterior',
   'treatments.field.description': 'Descripción (opcional)',

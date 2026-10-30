@@ -187,7 +187,7 @@ export const patients = {
   'patients.odontogram.condition': 'Condición',
   'patients.odontogram.surfaces': 'Superficies',
   'patients.odontogram.notes': 'Notas (opcional)',
-  'patients.odontogram.notesPlaceholder': 'p. ej. composite programado',
+  'patients.odontogram.notesPlaceholder': 'p. ej. resina compuesta programada',
   'patients.odontogram.chartTooth': 'Registrar diente {tooth}',
   'patients.odontogram.selectTooth': 'Selecciona un diente para registrar',
   'patients.odontogram.tooth': 'Diente {tooth}',

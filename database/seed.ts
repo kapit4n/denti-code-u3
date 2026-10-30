@@ -136,7 +136,7 @@ async function seedPostgres(db: PostgresJsDatabase<typeof pgSchema>): Promise<vo
     .insert(clinics)
     .values({
       id: DEVELOPMENT_CLINIC_ID,
-      name: 'Denti-Code Development Clinic',
+      name: 'Clínica de desarrollo Denti-Code',
       timeZone,
       currencyCode,
       isActive: true,
@@ -176,7 +176,7 @@ async function seedSqlite(db: BetterSQLite3Database<typeof sqliteSchema>): Promi
     .insert(clinics)
     .values({
       id: DEVELOPMENT_CLINIC_ID,
-      name: 'Denti-Code Development Clinic',
+      name: 'Clínica de desarrollo Denti-Code',
       timeZone,
       currencyCode,
       isActive: true,
@@ -253,7 +253,7 @@ async function insertDentistsPg(db: PostgresJsDatabase<typeof pgSchema>): Promis
         clinicId: DEVELOPMENT_CLINIC_ID,
         userId: '11111111-3333-4444-8555-000000000003',
         fullName: 'Dr. Elena Vargas',
-        speciality: 'General dentistry',
+        speciality: 'Odontología general',
         isActive: true,
       },
       {
@@ -261,7 +261,7 @@ async function insertDentistsPg(db: PostgresJsDatabase<typeof pgSchema>): Promis
         clinicId: DEVELOPMENT_CLINIC_ID,
         userId: '11111111-3333-4444-8555-000000000004',
         fullName: 'Dr. Marco Salas',
-        speciality: 'Endodontics',
+        speciality: 'Endodoncia',
         isActive: true,
       },
     ])
@@ -277,7 +277,7 @@ async function insertDentistsSqlite(db: BetterSQLite3Database<typeof sqliteSchem
         clinicId: DEVELOPMENT_CLINIC_ID,
         userId: '11111111-3333-4444-8555-000000000003',
         fullName: 'Dr. Elena Vargas',
-        speciality: 'General dentistry',
+        speciality: 'Odontología general',
         isActive: true,
       },
       {
@@ -285,7 +285,7 @@ async function insertDentistsSqlite(db: BetterSQLite3Database<typeof sqliteSchem
         clinicId: DEVELOPMENT_CLINIC_ID,
         userId: '11111111-3333-4444-8555-000000000004',
         fullName: 'Dr. Marco Salas',
-        speciality: 'Endodontics',
+        speciality: 'Endodoncia',
         isActive: true,
       },
     ])
@@ -381,7 +381,7 @@ const PATIENTS = [
     phone: '+1 555 0101',
     email: 'ana.garcia@example.test',
     birthDate: '1991-04-17',
-    allergies: 'Penicillin',
+    allergies: 'Penicilina',
   },
   {
     id: '11111111-3333-4444-8555-000000000002',
@@ -425,7 +425,7 @@ const PATIENTS = [
     phone: '+1 555 0105',
     email: 'valeria.mendoza@example.test',
     birthDate: '1994-08-09',
-    allergies: 'Latex',
+    allergies: 'Látex',
   },
   {
     id: '11111111-3333-4444-8555-000000000006',
@@ -788,7 +788,7 @@ const WEEK_AHEAD_SLOTS = [
     minute: 0,
     durationMinutes: 45,
     patient: 6,
-    room: 1,
+    room: 2,
     status: 'CONFIRMED',
   },
   {
@@ -797,7 +797,7 @@ const WEEK_AHEAD_SLOTS = [
     minute: 0,
     durationMinutes: 45,
     patient: 7,
-    room: 2,
+    room: 1,
     status: 'SCHEDULED',
   },
   {
@@ -1034,26 +1034,26 @@ async function insertTreatmentsPg(db: PostgresJsDatabase<typeof pgSchema>): Prom
       {
         id: '11111111-aaaa-4999-8ccc-000000000001',
         clinicId: DEVELOPMENT_CLINIC_ID,
-        code: 'COMPO-ANTERIOR',
-        name: 'Composite restoration — anterior',
-        description: 'Tooth-coloured filling for incisors and canines.',
+        code: 'RESINA-ANTERIOR',
+        name: 'Restauración con resina compuesta — anterior',
+        description: 'Obturación estética para incisivos y caninos.',
         defaultDurationMinutes: 45,
         defaultPriceMinor: 12000,
       },
       {
         id: '11111111-aaaa-4999-8ccc-000000000002',
         clinicId: DEVELOPMENT_CLINIC_ID,
-        code: 'COMPO-POSTERIOR',
-        name: 'Composite restoration — posterior',
-        description: 'Tooth-coloured filling for premolars and molars.',
+        code: 'RESINA-POSTERIOR',
+        name: 'Restauración con resina compuesta — posterior',
+        description: 'Obturación estética para premolares y molares.',
         defaultDurationMinutes: 60,
         defaultPriceMinor: 15000,
       },
       {
         id: '11111111-aaaa-4999-8ccc-000000000003',
         clinicId: DEVELOPMENT_CLINIC_ID,
-        code: 'RCT',
-        name: 'Root canal therapy',
+        code: 'ENDO',
+        name: 'Tratamiento de conducto radicular',
         description: null,
         defaultDurationMinutes: 75,
         defaultPriceMinor: 60000,
@@ -1061,9 +1061,9 @@ async function insertTreatmentsPg(db: PostgresJsDatabase<typeof pgSchema>): Prom
       {
         id: '11111111-aaaa-4999-8ccc-000000000004',
         clinicId: DEVELOPMENT_CLINIC_ID,
-        code: 'PROPHY',
-        name: 'Scaling and prophylaxis',
-        description: 'Professional cleaning, scaling and polish.',
+        code: 'PROFILAXIS',
+        name: 'Destartraje y profilaxis',
+        description: 'Limpieza profesional, destartraje y pulido.',
         defaultDurationMinutes: 30,
         defaultPriceMinor: 4500,
       },
@@ -1080,26 +1080,26 @@ async function insertTreatmentsSqlite(
       {
         id: '11111111-aaaa-4999-8ccc-000000000001',
         clinicId: DEVELOPMENT_CLINIC_ID,
-        code: 'COMPO-ANTERIOR',
-        name: 'Composite restoration — anterior',
-        description: 'Tooth-coloured filling for incisors and canines.',
+        code: 'RESINA-ANTERIOR',
+        name: 'Restauración con resina compuesta — anterior',
+        description: 'Obturación estética para incisivos y caninos.',
         defaultDurationMinutes: 45,
         defaultPriceMinor: 12000,
       },
       {
         id: '11111111-aaaa-4999-8ccc-000000000002',
         clinicId: DEVELOPMENT_CLINIC_ID,
-        code: 'COMPO-POSTERIOR',
-        name: 'Composite restoration — posterior',
-        description: 'Tooth-coloured filling for premolars and molars.',
+        code: 'RESINA-POSTERIOR',
+        name: 'Restauración con resina compuesta — posterior',
+        description: 'Obturación estética para premolares y molares.',
         defaultDurationMinutes: 60,
         defaultPriceMinor: 15000,
       },
       {
         id: '11111111-aaaa-4999-8ccc-000000000003',
         clinicId: DEVELOPMENT_CLINIC_ID,
-        code: 'RCT',
-        name: 'Root canal therapy',
+        code: 'ENDO',
+        name: 'Tratamiento de conducto radicular',
         description: null,
         defaultDurationMinutes: 75,
         defaultPriceMinor: 60000,
@@ -1107,9 +1107,9 @@ async function insertTreatmentsSqlite(
       {
         id: '11111111-aaaa-4999-8ccc-000000000004',
         clinicId: DEVELOPMENT_CLINIC_ID,
-        code: 'PROPHY',
-        name: 'Scaling and prophylaxis',
-        description: 'Professional cleaning, scaling and polish.',
+        code: 'PROFILAXIS',
+        name: 'Destartraje y profilaxis',
+        description: 'Limpieza profesional, destartraje y pulido.',
         defaultDurationMinutes: 30,
         defaultPriceMinor: 4500,
       },
@@ -1141,8 +1141,8 @@ const EXTRA_VISITS = [
     status: 'COMPLETED',
     startedAt: at(-2, 9, 0),
     endedAt: at(-2, 9, 40),
-    reason: 'Routine check-up',
-    summary: 'No new findings; hygiene reinforced.',
+    reason: 'Control rutinario',
+    summary: 'Sin hallazgos nuevos; se reforzó la higiene.',
   },
   {
     id: '11111111-7777-4888-8999-000000000004',
@@ -1152,8 +1152,8 @@ const EXTRA_VISITS = [
     status: 'COMPLETED',
     startedAt: at(-4, 10, 0),
     endedAt: at(-4, 10, 50),
-    reason: 'Pain on the lower left molar',
-    summary: 'Caries excavated and a temporary filling placed.',
+    reason: 'Dolor en el molar inferior izquierdo',
+    summary: 'Se excavó la caries y se colocó un obturador temporal.',
   },
   {
     id: '11111111-7777-4888-8999-000000000005',
@@ -1163,8 +1163,8 @@ const EXTRA_VISITS = [
     status: 'COMPLETED',
     startedAt: at(-6, 11, 0),
     endedAt: at(-6, 11, 45),
-    reason: 'Broken incisor',
-    summary: 'Edge restored with composite; occlusion checked.',
+    reason: 'Incisivo fracturado',
+    summary: 'Se restauró el borde con resina compuesta; se verificó la oclusión.',
   },
   {
     id: '11111111-7777-4888-8999-000000000006',
@@ -1174,8 +1174,8 @@ const EXTRA_VISITS = [
     status: 'COMPLETED',
     startedAt: at(-8, 9, 30),
     endedAt: at(-8, 10, 30),
-    reason: 'Sensitivity in the upper right quadrant',
-    summary: 'Crown seated on tooth 14; margins verified.',
+    reason: 'Sensibilidad en el cuadrante superior derecho',
+    summary: 'Se colocó una corona en el diente 14; márgenes verificados.',
   },
   {
     id: '11111111-7777-4888-8999-000000000007',
@@ -1185,8 +1185,8 @@ const EXTRA_VISITS = [
     status: 'COMPLETED',
     startedAt: at(-11, 14, 0),
     endedAt: at(-11, 14, 45),
-    reason: 'Swelling around the lower right molar',
-    summary: 'Root canal started; temporary dressing placed.',
+    reason: 'Inflamación alrededor del molar inferior derecho',
+    summary: 'Se inició el tratamiento de conducto; se colocó un apósito temporal.',
   },
   {
     id: '11111111-7777-4888-8999-000000000008',
@@ -1196,8 +1196,8 @@ const EXTRA_VISITS = [
     status: 'COMPLETED',
     startedAt: at(-14, 10, 0),
     endedAt: at(-14, 10, 30),
-    reason: 'Missing tooth review',
-    summary: 'Implant site healing well; no intervention needed.',
+    reason: 'Revisión de diente ausente',
+    summary: 'El sitio del implante cicatriza bien; no se requiere intervención.',
   },
   {
     id: '11111111-7777-4888-8999-000000000009',
@@ -1207,8 +1207,8 @@ const EXTRA_VISITS = [
     status: 'COMPLETED',
     startedAt: at(-18, 9, 0),
     endedAt: at(-18, 9, 50),
-    reason: 'Cleaning and sealant review',
-    summary: 'Prophylaxis completed; sealants intact.',
+    reason: 'Revisión de limpieza y sellantes',
+    summary: 'Profilaxis completada; sellantes intactos.',
   },
   {
     id: '11111111-7777-4888-8999-00000000000a',
@@ -1218,7 +1218,7 @@ const EXTRA_VISITS = [
     status: 'CANCELLED',
     startedAt: at(-9, 15, 0),
     endedAt: null,
-    reason: 'Consultation requested by phone',
+    reason: 'Consulta solicitada por teléfono',
     summary: null,
   },
 ] as const;
@@ -1234,7 +1234,7 @@ const EXTRA_ODONTOGRAM_ENTRIES = [
     tooth: '26',
     surfaces: ['MESIAL', 'OCCLUSAL'],
     condition: 'CARIES',
-    notes: 'Watch at the next check-up.',
+    notes: 'Vigilar en el próximo control.',
     recordedAt: at(-2, 9, 20),
   },
   {
@@ -1244,7 +1244,7 @@ const EXTRA_ODONTOGRAM_ENTRIES = [
     tooth: '46',
     surfaces: ['OCCLUSAL'],
     condition: 'FILLED',
-    notes: 'Amalgam replaced with composite in 2023.',
+    notes: 'Amalgama reemplazada por resina compuesta en 2023.',
     recordedAt: at(-18, 9, 10),
   },
   {
@@ -1254,7 +1254,7 @@ const EXTRA_ODONTOGRAM_ENTRIES = [
     tooth: '11',
     surfaces: ['INCISAL'],
     condition: 'FRACTURE',
-    notes: 'Edge chipped; composite planned.',
+    notes: 'Borde astillado; resina compuesta planificada.',
     recordedAt: at(-4, 10, 20),
   },
   {
@@ -1264,7 +1264,7 @@ const EXTRA_ODONTOGRAM_ENTRIES = [
     tooth: '36',
     surfaces: [],
     condition: 'ROOT_CANAL',
-    notes: 'Completed two-session endodontic treatment.',
+    notes: 'Tratamiento endodóntico de dos sesiones completado.',
     recordedAt: at(-6, 11, 20),
   },
   {
@@ -1274,7 +1274,7 @@ const EXTRA_ODONTOGRAM_ENTRIES = [
     tooth: '47',
     surfaces: [],
     condition: 'MISSING',
-    notes: 'Extracted before the patient joined the clinic.',
+    notes: 'Extraído antes de que el paciente se incorporara a la clínica.',
     recordedAt: at(-8, 10, 10),
   },
   {
@@ -1284,7 +1284,7 @@ const EXTRA_ODONTOGRAM_ENTRIES = [
     tooth: '14',
     surfaces: [],
     condition: 'CROWN',
-    notes: 'Ceramic crown seated, margins sound.',
+    notes: 'Corona cerámica colocada, márgenes en buen estado.',
     recordedAt: at(-11, 14, 20),
   },
   {
@@ -1294,7 +1294,7 @@ const EXTRA_ODONTOGRAM_ENTRIES = [
     tooth: '37',
     surfaces: ['OCCLUSAL'],
     condition: 'SEALANT',
-    notes: 'Sealant intact at recall.',
+    notes: 'Sellante intacto en el control.',
     recordedAt: at(-14, 10, 20),
   },
   {
@@ -1304,7 +1304,7 @@ const EXTRA_ODONTOGRAM_ENTRIES = [
     tooth: '24',
     surfaces: [],
     condition: 'IMPLANT',
-    notes: 'Implant restored with a single crown.',
+    notes: 'Implante restaurado con una corona individual.',
     recordedAt: at(-18, 9, 20),
   },
 ] as const;
@@ -1320,8 +1320,8 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
         status: 'COMPLETED',
         startedAt: new Date(now.getTime() - 21 * DAY),
         endedAt: new Date(now.getTime() - 21 * DAY + 45 * 60 * 1000),
-        reason: 'Sensitivity in the upper right quadrant',
-        summary: 'Composite restoration on tooth 16. No complications.',
+        reason: 'Sensibilidad en el cuadrante superior derecho',
+        summary: 'Restauración con resina compuesta en el diente 16. Sin complicaciones.',
       },
       {
         id: '11111111-7777-4888-8999-000000000002',
@@ -1335,7 +1335,7 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
         appointmentId: '11111111-4444-4555-8666-000000000002',
         status: 'OPEN',
         startedAt: at(0, 10, 0),
-        reason: 'Scaling and hygiene visit',
+        reason: 'Visita de destartraje e higiene',
       },
       ...EXTRA_VISITS,
     ])
@@ -1357,7 +1357,7 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
       patientId: '11111111-3333-4444-8555-000000000001',
       dentistId: '11111111-2222-4333-8444-000000000001',
       status: 'ACCEPTED',
-      title: 'Restorative plan',
+      title: 'Plan restaurador',
       presentedAt: new Date(now.getTime() - 20 * DAY),
       acceptedAt: new Date(now.getTime() - 19 * DAY),
     })
@@ -1394,7 +1394,7 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
       visitId: '11111111-7777-4888-8999-000000000001',
       treatmentId: '11111111-aaaa-4999-8ccc-000000000002',
       tooth: '16',
-      notes: 'No complications.',
+      notes: 'Sin complicaciones.',
       performedAt: new Date(now.getTime() - 21 * DAY + 20 * 60 * 1000),
     })
     .onConflictDoNothing();
@@ -1405,7 +1405,7 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
       id: '11111111-cccc-4ddd-8eee-000000000002',
       visitId: '11111111-7777-4888-8999-000000000002',
       treatmentId: '11111111-aaaa-4999-8ccc-000000000004',
-      notes: 'Dental hygiene instructions given.',
+      notes: 'Se dieron instrucciones de higiene dental.',
       performedAt: at(0, 10, 25),
     })
     .onConflictDoNothing();
@@ -1415,7 +1415,7 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
     .values({
       id: '11111111-cccc-4ddd-8eee-000000000003',
       visitId: '11111111-7777-4888-8999-000000000002',
-      body: 'Scaling well tolerated; no discomfort reported after the visit.',
+      body: 'Destartraje bien tolerado; no refirió molestias después de la visita.',
     })
     .onConflictDoNothing();
 
@@ -1427,12 +1427,12 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
       patientId: '11111111-3333-4444-8555-000000000002',
       dentistId: '11111111-2222-4333-8444-000000000001',
       issuedAt: at(0, 10, 30),
-      medication: 'Ibuprofen',
+      medication: 'Ibuprofeno',
       dosage: '400 mg',
       route: 'ORAL',
-      frequency: 'Every 8 hours if needed',
+      frequency: 'Cada 8 horas si es necesario',
       durationDays: 5,
-      instructions: 'Take after meals. Do not exceed three doses a day.',
+      instructions: 'Tomar después de las comidas. No superar las tres dosis diarias.',
     })
     .onConflictDoNothing();
 
@@ -1442,14 +1442,14 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
       {
         id: '11111111-cccc-4ddd-8eee-000000000005',
         visitId: '11111111-7777-4888-8999-000000000002',
-        fileName: 'periapical-26-left.png',
+        fileName: 'periapical-26-izquierda.png',
         contentType: 'image/png',
         sizeBytes: 512_400,
       },
       {
         id: '11111111-cccc-4ddd-8eee-000000000006',
         visitId: '11111111-7777-4888-8999-000000000002',
-        fileName: 'referral-orthodontics.pdf',
+        fileName: 'derivacion-ortodoncia.pdf',
         contentType: 'application/pdf',
         sizeBytes: 81_240,
       },
@@ -1469,7 +1469,7 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
         tooth: '16',
         surfaces: ['MESIAL'],
         condition: 'CARIES',
-        notes: 'Composite patch scheduled; checked at the last visit.',
+        notes: 'Parche de resina compuesta programado; revisado en la última visita.',
         recordedAt: at(0, 10, 20),
       },
       {
@@ -1500,8 +1500,8 @@ async function insertVisitsAndPlansSqlite(
         status: 'COMPLETED',
         startedAt: new Date(now.getTime() - 21 * DAY),
         endedAt: new Date(now.getTime() - 21 * DAY + 45 * 60 * 1000),
-        reason: 'Sensitivity in the upper right quadrant',
-        summary: 'Composite restoration on tooth 16. No complications.',
+        reason: 'Sensibilidad en el cuadrante superior derecho',
+        summary: 'Restauración con resina compuesta en el diente 16. Sin complicaciones.',
       },
       {
         id: '11111111-7777-4888-8999-000000000002',
@@ -1512,7 +1512,7 @@ async function insertVisitsAndPlansSqlite(
         appointmentId: '11111111-4444-4555-8666-000000000002',
         status: 'OPEN',
         startedAt: at(0, 10, 0),
-        reason: 'Scaling and hygiene visit',
+        reason: 'Visita de destartraje e higiene',
       },
       ...EXTRA_VISITS,
     ])
@@ -1531,7 +1531,7 @@ async function insertVisitsAndPlansSqlite(
       patientId: '11111111-3333-4444-8555-000000000001',
       dentistId: '11111111-2222-4333-8444-000000000001',
       status: 'ACCEPTED',
-      title: 'Restorative plan',
+      title: 'Plan restaurador',
       presentedAt: new Date(now.getTime() - 20 * DAY),
       acceptedAt: new Date(now.getTime() - 19 * DAY),
     })
@@ -1568,7 +1568,7 @@ async function insertVisitsAndPlansSqlite(
       visitId: '11111111-7777-4888-8999-000000000001',
       treatmentId: '11111111-aaaa-4999-8ccc-000000000002',
       tooth: '16',
-      notes: 'No complications.',
+      notes: 'Sin complicaciones.',
       performedAt: new Date(now.getTime() - 21 * DAY + 20 * 60 * 1000),
     })
     .onConflictDoNothing();
@@ -1579,7 +1579,7 @@ async function insertVisitsAndPlansSqlite(
       id: '11111111-cccc-4ddd-8eee-000000000002',
       visitId: '11111111-7777-4888-8999-000000000002',
       treatmentId: '11111111-aaaa-4999-8ccc-000000000004',
-      notes: 'Dental hygiene instructions given.',
+      notes: 'Se dieron instrucciones de higiene dental.',
       performedAt: at(0, 10, 25),
     })
     .onConflictDoNothing();
@@ -1589,7 +1589,7 @@ async function insertVisitsAndPlansSqlite(
     .values({
       id: '11111111-cccc-4ddd-8eee-000000000003',
       visitId: '11111111-7777-4888-8999-000000000002',
-      body: 'Scaling well tolerated; no discomfort reported after the visit.',
+      body: 'Destartraje bien tolerado; no refirió molestias después de la visita.',
     })
     .onConflictDoNothing();
 
@@ -1601,12 +1601,12 @@ async function insertVisitsAndPlansSqlite(
       patientId: '11111111-3333-4444-8555-000000000002',
       dentistId: '11111111-2222-4333-8444-000000000001',
       issuedAt: at(0, 10, 30),
-      medication: 'Ibuprofen',
+      medication: 'Ibuprofeno',
       dosage: '400 mg',
       route: 'ORAL',
-      frequency: 'Every 8 hours if needed',
+      frequency: 'Cada 8 horas si es necesario',
       durationDays: 5,
-      instructions: 'Take after meals. Do not exceed three doses a day.',
+      instructions: 'Tomar después de las comidas. No superar las tres dosis diarias.',
     })
     .onConflictDoNothing();
 
@@ -1616,14 +1616,14 @@ async function insertVisitsAndPlansSqlite(
       {
         id: '11111111-cccc-4ddd-8eee-000000000005',
         visitId: '11111111-7777-4888-8999-000000000002',
-        fileName: 'periapical-26-left.png',
+        fileName: 'periapical-26-izquierda.png',
         contentType: 'image/png',
         sizeBytes: 512_400,
       },
       {
         id: '11111111-cccc-4ddd-8eee-000000000006',
         visitId: '11111111-7777-4888-8999-000000000002',
-        fileName: 'referral-orthodontics.pdf',
+        fileName: 'derivacion-ortodoncia.pdf',
         contentType: 'application/pdf',
         sizeBytes: 81_240,
       },
@@ -1640,7 +1640,7 @@ async function insertVisitsAndPlansSqlite(
         tooth: '16',
         surfaces: ['MESIAL'],
         condition: 'CARIES',
-        notes: 'Composite patch scheduled; checked at the last visit.',
+        notes: 'Parche de resina compuesta programado; revisado en la última visita.',
         recordedAt: at(0, 10, 20),
       },
       {
@@ -1666,7 +1666,7 @@ async function insertChargesPg(db: PostgresJsDatabase<typeof pgSchema>): Promise
         id: '11111111-5555-4666-8777-000000000001',
         clinicId: DEVELOPMENT_CLINIC_ID,
         patientId: '11111111-3333-4444-8555-000000000001',
-        description: 'Composite restoration, tooth 16',
+        description: 'Restauración con resina compuesta, diente 16',
         quantity: '1',
         unitPriceMinor: 12000,
         currency: currencyCode,
@@ -1675,7 +1675,7 @@ async function insertChargesPg(db: PostgresJsDatabase<typeof pgSchema>): Promise
         id: '11111111-5555-4666-8777-000000000002',
         clinicId: DEVELOPMENT_CLINIC_ID,
         patientId: '11111111-3333-4444-8555-000000000001',
-        description: 'Scaling and polishing',
+        description: 'Destartraje y pulido',
         quantity: '1',
         unitPriceMinor: 4500,
         currency: currencyCode,
@@ -1688,7 +1688,7 @@ async function insertChargesPg(db: PostgresJsDatabase<typeof pgSchema>): Promise
         clinicId: DEVELOPMENT_CLINIC_ID,
         patientId: '11111111-3333-4444-8555-000000000002',
         visitId: '11111111-7777-4888-8999-000000000002',
-        description: 'Scaling and prophylaxis',
+        description: 'Destartraje y profilaxis',
         quantity: '1',
         unitPriceMinor: 8500,
         discountMinor: 0,
@@ -1707,7 +1707,7 @@ async function insertChargesSqlite(db: BetterSQLite3Database<typeof sqliteSchema
         id: '11111111-5555-4666-8777-000000000001',
         clinicId: DEVELOPMENT_CLINIC_ID,
         patientId: '11111111-3333-4444-8555-000000000001',
-        description: 'Composite restoration, tooth 16',
+        description: 'Restauración con resina compuesta, diente 16',
         quantity: '1',
         unitPriceMinor: 12000,
         currency: currencyCode,
@@ -1716,7 +1716,7 @@ async function insertChargesSqlite(db: BetterSQLite3Database<typeof sqliteSchema
         id: '11111111-5555-4666-8777-000000000002',
         clinicId: DEVELOPMENT_CLINIC_ID,
         patientId: '11111111-3333-4444-8555-000000000001',
-        description: 'Scaling and polishing',
+        description: 'Destartraje y pulido',
         quantity: '1',
         unitPriceMinor: 4500,
         currency: currencyCode,
@@ -1729,7 +1729,7 @@ async function insertChargesSqlite(db: BetterSQLite3Database<typeof sqliteSchema
         clinicId: DEVELOPMENT_CLINIC_ID,
         patientId: '11111111-3333-4444-8555-000000000002',
         visitId: '11111111-7777-4888-8999-000000000002',
-        description: 'Scaling and prophylaxis',
+        description: 'Destartraje y profilaxis',
         quantity: '1',
         unitPriceMinor: 8500,
         discountMinor: 0,
