@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 60 (remaining UI translated)
+> Last updated: session 62 (editable clinic settings)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -15,6 +15,13 @@
 > odontogram, login, the 404 and error fallbacks, the theme toggle and the runtime badge
 > now read from `t()`. Every user-facing screen is translated; only the product name and
 > domain data remain literal.
+
+> **Session 62** gave `/settings` its first real screen: the clinic profile (name, legal
+> name, tax id, address, phone, email), timezone and currency, and the seven-day opening
+> hours are editable through `PUT /api/v1/clinic` (`clinic:manage`, administrator only).
+> The domain use case validates and normalizes the record; both engines replace the whole
+> week atomically, absent days are deleted and the break columns are preserved. The page
+> is translated in English and Spanish. No migration was needed.
 
 ## Phase
 
@@ -3393,3 +3400,20 @@ unchanged.
 
 **Verification.** Typecheck 12/12 · lint 12/12 + boundary guard (one pre-existing React
 Compiler warning) · format clean · build 5/5 · app **365** tests · e2e **160/160**.
+
+---
+
+Session 61: the development seed now fills the agenda a week out. `WEEK_AHEAD_SLOTS`
+generates 36 more appointments for today through day +7, in addition to the ten fixed
+bookings, so the day and week calendars have rows on every column. Room 1 always pairs
+dentist 1 with chair 1 and room 2 pairs dentist 2 with chair 3; rooms are exclusive, so
+that pairing keeps generated rows clear of each other. Today and tomorrow avoid the
+existing slots, including the two bookings already seeded three days out.
+
+The seed is still idempotent: generated ids start after the fixed ten, and SQLite still
+pre-filters ids before insert so its overlap trigger never sees a re-insertion. The
+summary prints 46 appointments. The development SQLite database was re-seeded and now
+holds 6 appointments today, 8 tomorrow and 4 on each following day through Nov 6.
+
+**Verification.** Database typecheck and lint pass · format clean · seed run twice without
+error · live database totals 46 appointments (6 today, 8 tomorrow, 4/day through day +7).

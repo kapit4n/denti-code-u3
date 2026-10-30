@@ -43,3 +43,87 @@ export const chairListQuerySchema = onlyActiveQuerySchema;
 
 export type DentistListQuery = z.infer<typeof dentistListQuerySchema>;
 export type ChairListQuery = z.infer<typeof chairListQuerySchema>;
+
+const localTimeSchema = z
+  .string()
+  .regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/, 'Opening hours are written as HH:MM');
+
+export const clinicOperatingHoursSchema = z
+  .object({
+    weekday: z.number().int().min(1).max(7),
+    opensAtLocalTime: z.string(),
+    closesAtLocalTime: z.string(),
+    isClosed: z.boolean(),
+  })
+  .superRefine((hours, context) => {
+    if (hours.isClosed) {
+      return;
+    }
+    const opens = localTimeSchema.safeParse(hours.opensAtLocalTime);
+    if (!opens.success) {
+      context.addIssue({
+        code: 'custom',
+        path: ['opensAtLocalTime'],
+        message: 'Opening time is written as HH:MM',
+      });
+    }
+    const closes = localTimeSchema.safeParse(hours.closesAtLocalTime);
+    if (!closes.success) {
+      context.addIssue({
+        code: 'custom',
+        path: ['closesAtLocalTime'],
+        message: 'Closing time is written as HH:MM',
+      });
+    }
+    if (opens.success && closes.success && opens.data >= closes.data) {
+      context.addIssue({
+        code: 'custom',
+        path: ['closesAtLocalTime'],
+        message: 'Closing time must be after opening time',
+      });
+    }
+  });
+
+export const updateClinicSettingsSchema = z.object({
+  name: z.string().trim().min(1, 'The clinic needs a name').max(200, 'The clinic name is too long'),
+  legalName: z.string().trim().max(200, 'The legal name is too long').optional().nullable(),
+  taxId: z.string().trim().max(50, 'The tax id is too long').optional().nullable(),
+  address: z.string().trim().max(500, 'The address is too long').optional().nullable(),
+  phone: z.string().trim().max(50, 'The phone is too long').optional().nullable(),
+  email: z.string().trim().max(200, 'The email is too long').optional().nullable(),
+  timeZone: z
+    .string()
+    .trim()
+    .min(1, 'A time zone is required')
+    .refine((value) => {
+      try {
+        new Intl.DateTimeFormat('en', { timeZone: value });
+        return true;
+      } catch {
+        return false;
+      }
+    }, 'That is not a valid IANA time zone'),
+  currency: z
+    .string()
+    .trim()
+    .transform((value) => value.toUpperCase())
+    .refine((value) => /^[A-Z]{3}$/.test(value), 'A currency is a three-letter ISO code'),
+  operatingHours: z
+    .array(clinicOperatingHoursSchema)
+    .max(7, 'A week has seven days')
+    .superRefine((hours, context) => {
+      const seen = new Set<number>();
+      for (const [index, entry] of hours.entries()) {
+        if (seen.has(entry.weekday)) {
+          context.addIssue({
+            code: 'custom',
+            path: [index, 'weekday'],
+            message: 'A weekday may only be listed once',
+          });
+        }
+        seen.add(entry.weekday);
+      }
+    }),
+});
+
+export type UpdateClinicSettingsInput = z.infer<typeof updateClinicSettingsSchema>;

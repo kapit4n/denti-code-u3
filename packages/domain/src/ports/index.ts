@@ -53,7 +53,7 @@ import type {
   PatientOdontogram,
   PatientProfile,
 } from '../patient/index.js';
-import type { Clinic, ClinicRole } from '../organization/index.js';
+import type { Clinic, ClinicRole, ClinicSettingsUpdate } from '../organization/index.js';
 import type { AuthenticatedUser, Session, UserWithCredentials } from '../organization/auth.js';
 import type {
   Charge,
@@ -662,6 +662,14 @@ export interface ChairRepository {
  */
 export interface ClinicRepository {
   findById(clinicId: ClinicId): Promise<Clinic | undefined>;
+  /**
+   * Replace the clinic's identity and opening hours.
+   *
+   * The whole set of hours is supplied: a weekday missing from `settings` is a
+   * day the clinic no longer has a row for. Returns the record as stored, or
+   * `undefined` when the clinic does not exist in this deployment.
+   */
+  updateSettings(clinicId: ClinicId, settings: ClinicSettingsUpdate): Promise<Clinic | undefined>;
   /**
    * The clinic a request is scoped to when there is no authenticated user yet.
    *

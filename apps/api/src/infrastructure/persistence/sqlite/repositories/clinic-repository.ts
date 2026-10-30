@@ -10,16 +10,31 @@
  * surface for the two engines to disagree on.
  */
 
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, notInArray } from 'drizzle-orm';
 
 import { clinics, clinicOperatingHours } from '@denti-code-u3/database/schema/sqlite';
-import type { Clinic, ClinicOperatingHours, ClinicRepository } from '@denti-code-u3/domain';
+import type {
+  Clinic,
+  ClinicOperatingHours,
+  ClinicRepository,
+  ClinicSettingsUpdate,
+} from '@denti-code-u3/domain';
 import { asClinicId, type ClinicId, type CurrencyCode, type TimeZone } from '@denti-code-u3/types';
 
 import type { SqliteDatabase } from '../connection.js';
 
 /** SQLite `day_of_week` (0 = Sunday) → ISO-8601 weekday (1 = Monday … 7 = Sunday). */
 const ISO_WEEKDAY_FROM_DOW = [7, 1, 2, 3, 4, 5, 6] as const;
+
+const DOW_FROM_ISO_WEEKDAY: Readonly<Record<number, number>> = {
+  1: 1,
+  2: 2,
+  3: 3,
+  4: 4,
+  5: 5,
+  6: 6,
+  7: 0,
+};
 
 function toIsoWeekday(dayOfWeek: number): number {
   return ISO_WEEKDAY_FROM_DOW[dayOfWeek] ?? dayOfWeek;
@@ -32,6 +47,75 @@ export class SQLiteClinicRepository implements ClinicRepository {
     const [row] = await this.db.select().from(clinics).where(eq(clinics.id, clinicId)).limit(1);
 
     return row ? withOperatingHours(row, this.db) : undefined;
+  }
+
+  async updateSettings(
+    clinicId: ClinicId,
+    settings: ClinicSettingsUpdate,
+  ): Promise<Clinic | undefined> {
+    let exists = false;
+
+    this.db.transaction((tx) => {
+      const updated = tx
+        .update(clinics)
+        .set({
+          name: settings.name,
+          legalName: settings.legalName,
+          taxId: settings.taxId,
+          address: settings.address,
+          phone: settings.phone,
+          email: settings.email,
+          timeZone: settings.timeZone,
+          currencyCode: settings.currency,
+          updatedAt: new Date(),
+        })
+        .where(eq(clinics.id, clinicId))
+        .returning({ id: clinics.id })
+        .all();
+
+      if (updated.length === 0) {
+        return;
+      }
+      exists = true;
+
+      const days = settings.operatingHours.map(
+        (hours) => DOW_FROM_ISO_WEEKDAY[hours.weekday] ?? hours.weekday,
+      );
+
+      for (const hours of settings.operatingHours) {
+        const dayOfWeek = DOW_FROM_ISO_WEEKDAY[hours.weekday] ?? hours.weekday;
+        tx.insert(clinicOperatingHours)
+          .values({
+            clinicId,
+            dayOfWeek,
+            opensAt: hours.isClosed ? null : hours.opensAtLocalTime,
+            closesAt: hours.isClosed ? null : hours.closesAtLocalTime,
+          })
+          .onConflictDoUpdate({
+            target: [clinicOperatingHours.clinicId, clinicOperatingHours.dayOfWeek],
+            set: {
+              opensAt: hours.isClosed ? null : hours.opensAtLocalTime,
+              closesAt: hours.isClosed ? null : hours.closesAtLocalTime,
+            },
+          })
+          .run();
+      }
+
+      if (days.length === 0) {
+        tx.delete(clinicOperatingHours).where(eq(clinicOperatingHours.clinicId, clinicId)).run();
+      } else {
+        tx.delete(clinicOperatingHours)
+          .where(
+            and(
+              eq(clinicOperatingHours.clinicId, clinicId),
+              notInArray(clinicOperatingHours.dayOfWeek, days),
+            ),
+          )
+          .run();
+      }
+    });
+
+    return exists ? this.findById(clinicId) : undefined;
   }
 
   /**
@@ -68,6 +152,10 @@ async function withOperatingHours(row: ClinicRow, db: SqliteDatabase): Promise<C
     id: asClinicId(row.id),
     name: row.name,
     ...(row.legalName === null ? {} : { legalName: row.legalName }),
+    ...(row.taxId === null ? {} : { taxId: row.taxId }),
+    ...(row.address === null ? {} : { address: row.address }),
+    ...(row.phone === null ? {} : { phone: row.phone }),
+    ...(row.email === null ? {} : { email: row.email }),
     timeZone: row.timeZone as TimeZone,
     currency: row.currencyCode as CurrencyCode,
     operatingHours: hours.map(toOperatingHours),

@@ -1499,6 +1499,49 @@ describe('API on SQLite', () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.lastName).toBe('Book');
   });
+
+  it('updates the clinic identity and replaces its opening hours on this engine too', async () => {
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/clinic',
+      payload: {
+        name: 'SQLite Renovada',
+        legalName: 'Renovada S.A.',
+        taxId: null,
+        address: null,
+        phone: null,
+        email: null,
+        timeZone: 'America/Lima',
+        currency: 'pen',
+        operatingHours: [
+          { weekday: 1, opensAtLocalTime: '09:00', closesAtLocalTime: '18:00', isClosed: false },
+          { weekday: 7, opensAtLocalTime: '', closesAtLocalTime: '', isClosed: true },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      name: 'SQLite Renovada',
+      legalName: 'Renovada S.A.',
+      timeZone: 'America/Lima',
+      currency: 'PEN',
+    });
+    expect(response.json().operatingHours).toHaveLength(2);
+    expect(response.json().operatingHours).toEqual(
+      expect.arrayContaining([
+        { weekday: 1, opensAtLocalTime: '09:00', closesAtLocalTime: '18:00', isClosed: false },
+        { weekday: 7, opensAtLocalTime: '', closesAtLocalTime: '', isClosed: true },
+      ]),
+    );
+
+    const read = await app.inject({ method: 'GET', url: '/api/v1/clinic' });
+    expect(read.json()).toMatchObject({
+      name: 'SQLite Renovada',
+      currency: 'PEN',
+    });
+    expect(read.json().operatingHours).toHaveLength(2);
+  });
 });
 
 async function seed(db: importedDb) {

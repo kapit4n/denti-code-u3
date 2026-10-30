@@ -14,10 +14,26 @@ export interface Clinic {
   readonly id: string;
   readonly name: string;
   readonly legalName?: string;
+  readonly taxId?: string;
+  readonly address?: string;
+  readonly phone?: string;
+  readonly email?: string;
   readonly timeZone: TimeZone;
   readonly currency: CurrencyCode;
   readonly operatingHours: readonly ClinicOperatingHours[];
   readonly settings: Readonly<Record<string, unknown>>;
+}
+
+export interface ClinicSettingsUpdate {
+  readonly name: string;
+  readonly legalName: string | null;
+  readonly taxId: string | null;
+  readonly address: string | null;
+  readonly phone: string | null;
+  readonly email: string | null;
+  readonly timeZone: TimeZone;
+  readonly currency: CurrencyCode;
+  readonly operatingHours: readonly ClinicOperatingHours[];
 }
 
 export function isValidTimeZone(candidate: string): boolean {

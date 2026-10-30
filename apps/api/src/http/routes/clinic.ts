@@ -14,8 +14,9 @@
 
 import type { FastifyInstance } from 'fastify';
 
-import type { ClinicRepository } from '@denti-code-u3/domain';
+import { updateClinicSettings, type ClinicRepository } from '@denti-code-u3/domain';
 import type { ClinicId } from '@denti-code-u3/types';
+import { updateClinicSettingsSchema } from '@denti-code-u3/validation';
 
 import { sendProblem } from '../problem.js';
 
@@ -58,6 +59,30 @@ export async function registerClinicRoutes(
       return clinic;
     } catch (error) {
       return sendProblem(reply, request, error, 'Failed to read the clinic');
+    }
+  });
+
+  app.put('/api/v1/clinic', { config: { permission: 'clinic:manage' } }, async (request, reply) => {
+    const clinicId = request.clinicId as ClinicId;
+    const parsed = updateClinicSettingsSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.status(422).send({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'The clinic settings could not be accepted',
+          details: { issues: parsed.error.issues },
+          requestId: request.id,
+        },
+      });
+    }
+
+    try {
+      const clinic = await updateClinicSettings(clinicId, parsed.data, { clinics });
+
+      return clinic;
+    } catch (error) {
+      return sendProblem(reply, request, error, 'Failed to update the clinic');
     }
   });
 }

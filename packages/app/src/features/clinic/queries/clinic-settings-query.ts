@@ -23,8 +23,8 @@ export function useClinicSettings() {
   const client = useApiClient();
   return useQuery({
     // One clinic per deployment until authentication exists, so this is fetched once
-    // and never invalidated: it is configuration, not data that changes while the
-    // user works.
+    // and kept for the session. The only write that invalidates it is the settings
+    // screen; configuration does not change while the user works anywhere else.
     queryKey: ['clinic', 'settings'],
     queryFn: () => client.get<Clinic>('/clinic'),
     staleTime: Number.POSITIVE_INFINITY,

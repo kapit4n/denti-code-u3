@@ -155,6 +155,7 @@ function harness(
       return storedClinic && storedClinic.id === clinicId ? storedClinic : undefined;
     },
     getDefault: async () => storedClinic,
+    updateSettings: async () => storedClinic,
   };
 
   const charges: ChargeRepository = {

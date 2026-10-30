@@ -113,6 +113,7 @@ function harness(options: HarnessOptions = {}) {
       return 'clinic' in options ? options.clinic : aClinic();
     },
     getDefault: async () => aClinic(),
+    updateSettings: async () => aClinic(),
   };
 
   return { dependencies: { invoices, payments, clinics }, reads };

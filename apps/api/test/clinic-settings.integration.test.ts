@@ -172,6 +172,90 @@ describeIntegration('clinic settings (PostgreSQL)', () => {
     });
   });
 
+  describe('updating the clinic', () => {
+    function updateClinic(payload: unknown, scope: string = clinicId) {
+      scopedClinicId = scope;
+      return app.inject({
+        method: 'PUT',
+        url: '/api/v1/clinic',
+        payload: payload as object,
+      });
+    }
+
+    it('replaces the identity and the whole set of opening hours', async () => {
+      const response = await updateClinic({
+        name: 'Clinica Renovada',
+        legalName: 'Renovada S.A.',
+        taxId: '20123456789',
+        address: 'Av. Nueva 100',
+        phone: '+51 999 000 111',
+        email: 'hola@renovada.test',
+        timeZone: 'America/Lima',
+        currency: 'PEN',
+        operatingHours: [
+          { weekday: 1, opensAtLocalTime: '09:00', closesAtLocalTime: '18:00', isClosed: false },
+          { weekday: 2, opensAtLocalTime: '', closesAtLocalTime: '', isClosed: true },
+        ],
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        name: 'Clinica Renovada',
+        legalName: 'Renovada S.A.',
+        taxId: '20123456789',
+        address: 'Av. Nueva 100',
+        phone: '+51 999 000 111',
+        email: 'hola@renovada.test',
+        timeZone: 'America/Lima',
+        currency: 'PEN',
+      });
+
+      const clinic = await repository.findById(clinicId as never);
+      expect(clinic?.operatingHours).toEqual([
+        { weekday: 1, opensAtLocalTime: '09:00', closesAtLocalTime: '18:00', isClosed: false },
+        { weekday: 2, opensAtLocalTime: '', closesAtLocalTime: '', isClosed: true },
+      ]);
+    });
+
+    it('refuses an unknown time zone before writing anything', async () => {
+      const response = await updateClinic({
+        name: 'Clinica Invalida',
+        timeZone: 'Mars/Olympus_Mons',
+        currency: 'PEN',
+        operatingHours: [],
+      });
+
+      expect(response.statusCode).toBe(422);
+      expect(response.json().error.code).toBe('VALIDATION_ERROR');
+      expect((await repository.findById(clinicId as never))?.name).toBe('Clinica Renovada');
+    });
+
+    it('refuses a day whose closing time is not after its opening time', async () => {
+      const response = await updateClinic({
+        name: 'Clinica Invalida',
+        timeZone: 'America/Lima',
+        currency: 'PEN',
+        operatingHours: [
+          { weekday: 3, opensAtLocalTime: '18:00', closesAtLocalTime: '09:00', isClosed: false },
+        ],
+      });
+
+      expect(response.statusCode).toBe(422);
+      expect(response.json().error.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('refuses a currency that is not three ISO letters', async () => {
+      const response = await updateClinic({
+        name: 'Clinica Invalida',
+        timeZone: 'America/Lima',
+        currency: 'PESOS',
+        operatingHours: [],
+      });
+
+      expect(response.statusCode).toBe(422);
+    });
+  });
+
   describe('without authentication', () => {
     it('can name a default clinic, which is the bridge until auth exists', async () => {
       const clinic = await repository.getDefault();

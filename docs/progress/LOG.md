@@ -3830,3 +3830,58 @@ English test IDs survive translated titles.
 English copy was preserved verbatim where tests pin it, and no tests were added or changed.
 Verification: typecheck 12/12, lint 12/12 plus boundary guard (one pre-existing React
 Compiler warning), formatting clean, build 5/5, app **365** tests, e2e **160/160**.
+
+---
+
+Session 61: the seed now gives the agenda a full week. `WEEK_AHEAD_SLOTS` adds 36
+appointments relative to the seed's own day, covering today through day +7, alongside the
+ten fixed rows. Rows alternate between the two rooms, with room 1 booked to dentist 1 and
+chair 1 while room 2 uses dentist 2 and chair 3; because rooms are exclusive, that fixed
+pairing is enough to keep generated rows from overlapping one another. Today and tomorrow
+avoid the fixed slots, including the two bookings that already land three days out.
+
+Generated ids start after the fixed ten. SQLite still pre-filters existing ids before
+insert, so re-running the seed does not send a row through the overlap trigger twice. The
+seed summary now reports 46 appointments.
+
+The development SQLite database was re-seeded twice: 46 rows total, distributed 6 today,
+8 tomorrow, and 4 on each day through day +7. Database typecheck, lint and formatting pass.
+
+---
+
+Session 62: `/settings` is no longer a scaffold. The clinic profile (name, legal name, tax
+id, address, phone, email), timezone and currency, and all seven opening-hour rows are
+editable. `PUT /api/v1/clinic` requires `clinic:manage`, which only the administrator
+holds; the existing `GET /api/v1/clinic` keeps `clinic:read`. The response is the saved
+`Clinic`, so the form resets against the server's record rather than its draft.
+
+The slice runs through every layer. `updateClinicSettings` trims text, turns blank optional
+fields into `null`, uppercases the three-letter currency, rejects an unknown IANA zone,
+requires `HH:MM`, unique ISO weekdays 1–7 and a close after the open unless the day is
+closed; a closed day's times become empty. `updateClinicSettingsSchema` enforces the same
+shape at the HTTP boundary and answers `422 VALIDATION_ERROR` with the Zod issues. Both
+`ClinicRepository` implementations update the clinic row and replace the whole week inside
+one transaction: present days are upserted, absent days deleted, and the break columns are
+left alone because the upsert does not name them. No migration was needed — the columns and
+`clinic_operating_hours` already existed.
+
+The page loads through `useClinicSettings` (`['clinic','settings']`), submits through
+`useUpdateClinicSettings`, and invalidates that key because the query's `staleTime` is
+infinite. Missing weekdays render as closed. The whole screen is translated in both
+catalogues. UI permission gating was intentionally not added, matching the other pages;
+the API is the barrier.
+
+**Tests.** +9 domain (`update-clinic-settings.test.ts`: normalization, nulling, whitespace
+name, timezone, currency, duplicate day, reversed range, malformed time, missing clinic),
++6 validation schema cases, +3 app component (prefill, PUT body with uppercase currency and
+closed day, forbidden keeps the draft), +3 browser specs (prefill the week, save the whole
+record, permission refusal keeps the draft) and +1 SQLite API integration (identity,
+currency, week replacement, read-back). The PostgreSQL route tests were extended by four
+cases but remain skipped without `TEST_DATABASE_URL`; this machine has no PostgreSQL/Docker.
+
+**Verification.** Typecheck 12/12 · lint 12/12 + boundary guard · format clean · root test
+12/12 tasks (domain **385**, app **368**, API unit **130**, API integration **130 passed /
+281 skipped**, desktop 4) · build 5/5 · e2e **163/163**. The first browser run failed on the
+new spec's own heading assertion (`Settings` instead of `Clinic settings`); the page was
+correct, the assertion was fixed and the full suite rerun green. Database unchanged (no
+migration). Docs: `frontend.md` scaffold marker.

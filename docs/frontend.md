@@ -46,7 +46,7 @@ packages/app/src/
 │   ├── patients/           (scaffold, Milestone 4)
 │   ├── visits/             (scaffold, Milestone 6)
 │   ├── odontogram/         (scaffold, Milestone 7)
-│   └── settings/           (scaffold)
+│   └── settings/           clinic profile + opening hours (Milestone 12)
 ├── shared/
 │   ├── page-frame.tsx      Consistent page header/content/footer composition
 │   ├── query-state.tsx     <QueryState/> loading|error|empty with retry
