@@ -8,6 +8,8 @@ export const dashboard = {
   'dashboard.section.todayAppointments': "Today's appointments",
   'dashboard.section.clinicStatistics': 'Clinic statistics',
   'dashboard.section.schedule': 'Schedule',
+  'dashboard.metrics.today': 'Today',
+  'dashboard.metrics.clinic': 'Clinic',
 
   'dashboard.stats.appointments.title': 'Appointments',
   'dashboard.stats.appointments.description': 'Booked today',
@@ -62,6 +64,7 @@ export const dashboard = {
 
   'dashboard.upcomingVisits.title': 'Upcoming Visits',
   'dashboard.upcomingVisits.description': 'Next scheduled appointments',
+  'dashboard.upcomingVisits.viewAll': 'View all',
   'dashboard.upcomingVisits.error': 'Upcoming visits could not be loaded.',
   'dashboard.upcomingVisits.empty': 'No upcoming visits.',
 } as const;

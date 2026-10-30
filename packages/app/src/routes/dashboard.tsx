@@ -85,138 +85,146 @@ function Dashboard() {
 
       <section
         aria-label={t('dashboard.section.todayAppointments')}
-        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6"
+        className="flex flex-col gap-3"
       >
-        <StatCard
-          title={t('dashboard.stats.appointments.title')}
-          testId="Appointments"
-          value={today?.appointments ?? 0}
-          description={t('dashboard.stats.appointments.description')}
-          icon={CalendarDays}
-          accent="blue"
-          isLoading={loading}
-          error={failed}
-        />
-        <StatCard
-          title={t('dashboard.stats.completed.title')}
-          testId="Completed"
-          value={today?.completed ?? 0}
-          description={t('dashboard.stats.completed.description')}
-          icon={CheckCircle2}
-          accent="green"
-          isLoading={loading}
-          error={failed}
-        />
-        <StatCard
-          title={t('dashboard.stats.pending.title')}
-          testId="Pending"
-          value={today?.pending ?? 0}
-          description={t('dashboard.stats.pending.description')}
-          icon={Clock}
-          accent="amber"
-          isLoading={loading}
-          error={failed}
-        />
-        <StatCard
-          title={t('dashboard.stats.inTreatment.title')}
-          testId="In treatment"
-          value={today?.inTreatment ?? 0}
-          description={t('dashboard.stats.inTreatment.description')}
-          icon={Stethoscope}
-          accent="violet"
-          isLoading={loading}
-          error={failed}
-        />
-        <StatCard
-          title={t('dashboard.stats.cancelled.title')}
-          testId="Cancelled"
-          value={today?.cancelled ?? 0}
-          description={t('dashboard.stats.cancelled.description')}
-          icon={CircleSlash}
-          accent="rose"
-          isLoading={loading}
-          error={failed}
-        />
-        <StatCard
-          title={t('dashboard.stats.noShow.title')}
-          testId="No-show"
-          value={today?.noShow ?? 0}
-          description={t('dashboard.stats.noShow.description')}
-          icon={CircleDashed}
-          accent="slate"
-          isLoading={loading}
-          error={failed}
-        />
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {t('dashboard.metrics.today')}
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+          <StatCard
+            title={t('dashboard.stats.appointments.title')}
+            testId="Appointments"
+            value={today?.appointments ?? 0}
+            description={t('dashboard.stats.appointments.description')}
+            icon={CalendarDays}
+            accent="blue"
+            isLoading={loading}
+            error={failed}
+          />
+          <StatCard
+            title={t('dashboard.stats.completed.title')}
+            testId="Completed"
+            value={today?.completed ?? 0}
+            description={t('dashboard.stats.completed.description')}
+            icon={CheckCircle2}
+            accent="green"
+            isLoading={loading}
+            error={failed}
+          />
+          <StatCard
+            title={t('dashboard.stats.pending.title')}
+            testId="Pending"
+            value={today?.pending ?? 0}
+            description={t('dashboard.stats.pending.description')}
+            icon={Clock}
+            accent="amber"
+            isLoading={loading}
+            error={failed}
+          />
+          <StatCard
+            title={t('dashboard.stats.inTreatment.title')}
+            testId="In treatment"
+            value={today?.inTreatment ?? 0}
+            description={t('dashboard.stats.inTreatment.description')}
+            icon={Stethoscope}
+            accent="violet"
+            isLoading={loading}
+            error={failed}
+          />
+          <StatCard
+            title={t('dashboard.stats.cancelled.title')}
+            testId="Cancelled"
+            value={today?.cancelled ?? 0}
+            description={t('dashboard.stats.cancelled.description')}
+            icon={CircleSlash}
+            accent="rose"
+            isLoading={loading}
+            error={failed}
+          />
+          <StatCard
+            title={t('dashboard.stats.noShow.title')}
+            testId="No-show"
+            value={today?.noShow ?? 0}
+            description={t('dashboard.stats.noShow.description')}
+            icon={CircleDashed}
+            accent="slate"
+            isLoading={loading}
+            error={failed}
+          />
+        </div>
       </section>
 
-      <section
-        aria-label={t('dashboard.section.clinicStatistics')}
-        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
-      >
-        <StatCard
-          title={t('dashboard.stats.activePatients.title')}
-          testId="Active patients"
-          value={clinic?.activePatients ?? 0}
-          description={t('dashboard.stats.activePatients.description')}
-          icon={Users}
-          accent="blue"
-          isLoading={loading}
-          error={failed}
-        />
-        <StatCard
-          title={t('dashboard.stats.collected.title')}
-          testId="Collected this month"
-          value={
-            clinic
-              ? `${formatMinorUnits(clinic.collectedThisMonthMinor)}${
-                  clinic.currencyCode ? ` ${clinic.currencyCode}` : ''
-                }`
-              : '0.00'
-          }
-          description={t('dashboard.stats.collected.description')}
-          icon={DollarSign}
-          accent="green"
-          isLoading={loading}
-          error={failed}
-        />
-        <StatCard
-          title={t('dashboard.stats.pendingTreatments.title')}
-          testId="Pending treatments"
-          value={clinic?.pendingTreatmentItems ?? 0}
-          description={t('dashboard.stats.pendingTreatments.description')}
-          icon={ClipboardList}
-          accent="amber"
-          isLoading={loading}
-          error={failed}
-        />
-        <StatCard
-          title={t('dashboard.stats.occupancy.title')}
-          testId="Occupancy"
-          // `null` means the API could not determine today's capacity, which is
-          // not the same as an empty clinic.
-          value={
-            clinic?.occupancyRate === null || clinic?.occupancyRate === undefined
-              ? '—'
-              : `${clinic.occupancyRate}%`
-          }
-          description={t('dashboard.stats.occupancy.description')}
-          icon={Gauge}
-          accent="violet"
-          isLoading={loading}
-          error={failed}
-          isUnknown={clinic?.occupancyRate === null}
-        />
+      <section aria-label={t('dashboard.section.clinicStatistics')} className="flex flex-col gap-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {t('dashboard.metrics.clinic')}
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            title={t('dashboard.stats.activePatients.title')}
+            testId="Active patients"
+            value={clinic?.activePatients ?? 0}
+            description={t('dashboard.stats.activePatients.description')}
+            icon={Users}
+            accent="blue"
+            isLoading={loading}
+            error={failed}
+          />
+          <StatCard
+            title={t('dashboard.stats.collected.title')}
+            testId="Collected this month"
+            value={
+              clinic
+                ? `${formatMinorUnits(clinic.collectedThisMonthMinor)}${
+                    clinic.currencyCode ? ` ${clinic.currencyCode}` : ''
+                  }`
+                : '0.00'
+            }
+            description={t('dashboard.stats.collected.description')}
+            icon={DollarSign}
+            accent="green"
+            isLoading={loading}
+            error={failed}
+          />
+          <StatCard
+            title={t('dashboard.stats.pendingTreatments.title')}
+            testId="Pending treatments"
+            value={clinic?.pendingTreatmentItems ?? 0}
+            description={t('dashboard.stats.pendingTreatments.description')}
+            icon={ClipboardList}
+            accent="amber"
+            isLoading={loading}
+            error={failed}
+          />
+          <StatCard
+            title={t('dashboard.stats.occupancy.title')}
+            testId="Occupancy"
+            // `null` means the API could not determine today's capacity, which is
+            // not the same as an empty clinic.
+            value={
+              clinic?.occupancyRate === null || clinic?.occupancyRate === undefined
+                ? '—'
+                : `${clinic.occupancyRate}%`
+            }
+            description={t('dashboard.stats.occupancy.description')}
+            icon={Gauge}
+            accent="violet"
+            isLoading={loading}
+            error={failed}
+            isUnknown={clinic?.occupancyRate === null}
+          />
+        </div>
       </section>
+
+      <QuickActionsPanel />
 
       <section aria-label={t('dashboard.section.schedule')} className="grid gap-6 lg:grid-cols-3">
         <div className="flex flex-col gap-6 lg:col-span-2">
           <TodayAppointments />
           <CalendarPreview />
-          <QuickActionsPanel />
         </div>
         <div className="flex flex-col gap-6">
-          <RecentPatients />
           <UpcomingVisits />
+          <RecentPatients />
         </div>
       </section>
 

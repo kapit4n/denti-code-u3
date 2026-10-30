@@ -5,7 +5,9 @@
  * server-side, so this list never has to decide what counts as "upcoming".
  */
 
+import { Link } from '@tanstack/react-router';
 import {
+  Button,
   Card,
   CardContent,
   CardDescription,
@@ -26,7 +28,15 @@ export function UpcomingVisits() {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="relative">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="absolute right-4 top-4 text-muted-foreground"
+        >
+          <Link to="/visits">{t('dashboard.upcomingVisits.viewAll')}</Link>
+        </Button>
         <CardTitle>{t('dashboard.upcomingVisits.title')}</CardTitle>
         <CardDescription>{t('dashboard.upcomingVisits.description')}</CardDescription>
       </CardHeader>

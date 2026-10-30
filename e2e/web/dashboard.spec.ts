@@ -156,6 +156,25 @@ test.describe('Dashboard', () => {
     await expect(page).toHaveURL(new RegExp(`/patients/${ANA_ID}$`));
   });
 
+  test('groups the metrics and links the schedule cards onward', async ({ page }) => {
+    await page.goto('/dashboard');
+
+    await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Clinic', exact: true })).toBeVisible();
+
+    const upcoming = cardTitled(page, 'Upcoming Visits');
+    await expect(upcoming.getByRole('link', { name: 'View all' })).toHaveAttribute(
+      'href',
+      '/visits',
+    );
+
+    const calendar = cardTitled(page, 'Calendar Preview');
+    await expect(calendar.getByRole('link', { name: 'Open agenda' })).toHaveAttribute(
+      'href',
+      '/agenda',
+    );
+  });
+
   test('renders one bar per day that has bookings', async ({ page }) => {
     await page.goto('/dashboard');
 

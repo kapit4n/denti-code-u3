@@ -8,6 +8,8 @@ export const dashboard = {
   'dashboard.section.todayAppointments': 'Citas de hoy',
   'dashboard.section.clinicStatistics': 'Estadísticas de la clínica',
   'dashboard.section.schedule': 'Agenda del día',
+  'dashboard.metrics.today': 'Hoy',
+  'dashboard.metrics.clinic': 'Clínica',
 
   'dashboard.stats.appointments.title': 'Citas',
   'dashboard.stats.appointments.description': 'Reservadas para hoy',
@@ -62,6 +64,7 @@ export const dashboard = {
 
   'dashboard.upcomingVisits.title': 'Próximas visitas',
   'dashboard.upcomingVisits.description': 'Siguientes citas programadas',
+  'dashboard.upcomingVisits.viewAll': 'Ver todas',
   'dashboard.upcomingVisits.error': 'No se pudieron cargar las próximas visitas.',
   'dashboard.upcomingVisits.empty': 'No hay próximas visitas.',
 } as const;

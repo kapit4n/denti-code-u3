@@ -14,22 +14,39 @@
  * quiet fortnight, and there is no way to tell "closed" from "nothing booked".
  */
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@denti-code-u3/ui';
+import { Link } from '@tanstack/react-router';
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@denti-code-u3/ui';
 
-import { useTranslation } from '../../../i18n/index.js';
+import { useLocale, useTranslation } from '../../../i18n/index.js';
 import { useCalendarPreview } from '../hooks/use-dashboard-stats.js';
 
 const WINDOW_DAYS = 14;
 
 export function CalendarPreview() {
   const { t } = useTranslation();
+  const locale = useLocale();
   const { data, isPending, error } = useCalendarPreview(WINDOW_DAYS);
 
   const busiest = data ? Math.max(1, ...data.items.map((day) => day.total)) : 1;
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="relative">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="absolute right-4 top-4 text-muted-foreground"
+        >
+          <Link to="/agenda">{t('dashboard.todayAppointments.openAgenda')}</Link>
+        </Button>
         <CardTitle>{t('dashboard.calendar.title')}</CardTitle>
         <CardDescription>
           {t('dashboard.calendar.description', { days: WINDOW_DAYS })}
@@ -42,26 +59,46 @@ export function CalendarPreview() {
         ) : error ? (
           <p className="text-sm text-destructive">{t('dashboard.calendar.error')}</p>
         ) : data && data.items.length > 0 ? (
-          <ul className="flex items-end gap-1.5" style={{ height: '7rem' }}>
-            {data.items.map((day) => (
-              <li
-                key={day.day}
-                className="group flex flex-1 flex-col justify-end gap-1"
-                title={t('dashboard.calendar.barTitle', {
-                  date: day.day,
-                  total: day.total,
-                  completed: day.completed,
-                })}
-              >
-                <div
-                  className="w-full rounded-t bg-primary/80 transition-colors group-hover:bg-primary"
-                  style={{ height: `${Math.max(6, Math.round((day.total / busiest) * 100))}%` }}
-                />
-                <span className="text-center text-[10px] tabular-nums text-muted-foreground">
-                  {day.day.slice(8)}
-                </span>
-              </li>
-            ))}
+          <ul className="flex items-stretch gap-1.5">
+            {data.items.map((day) => {
+              const label = t('dashboard.calendar.barTitle', {
+                date: day.day,
+                total: day.total,
+                completed: day.completed,
+              });
+              return (
+                <li
+                  key={day.day}
+                  className="group flex flex-1 flex-col items-center gap-1"
+                  aria-label={label}
+                  title={label}
+                >
+                  <span
+                    aria-hidden
+                    className="text-[10px] font-medium tabular-nums text-muted-foreground"
+                  >
+                    {day.total}
+                  </span>
+                  <div aria-hidden className="flex h-24 w-full items-end">
+                    <div
+                      className="w-full rounded-t bg-primary/80 transition-colors group-hover:bg-primary"
+                      style={{
+                        height: `${Math.max(8, Math.round((day.total / busiest) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                  <span
+                    aria-hidden
+                    className="flex flex-col items-center text-[10px] leading-tight text-muted-foreground"
+                  >
+                    <span className="font-medium text-foreground">
+                      {formatWeekday(day.day, locale)}
+                    </span>
+                    <span className="tabular-nums">{day.day.slice(8)}</span>
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -71,4 +108,10 @@ export function CalendarPreview() {
       </CardContent>
     </Card>
   );
+}
+
+function formatWeekday(isoDay: string, locale: string): string {
+  const date = new Date(`${isoDay}T12:00:00Z`);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(date);
 }
