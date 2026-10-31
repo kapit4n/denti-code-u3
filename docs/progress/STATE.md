@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 70 (patient-profile payment action moved to the server balance)
+> Last updated: session 71 (patient-list payment-due badge)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -83,6 +83,19 @@ compuesta` and descriptions read as aesthetic fillings. Remaining seeded composi
 > selects it and defaults the amount; when none are collectible it shows an explanation and
 > no disabled controls instead of a dead form. The older balance card remains, but it no
 > longer owns the action. No API, domain, validation or database change.
+>
+> **Session 71** added the patient-list **Payment due** badge. Each row now carries
+> `hasOutstandingBalance`, computed by the same invoice-ledger rule as the profile
+> balance: issued documents' stored totals minus money received, excluding `DRAFT` and
+> `VOID`. The list deliberately exposes the fact rather than an amount, and does not use
+> the older charges-minus-payments card, which can show debt with no invoice to collect
+> against. Both engines compute it in the patient query with a correlated scalar
+> subquery, so paging stays one page query plus one count. The badge is a warning-tone
+> `span`, because there is no shared `Badge` primitive, and it is translated in English
+> and Spanish. The PostgreSQL twin uses explicit `sql.identifier('patients')`
+> qualification: an unqualified correlated id resolved to the inner invoice row and made
+> the smoke test read every patient as settled. No migration, port method or validation
+> change.
 
 ## Phase
 

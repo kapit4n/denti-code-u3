@@ -24,7 +24,7 @@ import {
   type EditablePatientDetails,
   type Patient,
   type PatientFinancialBalance,
-  type PatientListEntry,
+  type PatientListRow,
   type PatientOdontogram,
   type PatientProfile,
   type PatientRepository,
@@ -46,6 +46,7 @@ import {
   appointments,
   charges,
   clinics,
+  invoices,
   odontogramEntries,
   patients,
   payments,
@@ -243,7 +244,7 @@ export class DrizzlePatientRepository implements PatientRepository {
     clinicId: ClinicId,
     query: PatientSearchQuery,
   ): Promise<{
-    readonly items: readonly PatientListEntry[];
+    readonly items: readonly PatientListRow[];
     readonly total: number;
   }> {
     const term = normaliseTerm(query.term);
@@ -285,6 +286,26 @@ export class DrizzlePatientRepository implements PatientRepository {
           birthDate: patients.birthDate,
           isActive: patients.isActive,
           createdAt: patients.createdAt,
+          /**
+           * The list badge's whole question. This is the same rule as
+           * `calculatePatientBalance`: DRAFT and VOID are not bills, and every
+           * payment the patient made counts. A scalar subquery keeps it on the
+           * same row as the patient, so paging does not multiply rows or issue a
+           * query per patient.
+           */
+          hasOutstandingBalance: sql<number>`case when (
+            coalesce((
+              select sum(${invoices.totalMinor}) from ${invoices}
+              where ${invoices.clinicId} = ${clinicId}
+                and ${invoices.patientId} = ${sql.identifier('patients')}.${sql.identifier('id')}
+                and ${invoices.status} not in ('DRAFT', 'VOID')
+            ), 0)
+            > coalesce((
+              select sum(${payments.amountMinor}) from ${payments}
+              where ${payments.clinicId} = ${clinicId}
+                and ${payments.patientId} = ${sql.identifier('patients')}.${sql.identifier('id')}
+            ), 0)
+          ) then 1 else 0 end`,
         })
         .from(patients)
         .where(where)
@@ -306,6 +327,7 @@ export class DrizzlePatientRepository implements PatientRepository {
         birthDate: row.birthDate,
         isActive: row.isActive,
         createdAt: isoTimestamp(row.createdAt),
+        hasOutstandingBalance: row.hasOutstandingBalance === 1,
       })),
       total: totals?.total ?? 0,
     };

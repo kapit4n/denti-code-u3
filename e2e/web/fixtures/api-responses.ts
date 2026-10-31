@@ -46,6 +46,8 @@ export interface PatientSummaryFixture {
   readonly birthDate: string | null;
   readonly isActive: boolean;
   readonly createdAt: string;
+  /** Whether the list should mark this patient as owing money. */
+  readonly hasOutstandingBalance: boolean;
 }
 
 export const patientSummaries: readonly PatientSummaryFixture[] = [
@@ -60,6 +62,7 @@ export const patientSummaries: readonly PatientSummaryFixture[] = [
     birthDate: '1985-11-02',
     isActive: true,
     createdAt: '2026-10-03T00:06:36.214Z',
+    hasOutstandingBalance: false,
   },
   {
     id: ANA_ID,
@@ -72,6 +75,8 @@ export const patientSummaries: readonly PatientSummaryFixture[] = [
     birthDate: '1991-04-17',
     isActive: true,
     createdAt: '2026-10-03T00:06:36.214Z',
+    // Ana has an open invoice in {@link anaBalance}; the list marks her.
+    hasOutstandingBalance: true,
   },
   {
     // Inactive, so the list has to render the marker rather than assume every
@@ -86,6 +91,7 @@ export const patientSummaries: readonly PatientSummaryFixture[] = [
     birthDate: '1979-06-30',
     isActive: false,
     createdAt: '2026-10-03T00:06:36.214Z',
+    hasOutstandingBalance: false,
   },
 ];
 

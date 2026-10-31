@@ -57,6 +57,22 @@ export interface PatientListEntry {
 }
 
 /**
+ * One patient-list row, with the one billing fact the list has to act on.
+ *
+ * `hasOutstandingBalance` is the same rule as `GET /patients/:id/balance`: issued
+ * documents' stored totals minus money received. DRAFT and VOID are not bills, and
+ * a patient in credit does not owe. The list only needs the fact, not the amount;
+ * the profile's Balance card owns the figure.
+ *
+ * The charges-minus-payments card is deliberately not the source: it can show money
+ * owed when no invoice exists, and the payment door can only collect against an
+ * invoice. A badge must never send the front desk to a form with nothing to pay.
+ */
+export interface PatientListRow extends PatientListEntry {
+  readonly hasOutstandingBalance: boolean;
+}
+
+/**
  * The profile: the record plus the clinical context a clinician needs on open.
  *
  * Assembled as one response because a profile built from five round trips renders

@@ -11,6 +11,7 @@ export const patients = {
   'patients.list.noRecordNumber': 'Sin número de ficha',
   'patients.list.born': 'nació el {date}',
   'patients.list.inactive': 'Inactivo',
+  'patients.list.paymentDue': 'Pago pendiente',
   'patients.list.paginationAria': 'Paginación',
   'patients.list.previous': 'Anterior',
   'patients.list.next': 'Siguiente',

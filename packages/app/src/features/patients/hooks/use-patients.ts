@@ -18,7 +18,7 @@ import type {
   InvoiceDetail,
   InvoiceSummary,
   PatientBalance,
-  PatientListEntry,
+  PatientListRow,
   PatientOdontogram,
   PatientProfile,
   PatientStatement,
@@ -28,7 +28,7 @@ import type {
 import { useApiClient } from '../../../query/api-client-provider.js';
 
 export interface PatientListResponse {
-  readonly items: readonly PatientListEntry[];
+  readonly items: readonly PatientListRow[];
   readonly pagination: {
     readonly page: number;
     readonly limit: number;

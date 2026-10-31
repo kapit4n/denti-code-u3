@@ -4092,3 +4092,36 @@ invoice, amount, method and submit controls are not rendered. Root tests 12/12 t
 **376**, desktop 4) · full e2e **167/167** · build 5/5 · typecheck, lint, boundary guard
 and format check clean apart from the two pre-existing React Compiler warnings and the
 existing boundary-scanner false positive. No API, domain, validation or database change.
+
+---
+
+Session 71: the patient list now marks a patient whose previous treatment is still unpaid.
+
+The row read model gained `PatientListRow extends PatientListEntry` with
+`hasOutstandingBalance`. The rule is the profile balance's rule rather than the older
+charges-minus-payments card: issued documents' stored totals minus all money received,
+with `DRAFT` and `VOID` excluded. That matters because the collection door is
+invoice-scoped; a badge must not send the front desk to a patient with nothing to pay.
+The list carries the fact only, not the amount, so the profile Balance card remains the
+one place that owns the figure.
+
+Both engines compute the fact inside the existing patient page query with correlated
+scalar subqueries over `invoices` and `payments`, so paging stays one page query plus one
+count and there is no per-row request. The PostgreSQL twin had to qualify the correlation
+as `sql.identifier('patients').id`: Drizzle rendered `${patients.id}` unqualified, and
+SQLite resolved it to the inner invoice row, making every patient look settled. The
+smoke test caught it. The list response is otherwise unchanged.
+
+The app renders a warning-tone `span` with `data-testid="patient-payment-due"` and the
+new `patients.list.paymentDue` copy in English and Spanish; there is no shared `Badge`
+primitive to extend. The fixture gives Ana an open invoice so the browser spec can prove
+only her row is marked.
+
+**Tests.** The SQLite smoke suite still has 31 cases; the invoice block now asserts the
+list row flips from owed to settled as its invoice is paid. E2E gained one patient-list
+spec, 167 → **168**. Root tests 12/12 tasks (validation 163, domain 397, api-client 15,
+database 6, API 132 passed / 281 skipped, app 376, desktop 4) · SQLite smoke 31/31 · full
+e2e **168/168** · build 5/5 · typecheck, lint, boundary guard and format check clean apart
+from the two pre-existing React Compiler warnings and the existing boundary-scanner false
+positive. No migration, repository method or validation change; PostgreSQL integration
+assertions still skip without `TEST_DATABASE_URL`.

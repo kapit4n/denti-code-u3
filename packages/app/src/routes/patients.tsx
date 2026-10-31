@@ -11,7 +11,15 @@
 
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
-import { Button, Card, CardContent, CardHeader, CardTitle, Input } from '@denti-code-u3/ui';
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Input,
+  STATUS_TONE_CLASS,
+} from '@denti-code-u3/ui';
 import { Search, UserPlus } from 'lucide-react';
 
 import { usePatientList } from '../features/patients/hooks/use-patients.js';
@@ -128,11 +136,21 @@ function PatientList() {
                             : ''}
                         </p>
                       </div>
-                      {!patient.isActive ? (
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          {t('patients.list.inactive')}
-                        </span>
-                      ) : null}
+                      <div className="flex shrink-0 items-center gap-2">
+                        {patient.hasOutstandingBalance ? (
+                          <span
+                            data-testid="patient-payment-due"
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_TONE_CLASS.warning}`}
+                          >
+                            {t('patients.list.paymentDue')}
+                          </span>
+                        ) : null}
+                        {!patient.isActive ? (
+                          <span className="text-xs text-muted-foreground">
+                            {t('patients.list.inactive')}
+                          </span>
+                        ) : null}
+                      </div>
                     </Link>
                   </li>
                 ))}

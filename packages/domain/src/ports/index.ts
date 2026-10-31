@@ -49,7 +49,7 @@ import type { OdontogramEntryRecord } from '../odontogram/index.js';
 import type {
   EditablePatientDetails,
   Patient,
-  PatientListEntry,
+  PatientListRow,
   PatientOdontogram,
   PatientProfile,
 } from '../patient/index.js';
@@ -243,7 +243,7 @@ export interface PatientRepository extends PatientWriteRepository {
    * UI needs it for the page control, and computing it against a page of rows
    * instead of the filtered set is how a list ends up claiming nine pages of one.
    */
-  search(clinicId: ClinicId, query: PatientSearchQuery): Promise<Page<PatientListEntry>>;
+  search(clinicId: ClinicId, query: PatientSearchQuery): Promise<Page<PatientListRow>>;
 
   /**
    * The clinical profile, or `undefined` when this clinic holds no such patient.

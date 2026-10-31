@@ -55,6 +55,20 @@ test.describe('Patient list', () => {
     expect(errors).toEqual([]);
   });
 
+  test('marks a patient whose previous treatment is still unpaid', async ({ page }) => {
+    await installApi(page, { [LIST_PATH]: { body: PATIENT_LIST_RESPONSE } });
+
+    await page.goto('/patients');
+
+    // The badge belongs to the row, not to the page: Ana owes, Luis does not.
+    const owing = page.getByRole('link', { name: /Ana García/ });
+    await expect(owing.getByTestId('patient-payment-due')).toHaveText('Payment due');
+    await expect(page.getByRole('link', { name: /Luis Fernández/ })).not.toContainText(
+      'Payment due',
+    );
+    await expect(page.getByTestId('patient-payment-due')).toHaveCount(1);
+  });
+
   test('sends the debounced search query to the server', async ({ page }) => {
     const api = await installApi(page, {
       [LIST_PATH]: {

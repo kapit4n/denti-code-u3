@@ -1207,6 +1207,10 @@ describe('API on SQLite', () => {
       balanceMinor: 22_000,
     });
 
+    // The patient list carries the same fact, so the badge needs no second request.
+    const owing = await app.inject({ method: 'GET', url: '/api/v1/patients?q=book' });
+    expect(owing.json().items[0]).toMatchObject({ lastName: 'Book', hasOutstandingBalance: true });
+
     // A patient another clinic holds is unknown here, not owed nothing — the same
     // answer as an id that was never a patient at all.
     const foreign = await app.inject({
@@ -1623,6 +1627,13 @@ describe('API on SQLite', () => {
       allocatedMinor: 45_000,
       outstandingMinor: 0,
       balanceMinor: 0,
+    });
+
+    // Settled means no badge, even though the patient has a billing history.
+    const settled = await app.inject({ method: 'GET', url: '/api/v1/patients?q=book' });
+    expect(settled.json().items[0]).toMatchObject({
+      lastName: 'Book',
+      hasOutstandingBalance: false,
     });
 
     const statement = await app.inject({

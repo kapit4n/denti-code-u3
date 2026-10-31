@@ -32,7 +32,7 @@ import {
   type EditablePatientDetails,
   type Patient,
   type PatientFinancialBalance,
-  type PatientListEntry,
+  type PatientListRow,
   type PatientOdontogram,
   type PatientProfile,
   type PatientRepository,
@@ -54,6 +54,7 @@ import {
   appointments,
   charges,
   clinics,
+  invoices,
   odontogramEntries,
   patients,
   payments,
@@ -202,7 +203,7 @@ export class SQLitePatientRepository implements PatientRepository {
     clinicId: ClinicId,
     query: PatientSearchQuery,
   ): Promise<{
-    readonly items: readonly PatientListEntry[];
+    readonly items: readonly PatientListRow[];
     readonly total: number;
   }> {
     const term = normaliseTerm(query.term);
@@ -235,6 +236,20 @@ export class SQLitePatientRepository implements PatientRepository {
           birthDate: patients.birthDate,
           isActive: patients.isActive,
           createdAt: patients.createdAt,
+          /** The same invoice-ledger rule as the PostgreSQL twin. */
+          hasOutstandingBalance: sql<number>`case when (
+            coalesce((
+              select sum(${invoices.totalMinor}) from ${invoices}
+              where ${invoices.clinicId} = ${clinicId}
+                and ${invoices.patientId} = ${sql.identifier('patients')}.${sql.identifier('id')}
+                and ${invoices.status} not in ('DRAFT', 'VOID')
+            ), 0)
+            > coalesce((
+              select sum(${payments.amountMinor}) from ${payments}
+              where ${payments.clinicId} = ${clinicId}
+                and ${payments.patientId} = ${sql.identifier('patients')}.${sql.identifier('id')}
+            ), 0)
+          ) then 1 else 0 end`,
         })
         .from(patients)
         .where(where)
@@ -256,6 +271,7 @@ export class SQLitePatientRepository implements PatientRepository {
         birthDate: row.birthDate,
         isActive: row.isActive,
         createdAt: isoTimestamp(row.createdAt),
+        hasOutstandingBalance: row.hasOutstandingBalance === 1,
       })),
       total: totals?.total ?? 0,
     };
