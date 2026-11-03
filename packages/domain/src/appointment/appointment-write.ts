@@ -31,6 +31,7 @@ import type {
   PatientId,
 } from '@denti-code-u3/types';
 import { DomainError, notFound } from '../shared/errors.js';
+import type { Clock } from '../shared/clock.js';
 import { assertWithinOperatingHours } from '../organization/clinic.js';
 import type { Clinic } from '../organization/index.js';
 import type {
@@ -39,6 +40,7 @@ import type {
   ChairRepository,
   ClinicRepository,
   DentistRepository,
+  UnitOfWork,
 } from '../ports/index.js';
 import type { AgendaEntry } from './agenda-read-model.js';
 import {
@@ -98,6 +100,14 @@ export interface AppointmentRescheduleRequest {
 export interface AppointmentTransitionRequest {
   readonly to: AppointmentStatus;
   readonly reason?: string;
+  /** When the move happened in the clinic; defaults to the clock's now. */
+  readonly occurredAt?: IsoDateTime;
+}
+
+/** The seam a status change needs to write its status and its history together. */
+export interface AppointmentTransitionDependencies extends AppointmentWriteDependencies {
+  readonly unitOfWork: UnitOfWork;
+  readonly clock: Clock;
 }
 
 /**
@@ -279,39 +289,53 @@ export async function transitionAppointmentStatus(
   clinicId: ClinicId,
   appointmentId: AppointmentId,
   request: AppointmentTransitionRequest,
-  dependencies: AppointmentWriteDependencies,
+  dependencies: AppointmentTransitionDependencies,
 ): Promise<AgendaEntry> {
-  const existing = await dependencies.appointments.findById(clinicId, appointmentId);
-  if (!existing) {
-    throw notFound('Appointment', appointmentId);
-  }
+  const occurredAt = request.occurredAt ?? dependencies.clock.now();
 
-  assertAppointmentTransition(existing.status, request.to);
+  return dependencies.unitOfWork.transaction(async (repositories) => {
+    const scoped = { ...dependencies, appointments: repositories.appointments };
+    const existing = await scoped.appointments.findById(clinicId, appointmentId);
+    if (!existing) {
+      throw notFound('Appointment', appointmentId);
+    }
 
-  if (requiresTransitionReason(request.to) && !request.reason) {
-    throw new DomainError('INVALID_INPUT', 'A cancellation must say why', {
+    assertAppointmentTransition(existing.status, request.to);
+
+    if (requiresTransitionReason(request.to) && !request.reason) {
+      throw new DomainError('INVALID_INPUT', 'A cancellation must say why', {
+        appointmentId,
+        status: existing.status,
+      });
+    }
+
+    if (reservesSchedulingSlot(request.to)) {
+      // Re-entering a status that holds a slot: the slot has to be free.
+      const candidate: Appointment = { ...existing, status: request.to };
+      assertNoSchedulingConflicts(candidate, await overlappingAppointments(scoped, candidate));
+    }
+
+    const saved = await scoped.appointments.changeStatus(
+      clinicId,
       appointmentId,
-      status: existing.status,
-    });
-  }
+      request.to,
+      request.reason,
+    );
+    if (!saved) {
+      throw notFound('Appointment', appointmentId);
+    }
 
-  if (reservesSchedulingSlot(request.to)) {
-    // Re-entering a status that holds a slot: the slot has to be free.
-    const candidate: Appointment = { ...existing, status: request.to };
-    assertNoSchedulingConflicts(candidate, await overlappingAppointments(dependencies, candidate));
-  }
+    await scoped.appointments.recordStatusChange(
+      clinicId,
+      appointmentId,
+      existing.status,
+      request.to,
+      occurredAt,
+      request.reason,
+    );
 
-  const saved = await dependencies.appointments.changeStatus(
-    clinicId,
-    appointmentId,
-    request.to,
-    request.reason,
-  );
-  if (!saved) {
-    throw notFound('Appointment', appointmentId);
-  }
-
-  return entryFor(saved, dependencies);
+    return entryFor(saved, scoped);
+  });
 }
 
 /**

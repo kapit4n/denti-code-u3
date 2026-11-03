@@ -29,9 +29,11 @@ import { fileURLToPath } from 'node:url';
 import * as schema from '@denti-code-u3/database/schema';
 import { registerAppointmentsRoutes } from '../src/http/routes/appointments.js';
 import { DrizzleAppointmentRepository } from '../src/infrastructure/persistence/repositories/appointment-repository.js';
+import { DrizzleUnitOfWork } from '../src/infrastructure/persistence/postgres/unit-of-work.js';
 import { DrizzleClinicRepository } from '../src/infrastructure/persistence/repositories/clinic-repository.js';
 import { DrizzleDentistRepository } from '../src/infrastructure/persistence/repositories/dentist-repository.js';
 import { DrizzleChairRepository } from '../src/infrastructure/persistence/repositories/chair-repository.js';
+import { systemClock } from '../src/infrastructure/clock/system-clock.js';
 import { uuidGenerator } from '../src/infrastructure/id/uuid-generator.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
 
@@ -89,6 +91,8 @@ describeIntegration('GET /api/v1/appointments (PostgreSQL)', () => {
       chairs: new DrizzleChairRepository(db),
       clinics: new DrizzleClinicRepository(db),
       ids: uuidGenerator,
+      unitOfWork: new DrizzleUnitOfWork(db),
+      clock: systemClock,
     });
 
     await sql`

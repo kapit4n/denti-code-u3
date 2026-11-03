@@ -50,6 +50,23 @@ export const agenda = {
   'agenda.panel.keep': 'Keep it',
   'agenda.panel.finished': 'This appointment is finished. Its record is kept as it is.',
   'agenda.panel.updateError': 'The appointment could not be updated.',
+  'agenda.panel.recordTime': '{action}: when did it happen?',
+  'agenda.panel.useCurrentTime': 'Use current time',
+  'agenda.panel.date': 'Date',
+  'agenda.panel.time': 'Time',
+  'agenda.panel.back': 'Back',
+  'agenda.panel.invalidTime':
+    'That time does not exist on that date in {timeZone}. Choose another time.',
+  'agenda.panel.reschedule': 'Reschedule',
+  'agenda.panel.move30': 'Move 30 minutes later',
+  'agenda.panel.chooseTime': 'Choose another time',
+  'agenda.panel.newTime': 'New appointment time',
+  'agenda.panel.moveAppointment': 'Move appointment',
+
+  'agenda.progress.title': 'Progress',
+  'agenda.progress.loading': 'Loading the appointment history…',
+  'agenda.progress.error': 'The appointment history could not be loaded.',
+  'agenda.progress.empty': 'No moves recorded yet.',
 
   'agenda.booking.newForPatient': 'New appointment for {patient}',
   'agenda.booking.new': 'New appointment',

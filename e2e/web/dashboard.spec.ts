@@ -115,6 +115,87 @@ test.describe('Dashboard', () => {
     await expect(appointments.getByText(/CONFIRMED/)).toBeVisible();
   });
 
+  test('shows how soon or how late each waiting appointment is', async ({ page }) => {
+    await installApi(page, {
+      ...allDashboardFixtures(),
+      '/api/v1/dashboard/today-appointments': {
+        body: {
+          items: [
+            {
+              id: '11111111-4444-4555-8666-000000000001',
+              startsAt: '2026-10-05T12:45:00.000Z',
+              durationMinutes: 45,
+              status: 'CONFIRMED',
+              dentistId: '11111111-2222-4333-8444-000000000001',
+              firstName: 'Ana',
+              lastName: 'García',
+            },
+            {
+              id: '11111111-4444-4555-8666-000000000002',
+              startsAt: '2026-10-05T14:00:00.000Z',
+              durationMinutes: 60,
+              status: 'SCHEDULED',
+              dentistId: '11111111-2222-4333-8444-000000000001',
+              firstName: 'Luis',
+              lastName: 'Fernández',
+            },
+            {
+              id: '11111111-4444-4555-8666-000000000003',
+              startsAt: '2026-10-05T13:03:00.000Z',
+              durationMinutes: 30,
+              status: 'SCHEDULED',
+              dentistId: null,
+              firstName: 'Marta',
+              lastName: 'Quispe',
+            },
+          ],
+        },
+      },
+    });
+
+    await page.goto('/dashboard');
+
+    const appointments = cardTitled(page, "Today's Appointments");
+    const ana = appointments.getByRole('listitem').filter({ hasText: 'Ana García' });
+    const luis = appointments.getByRole('listitem').filter({ hasText: 'Luis Fernández' });
+    const marta = appointments.getByRole('listitem').filter({ hasText: 'Marta Quispe' });
+
+    await expect(ana.getByTestId('appointment-countdown')).toHaveText('late 15 min');
+    await expect(ana.getByTestId('appointment-countdown')).toHaveAttribute(
+      'data-countdown-kind',
+      'late',
+    );
+    await expect(luis.getByTestId('appointment-countdown')).toHaveText('in 1 h');
+    await expect(marta.getByTestId('appointment-countdown')).toHaveText('in 3 min');
+  });
+
+  test('does not count down an appointment that already arrived', async ({ page }) => {
+    await installApi(page, {
+      ...allDashboardFixtures(),
+      '/api/v1/dashboard/today-appointments': {
+        body: {
+          items: [
+            {
+              id: '11111111-4444-4555-8666-000000000001',
+              startsAt: '2026-10-05T13:00:00.000Z',
+              durationMinutes: 45,
+              status: 'ARRIVED',
+              dentistId: '11111111-2222-4333-8444-000000000001',
+              firstName: 'Ana',
+              lastName: 'García',
+            },
+          ],
+        },
+      },
+    });
+
+    await page.goto('/dashboard');
+
+    const appointments = cardTitled(page, "Today's Appointments");
+    await expect(appointments.getByText('ARRIVED')).toBeVisible();
+    await expect(appointments.getByTestId('appointment-countdown')).toHaveCount(0);
+  });
+
   test('says so plainly when the day has no appointments', async ({ page }) => {
     await installApi(page, {
       ...allDashboardFixtures(),

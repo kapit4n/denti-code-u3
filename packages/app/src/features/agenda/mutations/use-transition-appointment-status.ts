@@ -40,6 +40,9 @@ export function useTransitionAppointmentStatus() {
         input,
       ),
     onSuccess: async (entry) => {
+      await queryClient.invalidateQueries({
+        queryKey: ['appointments', entry.id, 'progress'],
+      });
       await invalidateScheduleQueries(queryClient, entry.patientId);
     },
   });

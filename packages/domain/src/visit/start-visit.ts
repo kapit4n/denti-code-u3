@@ -116,6 +116,14 @@ export async function startVisit(
       throw notFound('Appointment', appointmentId);
     }
 
+    await repositories.appointments.recordStatusChange(
+      clinicId,
+      appointmentId,
+      appointment.status,
+      started.appointment.status,
+      started.visit.startedAt ?? dependencies.clock.now(),
+    );
+
     return { visit: started.visit, appointment: moved };
   });
 }

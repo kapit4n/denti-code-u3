@@ -4207,3 +4207,70 @@ spec deliberately keeps arbitrary currencies, and API integration fixtures keep 
 Prettier passed apart from the two pre-existing React Compiler warnings · SQLite migrate
 and seed passed on both the local file and a fresh temporary database · e2e **169/169**.
 Root `pnpm run test` remains red only for the wall-clock failure. No commit.
+
+---
+
+Session 75: Today's Appointments now shows how soon or how late each waiting appointment is.
+
+A pure `appointment-countdown.ts` helper compares the API's UTC `startsAt` with the current
+instant. Scheduled and confirmed appointments show `in 3 min`, `in 1 h 5 min`, `now`, or
+`late 12 min`; arrived, in-treatment and closed appointments show no countdown because
+their status already says what they are. Future partial minutes round up so nothing reads
+`in 0 min`, and lateness rounds down so only a full minute is named. Starts within 15
+minutes are warning-toned, late ones danger, farther starts neutral.
+
+One `useNow` hook per card ticks every 15 seconds, so every row updates together and the
+timer dies with the component. The countdown badge sits above the status badge. English and
+Spanish carry minute, hour, mixed-hour, now and late forms. The dashboard fixture's
+today-appointments rows were moved from the stale 2026-10-03 capture to the frozen suite day
+(2026-10-05), so browser assertions compare against the same clock the suite runs on.
+
+**Tests.** 10 new countdown tests plus 1 hook test; app **389** total, with 388 passing and
+only the pre-existing `zoned-wall-clock.test.ts` repeated-hour failure. Browser coverage
+checks `late 15 min`, `in 1 h`, `in 3 min`, the arrival case with no countdown, and the
+Spanish `ahora`/`en 1 h` copy. Full e2e **171/171**.
+
+**Verification.** Web production build passed · app and e2e typecheck and lint passed (the
+same two pre-existing React Compiler warnings) · full e2e **171/171** · changed files
+Prettier-clean. No commit.
+
+---
+
+Session 76: appointment status changes now keep a history and the quick panel records the
+time the desk actually chooses.
+
+Arrival and treatment start are two-step confirmations in the agenda quick panel. The form
+defaults **Date** and **Time** to the clinic's current wall clock, offers **Use current
+time**, and sends the chosen instant as the transition's optional `occurredAt`. The domain
+transition runs inside the unit of work and defaults `occurredAt` to the injected clock when
+the body omits it. Starting a visit records the appointment's move to `IN_TREATMENT` at the
+visit's actual start.
+
+The new `appointment_status_events` table stores `from_status`, `to_status`, `occurred_at`,
+`recorded_at` and an optional `reason`, indexed by `(appointment_id, occurred_at)` and
+cascading with the appointment. PostgreSQL and SQLite schemas and generated migrations were
+added (`0009_gray_captain_flint.sql`, `0008_giant_iron_fist.sql`), and the local SQLite
+database was migrated. Both repositories implement `listStatusChanges` and
+`recordStatusChange`, scoping through the clinic's appointment. `GET
+/api/v1/appointments/:appointmentId/progress` reads the history under `appointments:read`;
+it reads the appointment first, so another clinic's id is a 404 rather than an empty list.
+The quick-panel timeline shows `from -> to`, the clinic-local time and the reason.
+
+Scheduled and confirmed appointments can be rescheduled from the same panel with **Move 30
+minutes later** (`startsAt + 30 min`) or **Choose another time**, which prefills a custom
+date and time. Arrived, in-treatment and closed appointments do not offer it. Recording and
+reschedule forms show a saving status row; the transition mutation invalidates the progress
+query. English and Spanish catalogues carry the new copy.
+
+**Tests.** Domain **401/401**; validation **163/163**; database **6/6**; API client
+**15/15**; API **133 passed** with **283 PostgreSQL tests skipped** because
+`TEST_DATABASE_URL` is unavailable. App **393/394**, with only the pre-existing
+`zoned-wall-clock.test.ts` repeated-hour failure (expected `2026-11-01T05:30:00.000Z`,
+received `2026-11-01T06:30:00.000Z`). Integration coverage checks explicit recorded times
+and cross-clinic progress 404s; SQLite smoke checks the visit bridge's history. Full e2e
+**173/173**.
+
+**Verification.** Full typecheck, lint, boundary guard and Prettier passed · web production
+build passed · SQLite migrate passed · full e2e **173/173**. Root `pnpm run test` remains
+red only for the wall-clock failure. Session 75's dashboard countdown work is preserved in
+the same uncommitted change set. No commit.

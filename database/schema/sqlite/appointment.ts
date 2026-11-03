@@ -123,3 +123,39 @@ export const appointments = sqliteTable(
     }).onDelete('set null'),
   ],
 );
+
+/**
+ * The appointment's recorded moves, oldest first.
+ *
+ * The SQLite twin of the PostgreSQL table with the same name. The clinic is
+ * reached through the appointment rather than copied here, so deleting an
+ * appointment removes its history with it.
+ */
+export const appointmentStatusEvents = sqliteTable(
+  'appointment_status_events',
+  {
+    id: text('id').primaryKey().default(uuidDefault),
+    appointmentId: text('appointment_id')
+      .notNull()
+      .references(() => appointments.id, { onDelete: 'cascade' }),
+    /** Null only for a step whose starting point was never recorded. */
+    fromStatus: text('from_status', { enum: APPOINTMENT_STATUSES }),
+    toStatus: text('to_status', { enum: APPOINTMENT_STATUSES }).notNull(),
+    /** When the move happened in the clinic, not when this row was inserted. */
+    occurredAt: integer('occurred_at', { mode: 'timestamp_ms' }).notNull(),
+    recordedAt: integer('recorded_at', { mode: 'timestamp_ms' }).notNull().default(nowDefault),
+    reason: text('reason'),
+  },
+  (table) => [
+    index('appointment_status_events_appointment_occurred_at_idx').on(
+      table.appointmentId,
+      table.occurredAt,
+    ),
+    enumCheck(
+      'appointment_status_events_from_status_in_values',
+      'from_status',
+      APPOINTMENT_STATUSES,
+    ),
+    enumCheck('appointment_status_events_to_status_in_values', 'to_status', APPOINTMENT_STATUSES),
+  ],
+);

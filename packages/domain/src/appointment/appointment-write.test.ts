@@ -34,6 +34,7 @@ import {
 } from '@denti-code-u3/types';
 import type { AgendaEntry } from './agenda-read-model.js';
 import type { Appointment } from './appointment.js';
+import type { AppointmentStatus } from './appointment-status.js';
 import type { AppointmentWindow } from './agenda-read-model.js';
 import type { Clinic, ClinicOperatingHours } from '../organization/index.js';
 import type {
@@ -41,13 +42,14 @@ import type {
   ChairRepository,
   ClinicRepository,
   DentistRepository,
+  Repositories,
 } from '../ports/index.js';
 import {
   createAppointment,
   rescheduleAppointment,
   transitionAppointmentStatus,
   type AppointmentBookingDependencies,
-  type AppointmentWriteDependencies,
+  type AppointmentTransitionDependencies,
 } from './appointment-write.js';
 
 const CLINIC_ID = asClinicId('11111111-1111-4111-8111-111111111111');
@@ -83,6 +85,12 @@ interface Writes {
   readonly inserted: Appointment[];
   readonly schedules: Appointment[];
   readonly statuses: { status: string; reason?: string }[];
+  readonly progress: {
+    fromStatus: AppointmentStatus | null;
+    toStatus: AppointmentStatus;
+    occurredAt: IsoDateTime;
+    reason?: string;
+  }[];
 }
 
 /** Mutable so the fakes can record what they were asked for. */
@@ -107,7 +115,7 @@ function ports(
     inactiveChairs?: readonly ChairId[];
   } = {},
 ) {
-  const writes: Writes = { inserted: [], schedules: [], statuses: [] };
+  const writes: Writes = { inserted: [], schedules: [], statuses: [], progress: [] };
   const stored = new Map<string, Appointment>();
   let sequence = 0;
 
@@ -150,6 +158,22 @@ function ports(
       const changed: Appointment = { ...found, status };
       stored.set(appointmentId, changed);
       return changed;
+    },
+    listStatusChanges: async () => [],
+    recordStatusChange: async (
+      _clinicId,
+      _appointmentId,
+      fromStatus,
+      toStatus,
+      occurredAt,
+      reason,
+    ) => {
+      writes.progress.push({
+        fromStatus,
+        toStatus,
+        occurredAt,
+        ...(reason ? { reason } : {}),
+      });
     },
     becomeVisit: async (clinicId, appointmentId, visitId, status) => {
       const found = stored.get(appointmentId);
@@ -209,13 +233,19 @@ function ports(
     },
   };
 
-  const writeDependencies: AppointmentWriteDependencies = {
+  const transitionDependencies: AppointmentTransitionDependencies = {
     appointments: repository,
     clinics,
     newId: nextId,
+    clock: { now: () => MONDAY_14_00 },
+    unitOfWork: {
+      transaction: async (work) => work({ appointments: repository } as unknown as Repositories),
+    },
   };
 
-  const dependencies: AppointmentBookingDependencies = {
+  const writeDependencies = transitionDependencies;
+
+  const dependencies: AppointmentBookingDependencies & AppointmentTransitionDependencies = {
     ...writeDependencies,
     dentists,
     chairs,
@@ -830,6 +860,9 @@ describe('transitionAppointmentStatus', () => {
     await transitionAppointmentStatus(CLINIC_ID, BOOKED_ID, { to: 'CONFIRMED' }, dependencies);
 
     expect(writes.statuses).toEqual([{ status: 'CONFIRMED' }]);
+    expect(writes.progress).toEqual([
+      { fromStatus: 'SCHEDULED', toStatus: 'CONFIRMED', occurredAt: MONDAY_14_00 },
+    ]);
   });
 
   it('refuses a transition the lifecycle does not allow', async () => {
@@ -873,6 +906,24 @@ describe('transitionAppointmentStatus', () => {
 
     expect(writes.statuses).toEqual([
       { status: 'CANCELLED', reason: 'Patient rescheduled by phone' },
+    ]);
+  });
+
+  it('records the time the move happened when the caller supplies one', async () => {
+    const { dependencies, writes } = withBooked(
+      booked({ id: BOOKED_ID, startsAt: MONDAY_14_00, status: 'CONFIRMED' }),
+    );
+    const arrivedAt = '2026-09-28T14:07:00.000Z' as IsoDateTime;
+
+    await transitionAppointmentStatus(
+      CLINIC_ID,
+      BOOKED_ID,
+      { to: 'ARRIVED', occurredAt: arrivedAt },
+      dependencies,
+    );
+
+    expect(writes.progress).toEqual([
+      { fromStatus: 'CONFIRMED', toStatus: 'ARRIVED', occurredAt: arrivedAt },
     ]);
   });
 

@@ -28,6 +28,7 @@ import {
   type AgendaEntry,
   type AgendaWindow,
   type Appointment,
+  type AppointmentProgressEntry,
   type AppointmentRepository,
   type AppointmentStatus,
   type AppointmentWindow,
@@ -46,7 +47,13 @@ import {
 } from '@denti-code-u3/types';
 import { and, asc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 
-import { appointments, chairs, dentists, patients } from '@denti-code-u3/database/schema/sqlite';
+import {
+  appointmentStatusEvents,
+  appointments,
+  chairs,
+  dentists,
+  patients,
+} from '@denti-code-u3/database/schema/sqlite';
 
 import type { SqliteDatabase } from '../connection.js';
 import {
@@ -286,6 +293,66 @@ export class SQLiteAppointmentRepository implements AppointmentRepository {
       }
       throw rethrowAsReferenceError(error);
     }
+  }
+
+  async listStatusChanges(
+    clinicId: ClinicId,
+    appointmentId: AppointmentId,
+  ): Promise<readonly AppointmentProgressEntry[]> {
+    const rows = await this.db
+      .select({
+        fromStatus: appointmentStatusEvents.fromStatus,
+        toStatus: appointmentStatusEvents.toStatus,
+        occurredAt: appointmentStatusEvents.occurredAt,
+        reason: appointmentStatusEvents.reason,
+      })
+      .from(appointmentStatusEvents)
+      .innerJoin(appointments, eq(appointments.id, appointmentStatusEvents.appointmentId))
+      .where(
+        and(
+          eq(appointments.clinicId, clinicId),
+          eq(appointmentStatusEvents.appointmentId, appointmentId),
+        ),
+      )
+      .orderBy(
+        asc(appointmentStatusEvents.occurredAt),
+        asc(appointmentStatusEvents.recordedAt),
+        asc(appointmentStatusEvents.id),
+      );
+
+    return rows.map((row) => ({
+      fromStatus: row.fromStatus,
+      toStatus: row.toStatus,
+      occurredAt: row.occurredAt.toISOString() as IsoDateTime,
+      reason: row.reason,
+    }));
+  }
+
+  async recordStatusChange(
+    clinicId: ClinicId,
+    appointmentId: AppointmentId,
+    fromStatus: AppointmentStatus | null,
+    toStatus: AppointmentStatus,
+    occurredAt: IsoDateTime,
+    reason?: string,
+  ): Promise<void> {
+    const [owned] = await this.db
+      .select({ id: appointments.id })
+      .from(appointments)
+      .where(and(eq(appointments.id, appointmentId), eq(appointments.clinicId, clinicId)))
+      .limit(1);
+
+    if (!owned) {
+      return;
+    }
+
+    await this.db.insert(appointmentStatusEvents).values({
+      appointmentId,
+      fromStatus,
+      toStatus,
+      occurredAt: new Date(occurredAt),
+      ...(reason ? { reason } : {}),
+    });
   }
 
   async becomeVisit(

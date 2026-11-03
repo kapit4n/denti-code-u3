@@ -137,9 +137,40 @@ export const appointments = pgTable(
   ],
 );
 
-export const appointmentRelations = relations(appointments, ({ one }) => ({
+/**
+ * The appointment's recorded moves, oldest first.
+ *
+ * The clinic is reached through the appointment rather than copied into this row:
+ * the appointment already belongs to exactly one clinic, and a second copy could
+ * only ever disagree with it. Deleting an appointment removes its history with it.
+ */
+export const appointmentStatusEvents = pgTable(
+  'appointment_status_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    appointmentId: uuid('appointment_id')
+      .notNull()
+      .references(() => appointments.id, { onDelete: 'cascade' }),
+    /** Null only for a step whose starting point was never recorded. */
+    fromStatus: appointmentStatusEnum('from_status'),
+    toStatus: appointmentStatusEnum('to_status').notNull(),
+    /** When the move happened in the clinic, not when this row was inserted. */
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+    reason: text('reason'),
+  },
+  (table) => [
+    index('appointment_status_events_appointment_occurred_at_idx').on(
+      table.appointmentId,
+      table.occurredAt,
+    ),
+  ],
+);
+
+export const appointmentRelations = relations(appointments, ({ one, many }) => ({
   clinic: one(clinics, { fields: [appointments.clinicId], references: [clinics.id] }),
   patient: one(patients, { fields: [appointments.patientId], references: [patients.id] }),
   dentist: one(dentists, { fields: [appointments.dentistId], references: [dentists.id] }),
   chair: one(chairs, { fields: [appointments.chairId], references: [chairs.id] }),
+  statusEvents: many(appointmentStatusEvents),
 }));

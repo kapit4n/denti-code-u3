@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 74 (currency is BOB, shown as Bs)
+> Last updated: session 76 (appointment status history, recorded times and rescheduling)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -128,6 +128,27 @@ compuesta` and descriptions read as aesthetic fillings. Remaining seeded composi
 > defaults. SQLite migrations now disable foreign keys outside the transaction and run a
 > `foreign_key_check` after rebuilding tables. The local development database was
 > converted to `BOB`; the seed does not convert existing financial rows.
+>
+> **Session 75** put a countdown badge on each waiting appointment in the dashboard's
+> **Today's Appointments** card. A scheduled or confirmed appointment reads `in 3 min`,
+> `in 1 h 5 min`, `now`, or `late 12 min`, with near starts in warning tone, late ones in
+> danger tone and closed/arrived appointments carrying no countdown. The value comes from
+> the appointment's UTC `startsAt` and a local clock that ticks every 15 seconds; it never
+> filters or reorders the API's list. The English and Spanish catalogues both carry the
+> copy, and the browser suite covers upcoming, now, late and non-counted states.
+>
+> **Session 76** made appointment status changes auditable and gave the agenda quick panel
+> explicit clock control. Arrival and treatment start now open a two-step confirmation with
+> **Date** and **Time** inputs defaulted to the clinic's wall clock, plus **Use current
+> time**; the transition body carries the chosen `occurredAt`. Every transition writes an
+> `appointment_status_events` row (from/to status, occurred and recorded instants, optional
+> reason), exposed by `GET /api/v1/appointments/:appointmentId/progress` and drawn as a
+> timeline in the panel. The visit bridge records the appointment's move to `IN_TREATMENT`
+> at the visit's actual start. Scheduled and confirmed appointments can be rescheduled from
+> the panel with **+30 min** or a custom date/time. Both engines store the history, the
+> PostgreSQL and SQLite migrations were generated and SQLite was migrated, and English and
+> Spanish copy plus unit, integration and browser coverage were added. Dashboard countdown
+> work from session 75 remains in the same uncommitted change set.
 
 ## Phase
 
@@ -3706,3 +3727,39 @@ spec, which keeps arbitrary currencies on purpose; API integration fixtures keep
 apart from the two pre-existing React Compiler warnings. Root `pnpm run test` is still red
 only because of the known wall-clock failure. SQLite migrate and seed passed on the local
 and a fresh temporary database. No commit. Docs: STATE and LOG updated for the currency.
+
+---
+
+Session 75: Today's Appointments now shows how long until each waiting appointment starts,
+or how late it is.
+
+`appointment-countdown.ts` is a pure presentation helper over the API's UTC `startsAt` and
+the current instant. Scheduled and confirmed appointments count down (`in 3 min`,
+`in 1 h 5 min`), switch to `now` for the first minute after the start, then report whole
+minutes of lateness (`late 12 min`, `late 1 h 5 min`). Arrived, in-treatment, completed,
+cancelled and no-show appointments carry no countdown; their status badge already says what
+they are. Upcoming times round up so a partial minute never reads as zero; lateness rounds
+down so only a full minute is named. Countdowns within 15 minutes use the warning tone,
+late ones use danger, and farther starts stay neutral.
+
+`useNow` owns one 15-second interval per card, so every row ticks together and the timer is
+cleared with the component. The badge sits above the existing status badge on the right of
+the row. English and Spanish both carry minute, hour, mixed-hour, now and late forms through
+the tiny `{hours}`/`{minutes}` interpolation the catalogue already uses.
+
+The dashboard's today-appointments fixture now starts on the frozen suite day (2026-10-05)
+rather than the older 2026-10-03 capture, so the browser can assert the countdown against
+the clock the suite actually runs on.
+
+**Tests.** 10 countdown tests cover minutes, partial-minute rounding, hours, the `now`
+window, lateness, non-waiting statuses, invalid timestamps, tone selection and both
+formatted branches; 1 hook test proves the 15-second tick moves the rendered clock. Browser
+coverage adds late, in-one-hour and in-three-minutes assertions plus the
+no-countdown-for-arrived case, and the Spanish dashboard spec asserts `ahora` and `en 1 h`.
+App **389** (388 passed; the one
+failure remains the pre-existing `zoned-wall-clock.test.ts` repeated-hour case). Full e2e
+**171/171**.
+
+**Verification.** Web production build passed · app and e2e typecheck and lint passed (app
+keeps the two pre-existing React Compiler warnings) · full e2e **171/171** · Prettier clean
+on the changed files.

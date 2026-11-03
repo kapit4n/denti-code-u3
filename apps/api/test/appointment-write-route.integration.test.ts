@@ -36,9 +36,11 @@ import { fileURLToPath } from 'node:url';
 import * as schema from '@denti-code-u3/database/schema';
 import { registerAppointmentsRoutes } from '../src/http/routes/appointments.js';
 import { DrizzleAppointmentRepository } from '../src/infrastructure/persistence/repositories/appointment-repository.js';
+import { DrizzleUnitOfWork } from '../src/infrastructure/persistence/postgres/unit-of-work.js';
 import { DrizzleClinicRepository } from '../src/infrastructure/persistence/repositories/clinic-repository.js';
 import { DrizzleDentistRepository } from '../src/infrastructure/persistence/repositories/dentist-repository.js';
 import { DrizzleChairRepository } from '../src/infrastructure/persistence/repositories/chair-repository.js';
+import { systemClock } from '../src/infrastructure/clock/system-clock.js';
 import { uuidGenerator } from '../src/infrastructure/id/uuid-generator.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
 
@@ -105,6 +107,8 @@ describeIntegration('appointment writes (PostgreSQL)', () => {
       chairs: new DrizzleChairRepository(db),
       clinics: new DrizzleClinicRepository(db),
       ids: uuidGenerator,
+      unitOfWork: new DrizzleUnitOfWork(db),
+      clock: systemClock,
     });
 
     for (const id of [clinicId, otherClinicId]) {
@@ -559,6 +563,45 @@ describeIntegration('appointment writes (PostgreSQL)', () => {
     it('answers 404 for an appointment that does not exist', async () => {
       const response = await setStatus('f9f9f9f9-1111-4111-8111-111111111111', { to: 'CONFIRMED' });
 
+      expect(response.statusCode).toBe(404);
+    });
+
+    it('keeps the time the desk recorded, not the time the request was sent', async () => {
+      const entry = await bookAt(9);
+
+      await setStatus(entry.id, {
+        to: 'ARRIVED',
+        occurredAt: '2026-09-28T09:12:00.000Z',
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/v1/appointments/${entry.id}/progress`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().items).toEqual([
+        {
+          fromStatus: 'SCHEDULED',
+          toStatus: 'ARRIVED',
+          occurredAt: '2026-09-28T09:12:00.000Z',
+          reason: null,
+        },
+      ]);
+    });
+
+    it('will not read another clinic’s appointment history', async () => {
+      const entry = await bookAt(9);
+      await setStatus(entry.id, { to: 'CONFIRMED' });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/v1/appointments/${entry.id}/progress`,
+        headers: { 'x-clinic-id': otherClinicId },
+      });
+
+      // An empty history would say "nothing happened yet", which is a misleading
+      // answer about a row this clinic cannot see at all.
       expect(response.statusCode).toBe(404);
     });
   });

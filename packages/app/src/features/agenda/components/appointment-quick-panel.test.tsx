@@ -12,13 +12,14 @@
 
 import { ApiClient } from '@denti-code-u3/api-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
   allowedAppointmentTransitions,
   type AgendaEntry,
+  type AppointmentProgressEntry,
   type Clinic,
 } from '@denti-code-u3/domain';
 import { asAppointmentId, asChairId, asDentistId, asPatientId } from '@denti-code-u3/types';
@@ -58,27 +59,32 @@ const ENTRY: AgendaEntry = {
   notes: null,
 };
 
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
 function renderPanel({
   entry = ENTRY,
   reply,
+  progress = [],
   onClose = vi.fn(),
   locale = 'en',
 }: {
   readonly entry?: AgendaEntry;
   readonly reply?: () => Promise<Response>;
+  readonly progress?: readonly AppointmentProgressEntry[];
   readonly onClose?: () => void;
   readonly locale?: Locale;
 } = {}) {
-  const fetchImplementation = vi.fn<typeof fetch>(
-    reply ??
-      (() =>
-        Promise.resolve(
-          new Response(JSON.stringify({ ...entry, status: 'ARRIVED' }), {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          }),
-        )),
-  );
+  const fetchImplementation = vi.fn<typeof fetch>((input) => {
+    if (String(input).endsWith('/progress')) {
+      return Promise.resolve(json({ items: progress }));
+    }
+    return (reply ?? (() => Promise.resolve(json({ ...entry, status: 'ARRIVED' }))))();
+  });
   const client = new ApiClient({ baseUrl: BASE_URL, fetchImplementation });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -95,10 +101,16 @@ function renderPanel({
   return { fetchImplementation, onClose };
 }
 
-/** The body of the nth request, as JSON. */
+function writes(fetchImplementation: ReturnType<typeof vi.fn>) {
+  return fetchImplementation.mock.calls.filter(
+    ([, init]) => init?.method === 'POST' || init?.method === 'PUT',
+  );
+}
+
+/** The body of the nth write, as JSON. Progress reads are not writes. */
 function sentBody(fetchImplementation: ReturnType<typeof vi.fn>, index = 0): unknown {
-  const call = fetchImplementation.mock.calls[index];
-  if (!call) throw new Error(`Expected a request number ${index + 1}`);
+  const call = writes(fetchImplementation)[index];
+  if (!call) throw new Error(`Expected a write number ${index + 1}`);
   return JSON.parse(String(call[1]?.body));
 }
 
@@ -152,21 +164,37 @@ describe('AppointmentQuickPanel', () => {
     expect(screen.queryByTestId('transition-ARRIVED')).toBeNull();
   });
 
-  it('sends the transition and closes once the server has agreed', async () => {
+  it('records the arrival at the time the receptionist chose, then closes', async () => {
     const user = userEvent.setup();
     const { fetchImplementation, onClose } = renderPanel();
 
     await user.click(screen.getByTestId('transition-ARRIVED'));
+    await user.click(screen.getByTestId('confirm-recording'));
 
-    await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(1));
-    const [url, init] = fetchImplementation.mock.calls[0] ?? [];
+    await waitFor(() => expect(writes(fetchImplementation)).toHaveLength(1));
+    const [url, init] = writes(fetchImplementation)[0] ?? [];
     expect(String(url)).toBe(`${BASE_URL}/appointments/appt-1/status`);
     expect(init?.method).toBe('POST');
-    expect(sentBody(fetchImplementation)).toEqual({ to: 'ARRIVED' });
+    expect(sentBody(fetchImplementation)).toMatchObject({ to: 'ARRIVED' });
+    expect(sentBody(fetchImplementation)).toHaveProperty('occurredAt');
 
-    // The panel is not closed optimistically: the grid is redrawn from the server's
-    // answer, and only then is there nothing left to look at.
     await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it('accepts a different arrival time instead of the current one', async () => {
+    const user = userEvent.setup();
+    const { fetchImplementation } = renderPanel();
+
+    await user.click(screen.getByTestId('transition-ARRIVED'));
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-10-05' } });
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '09:15' } });
+    await user.click(screen.getByTestId('confirm-recording'));
+
+    await waitFor(() => expect(writes(fetchImplementation)).toHaveLength(1));
+    expect(sentBody(fetchImplementation)).toEqual({
+      to: 'ARRIVED',
+      occurredAt: '2026-10-05T14:15:00.000Z',
+    });
   });
 
   it('asks why before it cancels, and sends the reason', async () => {
@@ -177,7 +205,7 @@ describe('AppointmentQuickPanel', () => {
 
     // Cancelling is the one move that cannot be undone by re-booking the slot, so the
     // first click asks rather than sends.
-    expect(fetchImplementation).not.toHaveBeenCalled();
+    expect(writes(fetchImplementation)).toHaveLength(0);
 
     await user.type(
       screen.getByLabelText('Why is it being cancelled?'),
@@ -185,7 +213,7 @@ describe('AppointmentQuickPanel', () => {
     );
     await user.click(screen.getByTestId('confirm-cancellation'));
 
-    await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(writes(fetchImplementation)).toHaveLength(1));
     expect(sentBody(fetchImplementation)).toEqual({
       to: 'CANCELLED',
       reason: 'The patient called to cancel',
@@ -206,7 +234,7 @@ describe('AppointmentQuickPanel', () => {
     await user.type(screen.getByLabelText('Why is it being cancelled?'), '   ');
     expect(screen.getByTestId('confirm-cancellation')).toBeDisabled();
 
-    expect(fetchImplementation).not.toHaveBeenCalled();
+    expect(writes(fetchImplementation)).toHaveLength(0);
   });
 
   it('lets the receptionist back out of cancelling', async () => {
@@ -217,7 +245,7 @@ describe('AppointmentQuickPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Keep it' }));
 
     // Back to the other moves, with nothing sent and nothing lost.
-    expect(fetchImplementation).not.toHaveBeenCalled();
+    expect(writes(fetchImplementation)).toHaveLength(0);
     expect(screen.getByTestId('transition-ARRIVED')).toBeTruthy();
   });
 
@@ -260,6 +288,7 @@ describe('AppointmentQuickPanel', () => {
     });
 
     await user.click(screen.getByTestId('transition-IN_TREATMENT'));
+    await user.click(screen.getByTestId('confirm-recording'));
 
     // 16:00Z is 11:00 in Lima, and this is the sentence that tells the receptionist
     // which block to go and look at.
@@ -303,9 +332,68 @@ describe('AppointmentQuickPanel', () => {
     });
 
     await user.click(screen.getByTestId('transition-ARRIVED'));
+    await user.click(screen.getByTestId('confirm-recording'));
 
-    await waitFor(() => expect(screen.getByTestId('transition-ARRIVED')).toBeDisabled());
+    await waitFor(() => expect(screen.getByTestId('confirm-recording')).toBeDisabled());
     expect(screen.getByRole('status')).toHaveTextContent('Saving…');
+  });
+
+  it('shows every recorded move and its time', async () => {
+    renderPanel({
+      progress: [
+        {
+          fromStatus: 'CONFIRMED',
+          toStatus: 'ARRIVED',
+          occurredAt: '2026-10-05T14:07:00.000Z',
+          reason: null,
+        },
+        {
+          fromStatus: 'ARRIVED',
+          toStatus: 'CANCELLED',
+          occurredAt: '2026-10-05T14:20:00.000Z',
+          reason: 'The patient felt unwell',
+        },
+      ],
+    });
+
+    expect(await screen.findByText('Confirmed → Arrived')).toBeTruthy();
+    expect(screen.getByText(/09:07/)).toBeTruthy();
+    expect(screen.getByText('Arrived → Cancelled')).toBeTruthy();
+    expect(screen.getByText('The patient felt unwell')).toBeTruthy();
+  });
+
+  it('moves the appointment 30 minutes later', async () => {
+    const user = userEvent.setup();
+    const { fetchImplementation, onClose } = renderPanel();
+
+    await user.click(screen.getByTestId('reschedule-30'));
+
+    await waitFor(() => expect(writes(fetchImplementation)).toHaveLength(1));
+    const [url, init] = writes(fetchImplementation)[0] ?? [];
+    expect(String(url)).toBe(`${BASE_URL}/appointments/appt-1/schedule`);
+    expect(init?.method).toBe('PUT');
+    expect(sentBody(fetchImplementation)).toEqual({ startsAt: '2026-10-05T14:30:00.000Z' });
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it('moves the appointment to a custom clinic time', async () => {
+    const user = userEvent.setup();
+    const { fetchImplementation } = renderPanel();
+
+    await user.click(screen.getByTestId('reschedule-custom'));
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-10-06' } });
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '11:00' } });
+    await user.click(screen.getByTestId('confirm-reschedule'));
+
+    await waitFor(() => expect(writes(fetchImplementation)).toHaveLength(1));
+    expect(sentBody(fetchImplementation)).toEqual({ startsAt: '2026-10-06T16:00:00.000Z' });
+  });
+
+  it('does not offer a reschedule once the patient has arrived', () => {
+    renderPanel({ entry: { ...ENTRY, status: 'ARRIVED' } });
+
+    expect(screen.queryByTestId('reschedule-30')).toBeNull();
+    expect(screen.queryByTestId('reschedule-custom')).toBeNull();
   });
 
   it('shows the notes the appointment carries', () => {

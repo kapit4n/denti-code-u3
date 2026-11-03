@@ -49,6 +49,13 @@ export const dashboard = {
   'dashboard.todayAppointments.error': "Today's appointments could not be loaded.",
   'dashboard.todayAppointments.empty': 'No appointments scheduled for today.',
   'dashboard.todayAppointments.duration': '{count} min',
+  'dashboard.todayAppointments.countdown.inMinutes': 'in {count} min',
+  'dashboard.todayAppointments.countdown.inHours': 'in {hours} h',
+  'dashboard.todayAppointments.countdown.inHoursMinutes': 'in {hours} h {minutes} min',
+  'dashboard.todayAppointments.countdown.now': 'now',
+  'dashboard.todayAppointments.countdown.lateMinutes': 'late {count} min',
+  'dashboard.todayAppointments.countdown.lateHours': 'late {hours} h',
+  'dashboard.todayAppointments.countdown.lateHoursMinutes': 'late {hours} h {minutes} min',
 
   'dashboard.calendar.title': 'Calendar Preview',
   'dashboard.calendar.description': 'Bookings per day, next {days} days',

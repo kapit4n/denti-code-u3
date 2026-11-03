@@ -49,6 +49,14 @@ export const dashboard = {
   'dashboard.todayAppointments.error': 'No se pudieron cargar las citas de hoy.',
   'dashboard.todayAppointments.empty': 'No hay citas programadas para hoy.',
   'dashboard.todayAppointments.duration': '{count} min',
+  'dashboard.todayAppointments.countdown.inMinutes': 'en {count} min',
+  'dashboard.todayAppointments.countdown.inHours': 'en {hours} h',
+  'dashboard.todayAppointments.countdown.inHoursMinutes': 'en {hours} h {minutes} min',
+  'dashboard.todayAppointments.countdown.now': 'ahora',
+  'dashboard.todayAppointments.countdown.lateMinutes': 'con {count} min de retraso',
+  'dashboard.todayAppointments.countdown.lateHours': 'con {hours} h de retraso',
+  'dashboard.todayAppointments.countdown.lateHoursMinutes':
+    'con {hours} h {minutes} min de retraso',
 
   'dashboard.calendar.title': 'Vista del calendario',
   'dashboard.calendar.description': 'Reservas por día, próximos {days} días',

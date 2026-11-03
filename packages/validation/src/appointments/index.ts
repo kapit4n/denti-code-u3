@@ -175,6 +175,11 @@ export const rescheduleAppointmentSchema = z.object({
 export const transitionAppointmentSchema = z.object({
   to: appointmentStatusSchema,
   reason: z.string().max(500).optional(),
+  /**
+   * When the move happened. Omitted means "now, on the server's clock"; a
+   * receptionist entering a paper note later sends the time it actually happened.
+   */
+  occurredAt: isoDateTimeSchema.optional(),
 });
 
 /** A comma-separated list of UUIDs used as a multi-select filter. */

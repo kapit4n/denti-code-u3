@@ -45,6 +45,8 @@ test.describe('Spanish', () => {
 
     await expect(page.getByRole('region', { name: 'Estadísticas de la clínica' })).toBeVisible();
     await expect(page.getByTestId('stat-card-value-Appointments')).toHaveText('3');
+    await expect(page.getByTestId('appointment-countdown').first()).toHaveText('ahora');
+    await expect(page.getByTestId('appointment-countdown').nth(1)).toHaveText('en 1 h');
     await expect(page.getByRole('link', { name: 'Panel' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Pacientes', exact: true })).toBeVisible();
 

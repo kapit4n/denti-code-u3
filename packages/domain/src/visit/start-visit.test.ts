@@ -74,6 +74,11 @@ function scheduled(overrides: Partial<Appointment> = {}): Appointment {
 interface Recorded {
   visits: Visit[];
   moves: { visitId: VisitId; status: AppointmentStatus }[];
+  progress: {
+    fromStatus: AppointmentStatus | null;
+    toStatus: AppointmentStatus;
+    occurredAt: string;
+  }[];
   transactions: number;
   /** Makes `becomeVisit` behave as if the booking had vanished mid-write. */
   vanishOnUpdate: boolean;
@@ -85,6 +90,7 @@ function harness(options: { appointment?: Appointment | undefined } & Partial<Re
   const recorded: Recorded = {
     visits: [],
     moves: [],
+    progress: [],
     transactions: 0,
     vanishOnUpdate: false,
     failOnUpdate: false,
@@ -97,6 +103,15 @@ function harness(options: { appointment?: Appointment | undefined } & Partial<Re
   const appointments = {
     findById: async (scope: ClinicId, appointmentId: AppointmentId) =>
       stored && stored.id === appointmentId && stored.clinicId === scope ? stored : undefined,
+    recordStatusChange: async (
+      _scope: ClinicId,
+      _appointmentId: AppointmentId,
+      fromStatus: AppointmentStatus | null,
+      toStatus: AppointmentStatus,
+      occurredAt: string,
+    ) => {
+      recorded.progress.push({ fromStatus, toStatus, occurredAt });
+    },
     becomeVisit: async (
       _scope: ClinicId,
       _appointmentId: AppointmentId,
@@ -132,6 +147,7 @@ function harness(options: { appointment?: Appointment | undefined } & Partial<Re
         // "refused part-way" assertions below mean something.
         recorded.visits.length = 0;
         recorded.moves.length = 0;
+        recorded.progress.length = 0;
         throw error;
       }
     },
@@ -170,6 +186,9 @@ describe('startVisit', () => {
       visitId: VISIT_ID,
     });
     expect(stored()?.status).toBe('IN_TREATMENT');
+    expect(recorded.progress).toEqual([
+      { fromStatus: 'ARRIVED', toStatus: 'IN_TREATMENT', occurredAt: NOW },
+    ]);
   });
 
   it('writes the visit before the appointment, because the appointment names it', async () => {

@@ -1,9 +1,11 @@
 /**
  * Today's agenda.
  *
- * Renders exactly what the API returns and nothing more. Notably absent: a
- * client-side filter over a wider fetch, a locally computed "now" line, and a
- * hard-coded empty state. The empty state is whatever the API says it is.
+ * Renders exactly what the API returns, plus one presentation-only answer the API
+ * cannot give: how long until a waiting appointment starts, or how late it is. That
+ * countdown is derived from the server's `startsAt` and the local clock; it never
+ * filters, reorders or invents an appointment. The empty state is whatever the API
+ * says it is.
  *
  * The status badge goes through `enumLabel`, so the API's own status code stays the
  * source of truth. The English catalogue deliberately keeps that code's existing
@@ -27,11 +29,18 @@ import {
 import { CalendarDays } from 'lucide-react';
 
 import { enumLabel, useTranslation } from '../../../i18n/index.js';
+import {
+  appointmentCountdownTone,
+  describeAppointmentCountdown,
+  formatAppointmentCountdown,
+} from '../appointment-countdown.js';
 import { useTodayAppointments } from '../hooks/use-dashboard-stats.js';
+import { useNow } from '../hooks/use-now.js';
 
 export function TodayAppointments() {
   const { t } = useTranslation();
   const { data, isPending, error } = useTodayAppointments();
+  const now = useNow();
 
   return (
     <Card>
@@ -66,36 +75,54 @@ export function TodayAppointments() {
           <p className="text-sm text-destructive">{t('dashboard.todayAppointments.error')}</p>
         ) : data && data.items.length > 0 ? (
           <ul className="space-y-2">
-            {data.items.map((appointment) => (
-              <li
-                key={appointment.id}
-                className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/60"
-              >
-                <span className="flex h-11 w-16 shrink-0 flex-col items-center justify-center rounded-lg bg-secondary text-secondary-foreground">
-                  <span className="text-sm font-semibold tabular-nums">
-                    {formatTimeOfDay(appointment.startsAt)}
-                  </span>
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">
-                    {appointment.firstName} {appointment.lastName}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {t('dashboard.todayAppointments.duration', {
-                      count: appointment.durationMinutes,
-                    })}
-                  </p>
-                </div>
-                <span
-                  className={cn(
-                    'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
-                    STATUS_TONE_CLASS[toneForStatus(appointment.status)],
-                  )}
+            {data.items.map((appointment) => {
+              const countdown = describeAppointmentCountdown(appointment, now);
+
+              return (
+                <li
+                  key={appointment.id}
+                  className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/60"
                 >
-                  {enumLabel(t, 'common.status', appointment.status)}
-                </span>
-              </li>
-            ))}
+                  <span className="flex h-11 w-16 shrink-0 flex-col items-center justify-center rounded-lg bg-secondary text-secondary-foreground">
+                    <span className="text-sm font-semibold tabular-nums">
+                      {formatTimeOfDay(appointment.startsAt)}
+                    </span>
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">
+                      {appointment.firstName} {appointment.lastName}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('dashboard.todayAppointments.duration', {
+                        count: appointment.durationMinutes,
+                      })}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    {countdown ? (
+                      <span
+                        className={cn(
+                          'whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums',
+                          STATUS_TONE_CLASS[appointmentCountdownTone(countdown)],
+                        )}
+                        data-testid="appointment-countdown"
+                        data-countdown-kind={countdown.kind}
+                      >
+                        {formatAppointmentCountdown(t, countdown)}
+                      </span>
+                    ) : null}
+                    <span
+                      className={cn(
+                        'whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium',
+                        STATUS_TONE_CLASS[toneForStatus(appointment.status)],
+                      )}
+                    >
+                      {enumLabel(t, 'common.status', appointment.status)}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <div className="flex flex-col items-center gap-3 py-8 text-center">

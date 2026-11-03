@@ -167,13 +167,59 @@ test.describe('Agenda', () => {
     await page.goto('/agenda');
     await page.locator('.fc-event').first().click();
     await page.getByRole('button', { name: 'Check in' }).click();
+    // Checking in asks when the patient arrived, because the desk may be recording it
+    // after the fact. The frozen clock makes "now" the clinic's 08:00.
+    const panel = page.getByRole('dialog');
+    await expect(panel.getByLabel('Date')).toHaveValue('2026-10-05');
+    await expect(panel.getByLabel('Time')).toHaveValue('08:00');
+    await panel.getByRole('button', { name: 'Check in' }).click();
 
     // The panel closes only once the server has agreed, and the day is then re-read
     // rather than patched in the client.
     await expect(page.getByRole('dialog')).toBeHidden();
     const write = api.recorded.find((request) => request.method === 'POST');
     expect(write?.url).toContain(`/appointments/${ANA_APPOINTMENT_ID}/status`);
-    expect(write?.body).toEqual({ to: 'ARRIVED' });
+    expect(write?.body).toEqual({
+      to: 'ARRIVED',
+      occurredAt: '2026-10-05T13:00:00.000Z',
+    });
+  });
+
+  test('moves an appointment 30 minutes later from the quick panel', async ({ page }) => {
+    const api = await installApi(page, {
+      [`PUT /api/v1/appointments/${ANA_APPOINTMENT_ID}/schedule`]: {
+        body: agendaEntries.items[0],
+      },
+    });
+
+    await page.goto('/agenda');
+    await page.locator('.fc-event').first().click();
+    await page.getByRole('button', { name: 'Move 30 minutes later' }).click();
+
+    await expect(page.getByRole('dialog')).toBeHidden();
+    const write = api.recorded.find((request) => request.method === 'PUT');
+    expect(write?.url).toContain(`/appointments/${ANA_APPOINTMENT_ID}/schedule`);
+    expect(write?.body).toEqual({ startsAt: '2026-10-05T14:30:00.000Z' });
+  });
+
+  test('moves an appointment to a custom clinic time', async ({ page }) => {
+    const api = await installApi(page, {
+      [`PUT /api/v1/appointments/${ANA_APPOINTMENT_ID}/schedule`]: {
+        body: agendaEntries.items[0],
+      },
+    });
+
+    await page.goto('/agenda');
+    await page.locator('.fc-event').first().click();
+    await page.getByRole('button', { name: 'Choose another time' }).click();
+    const panel = page.getByRole('dialog');
+    await panel.getByLabel('Date').fill('2026-10-06');
+    await panel.getByLabel('Time').fill('11:00');
+    await panel.getByRole('button', { name: 'Move appointment' }).click();
+
+    await expect(page.getByRole('dialog')).toBeHidden();
+    const write = api.recorded.find((request) => request.method === 'PUT');
+    expect(write?.body).toEqual({ startsAt: '2026-10-06T16:00:00.000Z' });
   });
 
   test('asks why before it cancels, and sends the reason', async ({ page }) => {

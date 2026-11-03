@@ -29,6 +29,7 @@ import type {
   AgendaEntry,
   AgendaWindow,
   Appointment,
+  AppointmentProgressEntry,
   AppointmentStatus,
   AppointmentWindow,
 } from '../appointment/index.js';
@@ -351,6 +352,18 @@ export interface AppointmentRepository extends AppointmentWriteRepository {
   findEntryById(clinicId: ClinicId, appointmentId: AppointmentId): Promise<AgendaEntry | undefined>;
 
   /**
+   * The recorded moves of one appointment, oldest first.
+   *
+   * A row outside this clinic is an empty list, the same answer a missing
+   * appointment gets. The route reads the appointment first when it needs to tell
+   * those two cases apart.
+   */
+  listStatusChanges(
+    clinicId: ClinicId,
+    appointmentId: AppointmentId,
+  ): Promise<readonly AppointmentProgressEntry[]>;
+
+  /**
    * Every appointment overlapping `window`, as entities.
    *
    * This exists only to feed the conflict check, and that is why it is half-open
@@ -427,6 +440,22 @@ export interface AppointmentWriteRepository {
     status: AppointmentStatus,
     cancelledReason?: string,
   ): Promise<Appointment | undefined>;
+
+  /**
+   * Append one move to the appointment's progress.
+   *
+   * `occurredAt` comes from the caller because it is the clinic's fact, not the
+   * moment the insert ran. Callers that also changed the status write both inside
+   * one transaction, so a recorded transition and its status cannot disagree.
+   */
+  recordStatusChange(
+    clinicId: ClinicId,
+    appointmentId: AppointmentId,
+    fromStatus: AppointmentStatus | null,
+    toStatus: AppointmentStatus,
+    occurredAt: IsoDateTime,
+    reason?: string,
+  ): Promise<void>;
 
   /**
    * Record that this appointment became a visit: set `visit_id` and move the status,

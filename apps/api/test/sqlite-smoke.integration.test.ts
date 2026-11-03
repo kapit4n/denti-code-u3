@@ -288,6 +288,22 @@ describe('API on SQLite', () => {
     visitId = visit.id;
   });
 
+  it('reads the progress the visit bridge recorded', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/appointments/${appointmentId}/progress`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().items).toHaveLength(1);
+    expect(response.json().items[0]).toMatchObject({
+      fromStatus: 'SCHEDULED',
+      toStatus: 'IN_TREATMENT',
+      reason: null,
+    });
+    expect(response.json().items[0].occurredAt).toEqual(expect.any(String));
+  });
+
   it('refuses a second visit for the same appointment', async () => {
     const response = await app.inject({
       method: 'POST',

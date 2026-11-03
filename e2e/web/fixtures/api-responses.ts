@@ -240,7 +240,7 @@ export const todayAppointments = {
   items: [
     {
       id: '11111111-4444-4555-8666-000000000001',
-      startsAt: '2026-10-03T13:00:00.000Z',
+      startsAt: '2026-10-05T13:00:00.000Z',
       durationMinutes: 45,
       status: 'CONFIRMED',
       dentistId: '11111111-2222-4333-8444-000000000001',
@@ -249,7 +249,7 @@ export const todayAppointments = {
     },
     {
       id: '11111111-4444-4555-8666-000000000002',
-      startsAt: '2026-10-03T14:00:00.000Z',
+      startsAt: '2026-10-05T14:00:00.000Z',
       durationMinutes: 60,
       status: 'SCHEDULED',
       dentistId: '11111111-2222-4333-8444-000000000001',
@@ -481,6 +481,29 @@ export const agendaEntries = {
 export const ANA_APPOINTMENT_ID = '11111111-4444-4555-8666-000000000011';
 export const CANCELLED_APPOINTMENT_ID = '11111111-4444-4555-8666-000000000013';
 
+/** The recorded moves the quick panel reads for each fixture appointment. */
+export const ANA_PROGRESS = {
+  items: [
+    {
+      fromStatus: 'SCHEDULED',
+      toStatus: 'CONFIRMED',
+      occurredAt: '2026-10-04T15:00:00.000Z',
+      reason: null,
+    },
+  ],
+} as const;
+
+export const CANCELLED_PROGRESS = {
+  items: [
+    {
+      fromStatus: 'CONFIRMED',
+      toStatus: 'CANCELLED',
+      occurredAt: '2026-10-04T16:00:00.000Z',
+      reason: 'The patient called to cancel',
+    },
+  ],
+} as const;
+
 /**
  * A refusal naming the hour it collides at, as the API sends it.
  *
@@ -533,6 +556,8 @@ export function allAgendaFixtures(): MockedResponses {
   return {
     '/api/v1/clinic': { body: clinicSettings },
     '/api/v1/appointments': { body: agendaEntries },
+    [`/api/v1/appointments/${ANA_APPOINTMENT_ID}/progress`]: { body: ANA_PROGRESS },
+    [`/api/v1/appointments/${CANCELLED_APPOINTMENT_ID}/progress`]: { body: CANCELLED_PROGRESS },
     '/api/v1/dentists': { body: everyDentistList },
     '/api/v1/chairs': { body: everyChairList },
   };

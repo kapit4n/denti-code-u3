@@ -176,6 +176,8 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     chairs,
     clinics,
     ids: uuidGenerator,
+    unitOfWork: connection.unitOfWork,
+    clock: systemClock,
   });
 
   // The clinic's own record, so the browser renders the calendar in the clinic's

@@ -28,11 +28,14 @@ import type {
   AppointmentRepository,
   ChairRepository,
   ClinicRepository,
+  Clock,
   DentistRepository,
   IdGenerator,
+  UnitOfWork,
 } from '@denti-code-u3/domain';
 import {
   createAppointment,
+  notFound,
   rescheduleAppointment,
   transitionAppointmentStatus,
 } from '@denti-code-u3/domain';
@@ -77,6 +80,9 @@ export interface AppointmentsDependencies {
    */
   readonly clinics: ClinicRepository;
   readonly ids: IdGenerator;
+  /** Status changes write the appointment and its progress in one transaction. */
+  readonly unitOfWork: UnitOfWork;
+  readonly clock: Clock;
 }
 
 /**
@@ -90,7 +96,7 @@ const MAX_WINDOW_DAYS = 366;
 
 export async function registerAppointmentsRoutes(
   app: FastifyInstance,
-  { appointments, dentists, chairs, clinics, ids }: AppointmentsDependencies,
+  { appointments, dentists, chairs, clinics, ids, unitOfWork, clock }: AppointmentsDependencies,
 ): Promise<void> {
   /**
    * `GET /api/v1/appointments?from=&to=&dentistIds=&chairIds=`
@@ -254,6 +260,39 @@ export async function registerAppointmentsRoutes(
   );
 
   /**
+   * `GET /api/v1/appointments/:appointmentId/progress` — the recorded moves.
+   *
+   * The appointment is read first so another clinic's id is a 404 rather than an
+   * empty history: the two answers are different facts, and only one of them means
+   * "this appointment has not moved yet".
+   */
+  app.get(
+    '/api/v1/appointments/:appointmentId/progress',
+    { config: { permission: 'appointments:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const path = readAppointmentId(request.params);
+
+      if (!path.valid) {
+        return sendInvalidPath(reply, request);
+      }
+      const { appointmentId } = path;
+
+      try {
+        const existing = await appointments.findById(clinicId, appointmentId);
+        if (!existing) {
+          return sendProblem(reply, request, notFound('Appointment', appointmentId));
+        }
+
+        const items = await appointments.listStatusChanges(clinicId, appointmentId);
+        return { items };
+      } catch (error) {
+        return sendProblem(reply, request, error, 'Failed to read appointment progress');
+      }
+    },
+  );
+
+  /**
    * `POST /api/v1/appointments/:appointmentId/status` — move the appointment's state.
    *
    * `POST` on a sub-resource rather than `PATCH` on the appointment: a status change
@@ -295,11 +334,14 @@ export async function registerAppointmentsRoutes(
           {
             to: parsed.data.to,
             ...(parsed.data.reason ? { reason: parsed.data.reason } : {}),
+            ...(parsed.data.occurredAt
+              ? { occurredAt: parsed.data.occurredAt as IsoDateTime }
+              : {}),
           },
           // The narrow object on purpose: a status transition names no clinician and no
           // chair, so it has nothing to ask the bookable-resources rule and must not be
           // handed the repositories to ask it with.
-          writeDependencies({ appointments, clinics, ids }),
+          transitionDependencies({ appointments, clinics, ids, unitOfWork, clock }),
         );
 
         return reply.status(200).send(entry);
@@ -332,6 +374,17 @@ function writeDependencies({
   };
 }
 
+/** The four, plus the transaction and clock a recorded status move needs. */
+function transitionDependencies({
+  appointments,
+  clinics,
+  ids,
+  unitOfWork,
+  clock,
+}: Pick<AppointmentsDependencies, 'appointments' | 'clinics' | 'ids' | 'unitOfWork' | 'clock'>) {
+  return { ...writeDependencies({ appointments, clinics, ids }), unitOfWork, clock };
+}
+
 /** The four, plus the two that answer who may be booked — see ADR 0020. */
 function bookingDependencies({
   appointments,
@@ -339,7 +392,7 @@ function bookingDependencies({
   chairs,
   clinics,
   ids,
-}: AppointmentsDependencies) {
+}: Pick<AppointmentsDependencies, 'appointments' | 'dentists' | 'chairs' | 'clinics' | 'ids'>) {
   return { ...writeDependencies({ appointments, clinics, ids }), dentists, chairs };
 }
 
