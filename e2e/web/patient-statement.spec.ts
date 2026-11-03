@@ -75,30 +75,30 @@ test.describe('Patient statement', () => {
     // Oldest first, with the server's running balance on every line.
     const rows = card.locator(ROWS);
     await expect(rows.nth(0)).toContainText('Invoice F001-00001');
-    await expect(rows.nth(0).getByTestId('statement-entry-amount')).toContainText('230.00 USD');
+    await expect(rows.nth(0).getByTestId('statement-entry-amount')).toContainText('230.00 Bs');
     await expect(rows.nth(0).getByTestId('statement-entry-balance')).toContainText(
-      'Balance 230.00 USD',
+      'Balance 230.00 Bs',
     );
     // 02:00Z on the 5th is 21:00 Lima on the 4th — the clinic's clock, not UTC's.
     await expect(rows.nth(0)).toContainText('Oct 4, 2026');
 
     await expect(rows.nth(1)).toContainText('Payment · CARD · *** 4242');
-    await expect(rows.nth(1).getByTestId('statement-entry-amount')).toContainText('-120.00 USD');
+    await expect(rows.nth(1).getByTestId('statement-entry-amount')).toContainText('-120.00 Bs');
     await expect(rows.nth(1).getByTestId('statement-entry-balance')).toContainText(
-      'Balance 110.00 USD',
+      'Balance 110.00 Bs',
     );
 
     await expect(rows.nth(2)).toContainText('Invoice F001-00002');
     await expect(rows.nth(2).getByTestId('statement-entry-balance')).toContainText(
-      'Balance 230.00 USD',
+      'Balance 230.00 Bs',
     );
 
     // The column totals are the API's, and the closing figure agrees with the
     // Balance card's own server number — 230.00 outstanding.
-    await expect(card.getByTestId('statement-billed')).toContainText('350.00 USD');
-    await expect(card.getByTestId('statement-paid')).toContainText('120.00 USD');
-    await expect(card.getByTestId('statement-closing')).toContainText('230.00 USD');
-    await expect(page.getByTestId('patient-balance-value')).toContainText('230.00 USD');
+    await expect(card.getByTestId('statement-billed')).toContainText('350.00 Bs');
+    await expect(card.getByTestId('statement-paid')).toContainText('120.00 Bs');
+    await expect(card.getByTestId('statement-closing')).toContainText('230.00 Bs');
+    await expect(page.getByTestId('patient-balance-value')).toContainText('230.00 Bs');
 
     expect(errors.filter((e) => e.includes('Failed to load resource'))).toEqual([]);
   });

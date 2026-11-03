@@ -45,7 +45,7 @@ function defaultValues(clinic?: Clinic): UpdateClinicSettingsInput {
     phone: clinic?.phone ?? null,
     email: clinic?.email ?? null,
     timeZone: clinic?.timeZone ?? 'America/Lima',
-    currency: clinic?.currency ?? 'USD',
+    currency: clinic?.currency ?? 'BOB',
     operatingHours: WEEKDAYS.map((weekday) => {
       const hours = stored.get(weekday);
       return {

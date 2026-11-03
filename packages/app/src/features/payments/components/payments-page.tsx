@@ -19,7 +19,7 @@
 
 import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { formatMinorUnits } from '@denti-code-u3/domain';
+import { formatMoneyAmount } from '@denti-code-u3/domain';
 import { AlertCircle, CalendarRange, Plus, Receipt } from 'lucide-react';
 
 import {
@@ -53,7 +53,7 @@ function money(minor: number | undefined, currencyCode: string | null): string {
   if (minor === undefined) {
     return '—';
   }
-  return `${formatMinorUnits(minor)}${currencyCode ? ` ${currencyCode}` : ''}`;
+  return formatMoneyAmount(minor, currencyCode);
 }
 
 export function PaymentsPage() {

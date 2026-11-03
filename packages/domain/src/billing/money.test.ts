@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  currencyDisplayLabel,
   currencyUsesTwoDecimals,
   formatMinorUnits,
+  formatMoneyAmount,
   money,
   percentageOf,
   sumMoney,
@@ -34,9 +36,26 @@ describe('formatMinorUnits', () => {
   });
 });
 
+describe('currencyDisplayLabel', () => {
+  it('writes the boliviano the way the clinic does', () => {
+    expect(currencyDisplayLabel('BOB')).toBe('Bs');
+    expect(formatMoneyAmount(12_345, 'BOB')).toBe('123.45 Bs');
+  });
+
+  it('falls back to the ISO code for currencies without a custom label', () => {
+    expect(currencyDisplayLabel('USD')).toBe('USD');
+    expect(formatMoneyAmount(-8000, 'USD')).toBe('-80.00 USD');
+  });
+
+  it('omits the label while the clinic currency is still unknown', () => {
+    expect(formatMoneyAmount(0, null)).toBe('0.00');
+  });
+});
+
 describe('currencyUsesTwoDecimals', () => {
   it('knows which currencies the formatter is valid for', () => {
     expect(currencyUsesTwoDecimals('USD')).toBe(true);
+    expect(currencyUsesTwoDecimals('BOB')).toBe(true);
     expect(currencyUsesTwoDecimals('ARS')).toBe(true);
     // JPY has no minor unit; formatting it as two decimals would be off by 100x.
     expect(currencyUsesTwoDecimals('JPY')).toBe(false);

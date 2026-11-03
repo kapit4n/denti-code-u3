@@ -59,12 +59,12 @@ test.describe('Patient balance', () => {
     await expect(card.getByRole('heading', { name: 'Balance' })).toBeVisible();
     await expect(card.getByText('What this patient owes this clinic')).toBeVisible();
 
-    await expect(card.getByTestId('patient-balance-value')).toContainText('230.00 USD');
+    await expect(card.getByTestId('patient-balance-value')).toContainText('230.00 Bs');
     await expect(card.getByTestId('patient-balance-state')).toContainText('Outstanding');
 
-    await expect(card.getByTestId('patient-balance-billed')).toContainText('350.00 USD');
-    await expect(card.getByTestId('patient-balance-allocated')).toContainText('120.00 USD');
-    await expect(card.getByTestId('patient-balance-outstanding')).toContainText('230.00 USD');
+    await expect(card.getByTestId('patient-balance-billed')).toContainText('350.00 Bs');
+    await expect(card.getByTestId('patient-balance-allocated')).toContainText('120.00 Bs');
+    await expect(card.getByTestId('patient-balance-outstanding')).toContainText('230.00 Bs');
 
     // A settled ledger has no unapplied money, so the credit row is not drawn.
     await expect(card.getByTestId('patient-balance-unallocated')).toHaveCount(0);
@@ -80,7 +80,7 @@ test.describe('Patient balance', () => {
     await page.goto(`/patients/${ANA_ID}`);
 
     const card = page.getByTestId('patient-balance');
-    await expect(card.getByTestId('patient-balance-value')).toContainText('0.00 USD');
+    await expect(card.getByTestId('patient-balance-value')).toContainText('0.00 Bs');
     await expect(card.getByTestId('patient-balance-state')).toContainText('Nothing owed');
 
     expect(errors.filter((e) => e.includes('Failed to load resource'))).toEqual([]);
@@ -92,7 +92,7 @@ test.describe('Patient balance', () => {
     await installApi(page, {
       ...clinicFixture(),
       ...profileSections({
-        currency: 'USD',
+        currency: 'BOB',
         billedMinor: 12000,
         allocatedMinor: 12000,
         outstandingMinor: 0,
@@ -104,9 +104,9 @@ test.describe('Patient balance', () => {
     await page.goto(`/patients/${ANA_ID}`);
 
     const card = page.getByTestId('patient-balance');
-    await expect(card.getByTestId('patient-balance-value')).toContainText('-50.00 USD');
+    await expect(card.getByTestId('patient-balance-value')).toContainText('-50.00 Bs');
     await expect(card.getByTestId('patient-balance-state')).toContainText('Credit on account');
-    await expect(card.getByTestId('patient-balance-unallocated')).toContainText('50.00 USD');
+    await expect(card.getByTestId('patient-balance-unallocated')).toContainText('50.00 Bs');
 
     expect(errors.filter((e) => e.includes('Failed to load resource'))).toEqual([]);
   });

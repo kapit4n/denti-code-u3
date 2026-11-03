@@ -18,7 +18,7 @@
  */
 
 import { useMemo, useState, type FormEvent } from 'react';
-import { formatMinorUnits } from '@denti-code-u3/domain';
+import { formatMoneyAmount } from '@denti-code-u3/domain';
 import { AlertCircle, CalendarRange, Download, Gauge } from 'lucide-react';
 
 import {
@@ -48,7 +48,7 @@ import { useReportSummary } from '../queries/reports-query.js';
 import { StatCard } from '../../dashboard/components/stat-card.js';
 
 function money(minor: number, currencyCode: string | null): string {
-  return `${formatMinorUnits(minor)}${currencyCode ? ` ${currencyCode}` : ''}`;
+  return formatMoneyAmount(minor, currencyCode);
 }
 
 function percent(rate: number | null): string {

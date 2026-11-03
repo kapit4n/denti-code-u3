@@ -23,7 +23,7 @@ const PATIENT_ID = 'patient-1';
 const BALANCE_PATH = `/api/v1/patients/${PATIENT_ID}/balance`;
 
 const OUTSTANDING = {
-  currency: 'USD',
+  currency: 'BOB',
   billedMinor: 45_000,
   allocatedMinor: 23_000,
   outstandingMinor: 22_000,
@@ -32,7 +32,7 @@ const OUTSTANDING = {
 };
 
 const SETTLED = {
-  currency: 'USD',
+  currency: 'BOB',
   billedMinor: 12_000,
   allocatedMinor: 12_000,
   outstandingMinor: 0,
@@ -41,7 +41,7 @@ const SETTLED = {
 };
 
 const IN_CREDIT = {
-  currency: 'USD',
+  currency: 'BOB',
   billedMinor: 12_000,
   allocatedMinor: 12_000,
   outstandingMinor: 0,
@@ -110,12 +110,12 @@ describe('PatientBalanceSection', () => {
     renderSection();
 
     const value = await screen.findByTestId('patient-balance-value');
-    expect(value).toHaveTextContent('220.00 USD');
+    expect(value).toHaveTextContent('220.00 Bs');
     expect(screen.getByTestId('patient-balance-state')).toHaveTextContent('Outstanding');
 
-    expect(screen.getByTestId('patient-balance-billed')).toHaveTextContent('450.00 USD');
-    expect(screen.getByTestId('patient-balance-allocated')).toHaveTextContent('230.00 USD');
-    expect(screen.getByTestId('patient-balance-outstanding')).toHaveTextContent('220.00 USD');
+    expect(screen.getByTestId('patient-balance-billed')).toHaveTextContent('450.00 Bs');
+    expect(screen.getByTestId('patient-balance-allocated')).toHaveTextContent('230.00 Bs');
+    expect(screen.getByTestId('patient-balance-outstanding')).toHaveTextContent('220.00 Bs');
   });
 
   it('offers recording when the server says money is owed', async () => {
@@ -128,7 +128,7 @@ describe('PatientBalanceSection', () => {
   it('says nothing is owed rather than showing a bare zero', async () => {
     renderSection({ balance: SETTLED, onRecordPayment: vi.fn() });
 
-    expect(await screen.findByTestId('patient-balance-value')).toHaveTextContent('0.00 USD');
+    expect(await screen.findByTestId('patient-balance-value')).toHaveTextContent('0.00 Bs');
     expect(screen.getByTestId('patient-balance-state')).toHaveTextContent('Nothing owed');
     // A settled ledger has no unapplied money, so the row that would report credit
     // is not drawn at all.
@@ -139,9 +139,9 @@ describe('PatientBalanceSection', () => {
   it('names money in credit as credit, with the payments that caused it', async () => {
     renderSection({ balance: IN_CREDIT });
 
-    expect(await screen.findByTestId('patient-balance-value')).toHaveTextContent('-50.00 USD');
+    expect(await screen.findByTestId('patient-balance-value')).toHaveTextContent('-50.00 Bs');
     expect(screen.getByTestId('patient-balance-state')).toHaveTextContent('Credit on account');
-    expect(screen.getByTestId('patient-balance-unallocated')).toHaveTextContent('50.00 USD');
+    expect(screen.getByTestId('patient-balance-unallocated')).toHaveTextContent('50.00 Bs');
   });
 
   it('says the read failed rather than showing a zero balance', async () => {

@@ -17,7 +17,7 @@
  * A patient in credit is not a zero.
  */
 
-import { formatMinorUnits } from '@denti-code-u3/domain';
+import { formatMoneyAmount } from '@denti-code-u3/domain';
 import { Wallet } from 'lucide-react';
 
 import {
@@ -71,7 +71,7 @@ export function PatientBalanceSection({ patientId, onRecordPayment }: PatientBal
                     : ''
               }`}
             >
-              {formatMinorUnits(balance.balanceMinor)} {balance.currency}
+              {formatMoneyAmount(balance.balanceMinor, balance.currency)}
             </p>
             <p className="mt-1 text-sm text-muted-foreground" data-testid="patient-balance-state">
               {balance.balanceMinor > 0
@@ -99,19 +99,19 @@ export function PatientBalanceSection({ patientId, onRecordPayment }: PatientBal
               <div className="flex justify-between gap-4">
                 <dt className="text-muted-foreground">{t('patients.balance.billed')}</dt>
                 <dd className="tabular-nums" data-testid="patient-balance-billed">
-                  {formatMinorUnits(balance.billedMinor)} {balance.currency}
+                  {formatMoneyAmount(balance.billedMinor, balance.currency)}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-muted-foreground">{t('patients.balance.paid')}</dt>
                 <dd className="tabular-nums" data-testid="patient-balance-allocated">
-                  {formatMinorUnits(balance.allocatedMinor)} {balance.currency}
+                  {formatMoneyAmount(balance.allocatedMinor, balance.currency)}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-muted-foreground">{t('patients.balance.stillToCollect')}</dt>
                 <dd className="tabular-nums" data-testid="patient-balance-outstanding">
-                  {formatMinorUnits(balance.outstandingMinor)} {balance.currency}
+                  {formatMoneyAmount(balance.outstandingMinor, balance.currency)}
                 </dd>
               </div>
               {/* Only a credit is worth a row: money received with nothing to spend it
@@ -120,7 +120,7 @@ export function PatientBalanceSection({ patientId, onRecordPayment }: PatientBal
                 <div className="flex justify-between gap-4">
                   <dt className="text-muted-foreground">{t('patients.balance.unapplied')}</dt>
                   <dd className="tabular-nums" data-testid="patient-balance-unallocated">
-                    {formatMinorUnits(balance.unallocatedPaymentsMinor)} {balance.currency}
+                    {formatMoneyAmount(balance.unallocatedPaymentsMinor, balance.currency)}
                   </dd>
                 </div>
               ) : null}

@@ -12,6 +12,7 @@ import { ApiClient } from '@denti-code-u3/api-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Clinic } from '@denti-code-u3/domain';
@@ -272,6 +273,37 @@ describe('AgendaCalendar', () => {
     const [event] = latest().events as { id: string; title: string }[];
     expect(event?.id).toBe('appt-1');
     expect(event?.title).toBe('Ana Torres · Dra. Rivera');
+  });
+
+  it('draws the status on each block, in the status tone', async () => {
+    renderCalendar();
+
+    tellGrid({ start: '2026-10-05T00:00:00.000Z', end: '2026-10-06T00:00:00.000Z' });
+    await waitFor(() => expect(latest().events).toHaveLength(1));
+
+    const renderEventContent = latest().eventContent as unknown as (arg: {
+      readonly timeText: string;
+      readonly event: { readonly title: string; readonly extendedProps: Record<string, unknown> };
+    }) => ReactNode;
+
+    const { container } = render(
+      <>
+        {renderEventContent({
+          timeText: '9:00',
+          event: {
+            title: 'Ana Torres · Dra. Rivera',
+            extendedProps: { entry: AGENDA_ITEM },
+          },
+        })}
+      </>,
+    );
+
+    const badge = container.querySelector('.agenda-status-badge');
+    expect(badge).toHaveTextContent('Confirmed');
+    expect(badge).toHaveClass('bg-card');
+    expect(badge).toHaveClass('text-info-text');
+    expect(container).toHaveTextContent('9:00');
+    expect(container).toHaveTextContent('Ana Torres · Dra. Rivera');
   });
 
   it('says so when the range holds no appointments', async () => {

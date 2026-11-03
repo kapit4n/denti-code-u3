@@ -24,7 +24,7 @@ export { requiresTransitionReason };
 
 import type { AppointmentStatus } from '@denti-code-u3/domain';
 import { requiresTransitionReason } from '@denti-code-u3/domain';
-import { STATUS_TONE_CLASS, type StatusTone } from '@denti-code-u3/ui';
+import { STATUS_TONE_BADGE_CLASS, STATUS_TONE_CLASS, type StatusTone } from '@denti-code-u3/ui';
 import type { TranslationKey } from '../../i18n/index.js';
 import type { Translate } from '../../i18n/index.js';
 
@@ -98,6 +98,16 @@ export function appointmentStatusTone(status: AppointmentStatus): StatusTone {
 
 export function appointmentStatusClassName(status: AppointmentStatus): string {
   return STATUS_TONE_CLASS[APPOINTMENT_STATUS_TONE[status]];
+}
+
+/**
+ * The badge form, for a status drawn over a coloured surface — the agenda blocks.
+ *
+ * The ordinary class above is a pastel fill; on a blue block it leaves a blue word on
+ * blue. This one supplies its own card-coloured pill and a tone-matched border.
+ */
+export function appointmentStatusBadgeClassName(status: AppointmentStatus): string {
+  return STATUS_TONE_BADGE_CLASS[APPOINTMENT_STATUS_TONE[status]];
 }
 
 export function appointmentStatusLabel(t: Translate, status: AppointmentStatus): string {

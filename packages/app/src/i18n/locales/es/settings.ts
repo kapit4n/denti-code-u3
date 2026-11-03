@@ -13,7 +13,7 @@ export const settings = {
   'settings.field.timeZone': 'Zona horaria',
   'settings.field.timeZoneHint': 'Zona horaria IANA, por ejemplo America/Lima',
   'settings.field.currency': 'Moneda',
-  'settings.field.currencyHint': 'Código ISO de tres letras, por ejemplo USD',
+  'settings.field.currencyHint': 'Código ISO de tres letras, por ejemplo BOB',
   'settings.hours.title': 'Horario de atención',
   'settings.hours.description':
     'La agenda trata este horario como la jornada de la clínica y rechaza reservas fuera de él.',

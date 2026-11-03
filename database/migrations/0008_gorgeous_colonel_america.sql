@@ -1,0 +1,1 @@
+ALTER TABLE "clinics" ALTER COLUMN "currency_code" SET DEFAULT 'BOB';

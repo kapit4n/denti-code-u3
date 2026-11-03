@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { InvoiceSummary, PaymentMethod } from '@denti-code-u3/domain';
-import { formatMinorUnits } from '@denti-code-u3/domain';
+import { currencyDisplayLabel, formatMinorUnits } from '@denti-code-u3/domain';
 import {
   Button,
   Dialog,
@@ -55,7 +55,7 @@ export function InvoicePaymentDialog({ invoice, patientId, onClose }: InvoicePay
           <DialogDescription>
             {t('patients.invoices.paymentDescription', {
               amount: formatMinorUnits(invoice.balanceMinor),
-              currency: invoice.currency,
+              currency: currencyDisplayLabel(invoice.currency),
             })}
           </DialogDescription>
         </DialogHeader>

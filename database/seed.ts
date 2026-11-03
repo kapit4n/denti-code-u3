@@ -2,9 +2,11 @@
  * Development seed data, on both engines (ADR 0025).
  *
  * Idempotent: every insert is keyed by a fixed id and uses `onConflictDoNothing`,
- * so running the seed twice leaves the same database. It never runs against a
- * production URL — `ALLOW_PRODUCTION_SEED` must be set explicitly, because
- * seeding real patient data would be unrecoverable.
+ * so running the seed twice leaves the same related records. The clinic row is
+ * the exception: it is refreshed on every run so a developer's existing database
+ * picks up the current seed currency without being recreated. It never runs
+ * against a production URL — `ALLOW_PRODUCTION_SEED` must be set explicitly,
+ * because seeding real patient data would be unrecoverable.
  *
  * The clinic id is a fixed constant rather than a generated one, because
  * `CLINIC_ID` in `.env` has to match it. A generated id would print a value the
@@ -90,7 +92,12 @@ if (databaseUrl.includes('prod') && process.env.ALLOW_PRODUCTION_SEED !== 'true'
 const WEEKDAY_HOURS = [1, 2, 3, 4, 5] as const;
 
 const timeZone = process.env.CLINIC_TIMEZONE ?? 'America/Argentina/Buenos_Aires';
-const currencyCode = 'USD';
+const currencyCode = 'BOB';
+
+/** Ana's issued document and the payment already received against it. */
+const DEVELOPMENT_INVOICE_ID = '11111111-bbbb-4ccc-8ddd-000000000001';
+const DEVELOPMENT_INVOICE_PAYMENT_ID = '11111111-6666-4777-8888-000000000001';
+const DEVELOPMENT_INVOICE_PAYMENT_MINOR = 10_000;
 
 const now = new Date();
 
@@ -122,7 +129,7 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 function seedSummary(): string {
-  return `clinic ${DEVELOPMENT_CLINIC_ID}, 10 patients, 2 dentists, 2 rooms, 4 chairs, ${ALL_APPOINTMENTS.length} appointments (a week ahead), 10 visits (8 completed, 1 open, 1 cancelled), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 attachments, 10 odontogram entries, 3 charges, 2 payments`;
+  return `clinic ${DEVELOPMENT_CLINIC_ID}, 10 patients, 2 dentists, 2 rooms, 4 chairs, ${ALL_APPOINTMENTS.length} appointments (a week ahead), 10 visits (8 completed, 1 open, 1 cancelled), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 attachments, 10 odontogram entries, 3 charges, 1 issued invoice, 2 payments, 1 payment allocation`;
 }
 
 /**
@@ -141,7 +148,15 @@ async function seedPostgres(db: PostgresJsDatabase<typeof pgSchema>): Promise<vo
       currencyCode,
       isActive: true,
     })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: clinics.id,
+      set: {
+        name: 'Clínica de desarrollo Denti-Code',
+        timeZone,
+        currencyCode,
+        isActive: true,
+      },
+    });
 
   await db
     .insert(clinicOperatingHours)
@@ -165,7 +180,9 @@ async function seedPostgres(db: PostgresJsDatabase<typeof pgSchema>): Promise<vo
   await insertTreatmentsPg(db);
   await insertVisitsAndPlansPg(db);
   await insertChargesPg(db);
+  await insertInvoicesPg(db);
   await insertPaymentsPg(db);
+  await insertPaymentAllocationsPg(db);
 }
 
 /** The SQLite twin of `seedPostgres`, against `database/schema/sqlite`. */
@@ -181,7 +198,15 @@ async function seedSqlite(db: BetterSQLite3Database<typeof sqliteSchema>): Promi
       currencyCode,
       isActive: true,
     })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: clinics.id,
+      set: {
+        name: 'Clínica de desarrollo Denti-Code',
+        timeZone,
+        currencyCode,
+        isActive: true,
+      },
+    });
 
   await db
     .insert(clinicOperatingHours)
@@ -205,7 +230,9 @@ async function seedSqlite(db: BetterSQLite3Database<typeof sqliteSchema>): Promi
   await insertTreatmentsSqlite(db);
   await insertVisitsAndPlansSqlite(db);
   await insertChargesSqlite(db);
+  await insertInvoicesSqlite(db);
   await insertPaymentsSqlite(db);
+  await insertPaymentAllocationsSqlite(db);
 }
 
 async function insertUsersPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
@@ -1740,18 +1767,95 @@ async function insertChargesSqlite(db: BetterSQLite3Database<typeof sqliteSchema
     .onConflictDoNothing();
 }
 
+/**
+ * Ana's two unbilled charges become one issued document, and the payment she
+ * already made is allocated against it without settling the whole total. That is
+ * the state the list's **Payment due** badge exists to surface: a patient with an
+ * invoice still open, not merely a charge that was never billed.
+ */
+async function insertInvoicesPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
+  await db
+    .insert(pgSchema.invoices)
+    .values({
+      id: DEVELOPMENT_INVOICE_ID,
+      number: 'F001-00001',
+      clinicId: DEVELOPMENT_CLINIC_ID,
+      patientId: '11111111-3333-4444-8555-000000000001',
+      status: 'ISSUED',
+      currency: currencyCode,
+      subtotalMinor: 16_500,
+      totalMinor: 16_500,
+      issuedAt: at(-3, 9, 5),
+      dueAt: at(12, 9, 5),
+      createdBy: DEVELOPMENT_USERS[0].id,
+      createdAt: at(-3, 9, 0),
+      updatedAt: at(-3, 9, 5),
+    })
+    .onConflictDoNothing();
+
+  for (const chargeId of [
+    '11111111-5555-4666-8777-000000000001',
+    '11111111-5555-4666-8777-000000000002',
+  ]) {
+    await db
+      .update(pgSchema.charges)
+      .set({
+        invoiceId: DEVELOPMENT_INVOICE_ID,
+        invoicedAt: at(-3, 9, 5),
+        createdAt: at(-3, 9, 0),
+      })
+      .where(eq(pgSchema.charges.id, chargeId));
+  }
+}
+
+/** The SQLite twin of `insertInvoicesPg`. */
+async function insertInvoicesSqlite(db: BetterSQLite3Database<typeof sqliteSchema>): Promise<void> {
+  await db
+    .insert(sqliteSchema.invoices)
+    .values({
+      id: DEVELOPMENT_INVOICE_ID,
+      number: 'F001-00001',
+      clinicId: DEVELOPMENT_CLINIC_ID,
+      patientId: '11111111-3333-4444-8555-000000000001',
+      status: 'ISSUED',
+      currency: currencyCode,
+      subtotalMinor: 16_500,
+      totalMinor: 16_500,
+      issuedAt: at(-3, 9, 5),
+      dueAt: at(12, 9, 5),
+      createdBy: DEVELOPMENT_USERS[0].id,
+      createdAt: at(-3, 9, 0),
+      updatedAt: at(-3, 9, 5),
+    })
+    .onConflictDoNothing();
+
+  for (const chargeId of [
+    '11111111-5555-4666-8777-000000000001',
+    '11111111-5555-4666-8777-000000000002',
+  ]) {
+    await db
+      .update(sqliteSchema.charges)
+      .set({
+        invoiceId: DEVELOPMENT_INVOICE_ID,
+        invoicedAt: at(-3, 9, 5),
+        createdAt: at(-3, 9, 0),
+      })
+      .where(eq(sqliteSchema.charges.id, chargeId));
+  }
+}
+
 async function insertPaymentsPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
   await db
     .insert(pgSchema.payments)
     .values([
       {
-        id: '11111111-6666-4777-8888-000000000001',
+        id: DEVELOPMENT_INVOICE_PAYMENT_ID,
         number: 'PAY-000001',
         clinicId: DEVELOPMENT_CLINIC_ID,
         patientId: '11111111-3333-4444-8555-000000000001',
         method: 'CARD',
         currency: currencyCode,
-        amountMinor: 10000,
+        amountMinor: DEVELOPMENT_INVOICE_PAYMENT_MINOR,
         receivedAt: new Date(now.getTime() - 2 * DAY),
       },
       {
@@ -1775,13 +1879,13 @@ async function insertPaymentsSqlite(db: BetterSQLite3Database<typeof sqliteSchem
     .insert(sqliteSchema.payments)
     .values([
       {
-        id: '11111111-6666-4777-8888-000000000001',
+        id: DEVELOPMENT_INVOICE_PAYMENT_ID,
         number: 'PAY-000001',
         clinicId: DEVELOPMENT_CLINIC_ID,
         patientId: '11111111-3333-4444-8555-000000000001',
         method: 'CARD',
         currency: currencyCode,
-        amountMinor: 10000,
+        amountMinor: DEVELOPMENT_INVOICE_PAYMENT_MINOR,
         receivedAt: new Date(now.getTime() - 2 * DAY),
       },
       {
@@ -1795,6 +1899,31 @@ async function insertPaymentsSqlite(db: BetterSQLite3Database<typeof sqliteSchem
         receivedAt: new Date(now.getTime() - 24 * 60 * 60 * 1000),
       },
     ])
+    .onConflictDoNothing();
+}
+
+async function insertPaymentAllocationsPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
+  await db
+    .insert(pgSchema.paymentAllocations)
+    .values({
+      paymentId: DEVELOPMENT_INVOICE_PAYMENT_ID,
+      invoiceId: DEVELOPMENT_INVOICE_ID,
+      amountMinor: DEVELOPMENT_INVOICE_PAYMENT_MINOR,
+    })
+    .onConflictDoNothing();
+}
+
+/** The SQLite twin of `insertPaymentAllocationsPg`. */
+async function insertPaymentAllocationsSqlite(
+  db: BetterSQLite3Database<typeof sqliteSchema>,
+): Promise<void> {
+  await db
+    .insert(sqliteSchema.paymentAllocations)
+    .values({
+      paymentId: DEVELOPMENT_INVOICE_PAYMENT_ID,
+      invoiceId: DEVELOPMENT_INVOICE_ID,
+      amountMinor: DEVELOPMENT_INVOICE_PAYMENT_MINOR,
+    })
     .onConflictDoNothing();
 }
 let seedResult: string;

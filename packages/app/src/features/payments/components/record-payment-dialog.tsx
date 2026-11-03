@@ -1,5 +1,10 @@
 import { useMemo, useState } from 'react';
-import { formatMinorUnits, type PaymentMethod } from '@denti-code-u3/domain';
+import {
+  currencyDisplayLabel,
+  formatMinorUnits,
+  formatMoneyAmount,
+  type PaymentMethod,
+} from '@denti-code-u3/domain';
 import {
   Button,
   Dialog,
@@ -167,12 +172,12 @@ export function RecordPaymentDialog({ onClose, fixedPatient }: RecordPaymentDial
                       ? balance.balanceMinor > 0
                         ? t('payments.record.patientOwes', {
                             amount: formatMinorUnits(balance.balanceMinor),
-                            currency: balance.currency,
+                            currency: currencyDisplayLabel(balance.currency),
                           })
                         : balance.balanceMinor < 0
                           ? t('payments.record.patientCredit', {
                               amount: formatMinorUnits(Math.abs(balance.balanceMinor)),
-                              currency: balance.currency,
+                              currency: currencyDisplayLabel(balance.currency),
                             })
                           : t('payments.record.patientSettled')
                       : null}
@@ -224,7 +229,7 @@ export function RecordPaymentDialog({ onClose, fixedPatient }: RecordPaymentDial
                       <SelectItem key={candidate.id} value={candidate.id}>
                         {t('payments.record.invoiceOption', {
                           number: candidate.number ?? '—',
-                          amount: `${formatMinorUnits(candidate.balanceMinor)} ${candidate.currency}`,
+                          amount: formatMoneyAmount(candidate.balanceMinor, candidate.currency),
                         })}
                       </SelectItem>
                     ))}
@@ -244,7 +249,7 @@ export function RecordPaymentDialog({ onClose, fixedPatient }: RecordPaymentDial
                     data-testid="payments-record-outstanding"
                   >
                     {t('payments.record.outstanding', {
-                      amount: `${formatMinorUnits(invoice.balanceMinor)} ${invoice.currency}`,
+                      amount: formatMoneyAmount(invoice.balanceMinor, invoice.currency),
                     })}
                   </p>
                 ) : null}
@@ -276,7 +281,7 @@ export function RecordPaymentDialog({ onClose, fixedPatient }: RecordPaymentDial
                               : ''}
                           </span>
                           <span className="shrink-0 tabular-nums text-muted-foreground">
-                            {formatMinorUnits(charge.unitPriceMinor)} {charge.currency}
+                            {formatMoneyAmount(charge.unitPriceMinor, charge.currency)}
                           </span>
                         </li>
                       ))}

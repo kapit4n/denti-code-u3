@@ -25,7 +25,7 @@ const STATEMENT_PATH = `/api/v1/patients/${PATIENT_ID}/statement`;
 const TIME_ZONE = 'America/Lima';
 
 const STATEMENT = {
-  currency: 'USD',
+  currency: 'BOB',
   billedMinor: 30_000,
   paidMinor: 12_000,
   closingBalanceMinor: 18_000,
@@ -66,7 +66,7 @@ const STATEMENT = {
 };
 
 const EMPTY_STATEMENT = {
-  currency: 'USD',
+  currency: 'BOB',
   billedMinor: 0,
   paidMinor: 0,
   closingBalanceMinor: 0,
@@ -153,29 +153,29 @@ describe('PatientStatementSection', () => {
     expect(rows).toHaveLength(3);
 
     expect(rows[0]).toHaveTextContent('Invoice F001-00001');
-    expect(within(rows[0]!).getByTestId('statement-entry-amount')).toHaveTextContent('200.00 USD');
+    expect(within(rows[0]!).getByTestId('statement-entry-amount')).toHaveTextContent('200.00 Bs');
     expect(within(rows[0]!).getByTestId('statement-entry-balance')).toHaveTextContent(
-      'Balance 200.00 USD',
+      'Balance 200.00 Bs',
     );
 
     // A payment is drawn as money leaving the balance, with its method and reference.
     expect(rows[1]).toHaveTextContent('Payment · CARD · *** 4242');
-    expect(within(rows[1]!).getByTestId('statement-entry-amount')).toHaveTextContent('-50.00 USD');
+    expect(within(rows[1]!).getByTestId('statement-entry-amount')).toHaveTextContent('-50.00 Bs');
     expect(within(rows[1]!).getByTestId('statement-entry-balance')).toHaveTextContent(
-      'Balance 150.00 USD',
+      'Balance 150.00 Bs',
     );
 
     expect(rows[2]).toHaveTextContent('Invoice F001-00002');
     expect(within(rows[2]!).getByTestId('statement-entry-balance')).toHaveTextContent(
-      'Balance 250.00 USD',
+      'Balance 250.00 Bs',
     );
 
     // The day is the clinic's: 02:00Z on the 5th is the 4th in Lima.
     expect(rows[0]).toHaveTextContent(formatClinicDay('2026-10-05T02:00:00.000Z', TIME_ZONE));
 
-    expect(screen.getByTestId('statement-billed')).toHaveTextContent('300.00 USD');
-    expect(screen.getByTestId('statement-paid')).toHaveTextContent('120.00 USD');
-    expect(screen.getByTestId('statement-closing')).toHaveTextContent('180.00 USD');
+    expect(screen.getByTestId('statement-billed')).toHaveTextContent('300.00 Bs');
+    expect(screen.getByTestId('statement-paid')).toHaveTextContent('120.00 Bs');
+    expect(screen.getByTestId('statement-closing')).toHaveTextContent('180.00 Bs');
   });
 
   it('says nothing has been billed or paid for an empty history', async () => {

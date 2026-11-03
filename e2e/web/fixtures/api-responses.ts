@@ -12,7 +12,7 @@
  *    `apps/api/test/*.integration.test.ts` against real PostgreSQL.
  *
  * The values are chosen to be *distinguishable at a glance*: 3 appointments, 2
- * active patients, 65.00 USD outstanding. A spec that asserts "80.00" against a
+ * active patients, 65.00 Bs outstanding. A spec that asserts "80.00" against a
  * fixture reading "80.00" proves only that the plumbing is intact — which is
  * precisely what an end-to-end test is for. Arithmetic is the API's job and is
  * tested there.
@@ -136,7 +136,7 @@ export const anaProfile = {
   financialBalance: {
     outstandingMinor: 6500,
     chargeCount: 2,
-    currencyCode: 'USD',
+    currencyCode: 'BOB',
   },
 } as const;
 
@@ -163,7 +163,7 @@ export const luisProfile = {
   financialBalance: {
     outstandingMinor: -8000,
     chargeCount: 0,
-    currencyCode: 'USD',
+    currencyCode: 'BOB',
   },
 } as const;
 
@@ -229,7 +229,7 @@ export const dashboardStats = {
     activePatients: 2,
     pendingTreatmentItems: 2,
     collectedThisMonthMinor: 8000,
-    currencyCode: 'USD',
+    currencyCode: 'BOB',
     // `null`, not 0: the UI must render "—" rather than a confident "0%", which
     // would read as "nobody is working today".
     occupancyRate: null,
@@ -888,7 +888,7 @@ export const anaInvoices = {
       patientId: ANA_ID,
       number: 'F001-00002',
       status: 'PAID',
-      currency: 'USD',
+      currency: 'BOB',
       subtotalMinor: 12000,
       discountMinor: 0,
       taxRatePercent: 0,
@@ -904,7 +904,7 @@ export const anaInvoices = {
       patientId: ANA_ID,
       number: 'F001-00001',
       status: 'ISSUED',
-      currency: 'USD',
+      currency: 'BOB',
       subtotalMinor: 24000,
       discountMinor: 1000,
       taxRatePercent: 0,
@@ -942,7 +942,7 @@ export const anaInvoiceDetail = {
       unitPriceMinor: 12000,
       discountMinor: 0,
       taxRatePercent: 0,
-      currency: 'USD',
+      currency: 'BOB',
     },
     {
       id: '11111111-cccc-4a11-9ccc-000000000012',
@@ -959,7 +959,7 @@ export const anaInvoiceDetail = {
       unitPriceMinor: 6000,
       discountMinor: 1000,
       taxRatePercent: 0,
-      currency: 'USD',
+      currency: 'BOB',
     },
   ],
 } as const;
@@ -973,7 +973,7 @@ export const invoicePayment = {
   clinicId: '11111111-1111-4111-8111-111111111111',
   patientId: ANA_ID,
   method: 'CASH',
-  currency: 'USD',
+  currency: 'BOB',
   amountMinor: 23000,
   reference: 'front desk',
   receivedAt: '2026-10-06T16:00:00.000Z',
@@ -988,7 +988,7 @@ export const invoicePayment = {
  * document, so there is no credit row to draw.
  */
 export const anaBalance = {
-  currency: 'USD',
+  currency: 'BOB',
   billedMinor: 35000,
   allocatedMinor: 12000,
   outstandingMinor: 23000,
@@ -998,7 +998,7 @@ export const anaBalance = {
 
 /** The balance of a patient this clinic holds and has never billed: nothing owed. */
 export const settledBalance = {
-  currency: 'USD',
+  currency: 'BOB',
   billedMinor: 0,
   allocatedMinor: 0,
   outstandingMinor: 0,
@@ -1018,7 +1018,7 @@ export const settledBalance = {
  * draws them without recomputing.
  */
 export const anaStatement = {
-  currency: 'USD',
+  currency: 'BOB',
   billedMinor: 35000,
   paidMinor: 12000,
   closingBalanceMinor: 23000,
@@ -1058,7 +1058,7 @@ export const anaStatement = {
 
 /** A patient with nothing billed or paid — the statement's empty sentence. */
 export const noStatement = {
-  currency: 'USD',
+  currency: 'BOB',
   billedMinor: 0,
   paidMinor: 0,
   closingBalanceMinor: 0,
@@ -1250,7 +1250,7 @@ export const visitCharge = {
   unitPriceMinor: 8500,
   discountMinor: 0,
   taxRatePercent: 0,
-  currency: 'USD',
+  currency: 'BOB',
 } as const;
 
 /**
@@ -1273,7 +1273,7 @@ export const raisedCharge = {
   unitPriceMinor: 8500,
   discountMinor: 0,
   taxRatePercent: 0,
-  currency: 'USD',
+  currency: 'BOB',
 } as const;
 
 /**
@@ -1327,7 +1327,7 @@ export const visitPayment = {
   clinicId: '11111111-1111-4111-8111-111111111111',
   patientId: ANA_ID,
   method: 'CARD',
-  currency: 'USD',
+  currency: 'BOB',
   amountMinor: 8500,
   reference: '4242',
   receivedAt: '2026-10-05T13:20:00.000Z',
@@ -1345,7 +1345,7 @@ export const recordedPayment = {
   clinicId: '11111111-1111-4111-8111-111111111111',
   patientId: ANA_ID,
   method: 'CASH',
-  currency: 'USD',
+  currency: 'BOB',
   amountMinor: 5500,
   reference: null,
   receivedAt: '2026-10-05T13:45:00.000Z',

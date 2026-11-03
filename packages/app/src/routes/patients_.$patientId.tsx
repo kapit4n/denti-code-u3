@@ -33,7 +33,7 @@
 
 import { useState } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { formatMinorUnits } from '@denti-code-u3/domain';
+import { currencyDisplayLabel, formatMinorUnits, formatMoneyAmount } from '@denti-code-u3/domain';
 import {
   Card,
   CardContent,
@@ -197,16 +197,16 @@ function PatientProfile() {
                 {t('patients.profile.credit', {
                   amount: formatMinorUnits(Math.abs(patient.financialBalance.outstandingMinor)),
                   currency: patient.financialBalance.currencyCode
-                    ? ` ${patient.financialBalance.currencyCode}`
+                    ? ` ${currencyDisplayLabel(patient.financialBalance.currencyCode)}`
                     : '',
                 })}
               </p>
             ) : (
               <p className="text-lg font-semibold">
-                {formatMinorUnits(patient.financialBalance.outstandingMinor)}
-                {patient.financialBalance.currencyCode
-                  ? ` ${patient.financialBalance.currencyCode}`
-                  : ''}
+                {formatMoneyAmount(
+                  patient.financialBalance.outstandingMinor,
+                  patient.financialBalance.currencyCode,
+                )}
               </p>
             )}
             <p className="text-muted-foreground">

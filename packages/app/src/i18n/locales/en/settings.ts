@@ -13,7 +13,7 @@ export const settings = {
   'settings.field.timeZone': 'Time zone',
   'settings.field.timeZoneHint': 'IANA time zone, for example America/Lima',
   'settings.field.currency': 'Currency',
-  'settings.field.currencyHint': 'Three-letter ISO code, for example USD',
+  'settings.field.currencyHint': 'Three-letter ISO code, for example BOB',
   'settings.hours.title': 'Opening hours',
   'settings.hours.description':
     'The agenda treats these hours as the clinic’s working day and refuses bookings outside them.',

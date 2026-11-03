@@ -32,15 +32,23 @@ if (isSqliteUrl(databaseUrl)) {
   const migrationsFolder = path.join(here, 'migrations-sqlite');
   ensureSqliteDatabaseDirectory(databaseUrl);
   const client = new Database(sqliteDatabasePath(databaseUrl));
-  // Foreign keys are OFF by default in SQLite: our schema's referential integrity
-  // tests put the trigger guarantees through them, so this is not optional.
-  client.pragma('foreign_keys = ON');
+  // Drizzle rebuilds a table to change a column default. SQLite refuses to drop
+  // a table that is still referenced while foreign keys are enforced, and a
+  // `PRAGMA foreign_keys` inside the migration's transaction is ignored — so the
+  // switch has to happen outside it. The integrity check below is the counterweight:
+  // a rebuild that broke a reference fails the migration instead of hiding it.
+  client.pragma('foreign_keys = OFF');
 
   const db = sqliteDrizzle(client, { schema: sqliteSchema, casing: 'snake_case' });
 
   try {
     console.log(`Applying SQLite migrations from ${migrationsFolder}`);
     sqliteMigrate(db, { migrationsFolder });
+    client.pragma('foreign_keys = ON');
+    const violations = client.pragma('foreign_key_check') as unknown[];
+    if (violations.length > 0) {
+      throw new Error(`Foreign key check failed after migration: ${JSON.stringify(violations)}`);
+    }
     console.log('Migrations applied.');
     process.exitCode = 0;
   } catch (error) {

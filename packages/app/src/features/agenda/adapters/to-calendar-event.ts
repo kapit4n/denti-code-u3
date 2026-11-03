@@ -24,27 +24,34 @@
 
 import type { AgendaEntry, AppointmentStatus } from '@denti-code-u3/domain';
 import { isScheduleEditable } from '@denti-code-u3/domain';
+import type { StatusTone } from '@denti-code-u3/ui';
 import type { EventInput } from '@fullcalendar/core';
 
+import { appointmentStatusTone } from '../appointment-status-presentation.js';
+
 /**
- * Status → Tailwind classes.
+ * Tone → Tailwind classes for an event block.
  *
- * Two deliberate choices:
- *
- *  - **Cancelled and no-show are not hidden.** They are drawn struck through and
- *    muted, because a receptionist needs to see that a slot is deliberately empty
- *    rather than free. The API returns them for exactly this reason.
- *  - **Colours come from the design tokens**, not from raw hex values, so the
- *    agenda follows the theme like the rest of the application.
+ * The status-to-tone mapping lives in `appointment-status-presentation.ts`, so the
+ * block and the badge the user reads on it cannot drift into different colours. The
+ * badge itself uses `STATUS_TONE_CLASS`; this table only adds the stronger surface
+ * and left border a calendar block needs.
  */
-const STATUS_CLASSES: Readonly<Record<AppointmentStatus, readonly string[]>> = {
-  SCHEDULED: ['bg-brand-500/15', 'border-brand-500', 'text-brand-900'],
-  CONFIRMED: ['bg-brand-500/25', 'border-brand-600', 'text-brand-900'],
-  ARRIVED: ['bg-info-muted', 'border-info', 'text-info-text'],
-  IN_TREATMENT: ['bg-accent-500/25', 'border-accent-600', 'text-brand-900'],
-  COMPLETED: ['bg-success-muted', 'border-success', 'text-success-text'],
-  CANCELLED: ['bg-muted', 'border-muted-foreground/40', 'text-muted-foreground', 'line-through'],
-  NO_SHOW: ['bg-danger-muted', 'border-danger', 'text-danger-text'],
+const STATUS_TONE_EVENT_CLASS: Readonly<Record<StatusTone, readonly string[]>> = {
+  neutral: ['bg-muted', 'border-muted-foreground/40', 'text-muted-foreground'],
+  info: ['bg-info-muted', 'border-info', 'text-info-text'],
+  success: ['bg-success-muted', 'border-success', 'text-success-text'],
+  warning: ['bg-warning-muted', 'border-warning', 'text-warning-text'],
+  danger: ['bg-danger-muted', 'border-danger', 'text-danger-text'],
+};
+
+/**
+ * Cancelled and no-show are not hidden: they are deliberately empty slots, and the
+ * receptionist needs to see that rather than seeing a booking disappear. The strike
+ * marks only the cancellation, which is the one status that undoes the appointment.
+ */
+const STATUS_DECORATION_CLASS: Readonly<Partial<Record<AppointmentStatus, readonly string[]>>> = {
+  CANCELLED: ['line-through'],
 };
 
 /** Shared by every event, so a block reads as a block rather than a text row. */
@@ -71,7 +78,11 @@ export function toCalendarEvent(entry: AgendaEntry, unassignedLabel: string): Ev
     // 0012). The client never re-adds the minutes: two additions of the same
     // duration is how an event ends up one hour from where the database has it.
     end: entry.endsAt,
-    classNames: [...BASE_CLASSES, ...STATUS_CLASSES[entry.status]],
+    classNames: [
+      ...BASE_CLASSES,
+      ...STATUS_TONE_EVENT_CLASS[appointmentStatusTone(entry.status)],
+      ...(STATUS_DECORATION_CLASS[entry.status] ?? []),
+    ],
     // Whether this block may be dragged or stretched, asked of the domain's own
     // predicate rather than decided here. An appointment whose patient has arrived
     // is history: the API refuses to reschedule it, so a grid that offered the drag

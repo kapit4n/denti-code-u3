@@ -11,7 +11,7 @@
  * a hand-rolled rounding bug survives long enough to be filed as a tax document.
  */
 
-import { formatMinorUnits } from '@denti-code-u3/domain';
+import { formatMoneyAmount } from '@denti-code-u3/domain';
 
 import type { ReportSummary } from './queries/reports-query.js';
 
@@ -22,7 +22,7 @@ function cell(value: string | number): string {
 }
 
 function money(minor: number, currencyCode: string | null): string {
-  return `${formatMinorUnits(minor)}${currencyCode ? ` ${currencyCode}` : ''}`;
+  return formatMoneyAmount(minor, currencyCode);
 }
 
 export function buildReportCsv(report: ReportSummary): string {

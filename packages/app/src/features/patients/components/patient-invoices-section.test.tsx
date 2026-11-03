@@ -27,7 +27,7 @@ const ISSUED_INVOICE = {
   id: 'invoice-1',
   number: 'F001-00001',
   status: 'ISSUED',
-  currency: 'USD',
+  currency: 'BOB',
   subtotalMinor: 24_000,
   discountMinor: 1_000,
   taxRatePercent: 0,
@@ -45,7 +45,7 @@ const PAID_INVOICE = {
   id: 'invoice-2',
   number: 'F001-00002',
   status: 'PAID',
-  currency: 'USD',
+  currency: 'BOB',
   subtotalMinor: 12_000,
   discountMinor: 0,
   taxRatePercent: 0,
@@ -98,7 +98,7 @@ function renderSection(options: HarnessOptions = {}) {
           id: 'payment-1',
           clinicId: 'clinic-1',
           patientId: PATIENT_ID,
-          currency: 'USD',
+          currency: 'BOB',
           method: 'CASH',
           amountMinor: 23_000,
           reference: null,
@@ -163,10 +163,10 @@ describe('PatientInvoicesSection', () => {
     expect(rows[0]).toHaveTextContent('F001-00001');
     expect(rows[0]).toHaveTextContent('ISSUED');
     // The server's stored total, formatted without a division in the component.
-    expect(rows[0]!.querySelector('[data-testid="invoice-total"]')).toHaveTextContent('230.00 USD');
+    expect(rows[0]!.querySelector('[data-testid="invoice-total"]')).toHaveTextContent('230.00 Bs');
     expect(rows[0]).toHaveTextContent('2 charges');
     expect(rows[0]!.querySelector('[data-testid="invoice-balance"]')).toHaveTextContent(
-      '230.00 USD outstanding',
+      '230.00 Bs outstanding',
     );
 
     // A settled document says so rather than showing a zero balance as a debt.

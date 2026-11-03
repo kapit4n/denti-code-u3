@@ -52,7 +52,7 @@ import luxonPlugin from '@fullcalendar/luxon3';
 // that happens to work until the plugin moves it.
 import interactionPlugin, { type DateClickArg } from '@fullcalendar/interaction';
 import esLocale from '@fullcalendar/core/locales/es';
-import type { DatesSetArg, EventClickArg } from '@fullcalendar/core';
+import type { DatesSetArg, EventClickArg, EventContentArg } from '@fullcalendar/core';
 import type { AgendaEntry, Clinic } from '@denti-code-u3/domain';
 import { AlertCircle, CalendarDays } from 'lucide-react';
 
@@ -65,6 +65,10 @@ import {
 import { useRescheduleAppointment } from '../mutations/use-reschedule-appointment.js';
 import { toRescheduleIntent, type CalendarEventChange } from '../adapters/from-calendar-event.js';
 import { agendaEntryFromEvent, toCalendarEvents } from '../adapters/to-calendar-event.js';
+import {
+  appointmentStatusBadgeClassName,
+  appointmentStatusLabel,
+} from '../appointment-status-presentation.js';
 import { toBusinessHours, toScrollTime } from '../adapters/to-business-hours.js';
 import { describeAppointmentFailure } from '../describe-appointment-failure.js';
 import { AppointmentQuickPanel } from './appointment-quick-panel.js';
@@ -130,6 +134,49 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
   const events = useMemo(
     () => toCalendarEvents(data?.items ?? [], t('agenda.unassigned')),
     [data, t],
+  );
+
+  /**
+   * What a block says: when, its state, then who.
+   *
+   * The status lives on the block rather than only in the panel because a
+   * receptionist scanning the day needs to tell a confirmed visit from one that has
+   * already arrived without opening each one. It is read through the adapter and
+   * coloured from the same tone table as the panel, so the badge and the block cannot
+   * disagree about what a status means.
+   *
+   * The `fc-event-time`/`fc-event-title` classes are kept deliberately: they are
+   * FullCalendar's own hooks, and dropping them would silently break the date
+   * assertions in the browser tests and any user stylesheet that targets them.
+   */
+  const renderEventContent = useCallback(
+    (arg: EventContentArg) => {
+      const entry = agendaEntryFromEvent(arg.event);
+      if (!entry) {
+        return (
+          <div className="flex min-w-0 flex-col gap-0.5 leading-tight">
+            <span className="fc-event-time">{arg.timeText}</span>
+            <span className="fc-event-title truncate">{arg.event.title}</span>
+          </div>
+        );
+      }
+
+      return (
+        <div className="flex min-w-0 flex-col gap-0.5 leading-tight">
+          <div className="flex min-w-0 items-center gap-1">
+            <span className="fc-event-time shrink-0 font-medium">{arg.timeText}</span>
+            <span
+              className={`agenda-status-badge ml-auto inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-semibold leading-none no-underline shadow-sm ${appointmentStatusBadgeClassName(entry.status)}`}
+              data-status={entry.status}
+            >
+              {appointmentStatusLabel(t, entry.status)}
+            </span>
+          </div>
+          <span className="fc-event-title min-w-0 truncate">{arg.event.title}</span>
+        </div>
+      );
+    },
+    [t],
   );
 
   const handleDatesSet = useCallback((arg: DatesSetArg) => {
@@ -241,6 +288,7 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
           }}
           timeZone={clinic.timeZone}
           events={events}
+          eventContent={renderEventContent}
           datesSet={handleDatesSet}
           businessHours={toBusinessHours(clinic)}
           scrollTime={toScrollTime(clinic)}

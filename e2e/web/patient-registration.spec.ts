@@ -58,7 +58,7 @@ const REGISTERED_PROFILE = {
   upcomingAppointment: null,
   recentVisits: [],
   outstandingTreatments: [],
-  financialBalance: { outstandingMinor: 0, chargeCount: 0, currencyCode: 'USD' },
+  financialBalance: { outstandingMinor: 0, chargeCount: 0, currencyCode: 'BOB' },
 };
 
 /**

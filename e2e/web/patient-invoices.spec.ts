@@ -76,17 +76,15 @@ test.describe('Patient invoices', () => {
 
     // The settled document: stored total drawn as money, no debt invented.
     await expect(rows.nth(0)).toContainText('PAID');
-    await expect(rows.nth(0).getByTestId('invoice-total')).toContainText('120.00 USD');
+    await expect(rows.nth(0).getByTestId('invoice-total')).toContainText('120.00 Bs');
     await expect(rows.nth(0).getByTestId('invoice-balance')).toContainText('Paid in full');
     // America/Lima is UTC−5: 15:00Z on the 6th is 10:00 Lima, same day.
     await expect(rows.nth(0)).toContainText('issued Oct 6, 2026');
 
     // The outstanding document.
     await expect(rows.nth(1)).toContainText('ISSUED');
-    await expect(rows.nth(1).getByTestId('invoice-total')).toContainText('230.00 USD');
-    await expect(rows.nth(1).getByTestId('invoice-balance')).toContainText(
-      '230.00 USD outstanding',
-    );
+    await expect(rows.nth(1).getByTestId('invoice-total')).toContainText('230.00 Bs');
+    await expect(rows.nth(1).getByTestId('invoice-balance')).toContainText('230.00 Bs outstanding');
     // 02:00Z on the 5th is 21:00 Lima on the 4th — the clinic's clock, not UTC's.
     await expect(rows.nth(1)).toContainText('issued Oct 4, 2026');
 
@@ -146,7 +144,7 @@ test.describe('Patient invoices', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByTestId('payments-record-patient')).toContainText('Ana García');
     await expect(dialog.getByTestId('payments-record-patient-balance')).toHaveText(
-      'Owes 230.00 USD',
+      'Owes 230.00 Bs',
     );
     await expect(dialog.locator('#payments-record-patient')).toHaveCount(0);
 

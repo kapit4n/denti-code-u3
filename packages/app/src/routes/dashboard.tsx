@@ -20,7 +20,7 @@
 
 import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
-import { formatMinorUnits } from '@denti-code-u3/domain';
+import { formatMoneyAmount } from '@denti-code-u3/domain';
 import {
   CalendarDays,
   CheckCircle2,
@@ -174,9 +174,7 @@ function Dashboard() {
             testId="Collected this month"
             value={
               clinic
-                ? `${formatMinorUnits(clinic.collectedThisMonthMinor)}${
-                    clinic.currencyCode ? ` ${clinic.currencyCode}` : ''
-                  }`
+                ? formatMoneyAmount(clinic.collectedThisMonthMinor, clinic.currencyCode)
                 : '0.00'
             }
             description={t('dashboard.stats.collected.description')}

@@ -87,6 +87,31 @@ export function formatMinorUnits(amountMinor: number): string {
 }
 
 /**
+ * How a currency is written on screen, when the ISO code is not what people use.
+ *
+ * The boliviano is `BOB` in ISO 4217, but invoices and receipts in Bolivia say
+ * `Bs`. Unknown codes fall back to the code itself, so adding a currency never
+ * hides it behind a guessed label.
+ */
+const CURRENCY_DISPLAY_LABELS: Readonly<Record<CurrencyCode, string>> = {
+  BOB: 'Bs',
+};
+
+export function currencyDisplayLabel(currency: CurrencyCode): string {
+  return CURRENCY_DISPLAY_LABELS[currency] ?? currency;
+}
+
+/** Render minor units and their currency label, e.g. `"123.45 Bs"`. */
+export function formatMoneyAmount(
+  amountMinor: number,
+  currency: CurrencyCode | null | undefined,
+): string {
+  return currency
+    ? `${formatMinorUnits(amountMinor)} ${currencyDisplayLabel(currency)}`
+    : formatMinorUnits(amountMinor);
+}
+
+/**
  * The subset of ISO 4217 codes whose minor unit is two digits.
  *
  * Only these are formatted, because a zero-decimal currency (JPY) or a
@@ -96,6 +121,7 @@ export function formatMinorUnits(amountMinor: number): string {
  */
 const TWO_DECIMAL_CURRENCIES = new Set([
   'USD',
+  'BOB',
   'EUR',
   'GBP',
   'ARS',

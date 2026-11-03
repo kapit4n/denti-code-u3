@@ -69,6 +69,25 @@ test.describe('Agenda', () => {
     await expect(event.locator('.fc-event-time')).toHaveText(/^9:00\s?(am)?/i);
   });
 
+  test('shows each appointment status on its block', async ({ page }) => {
+    await page.goto('/agenda');
+
+    const confirmed = page.locator('.fc-event', { hasText: 'Ana García' }).first();
+    await expect(confirmed.locator('.agenda-status-badge')).toHaveText('Confirmed');
+    await expect(confirmed.locator('.agenda-status-badge')).toHaveClass(/bg-card/);
+    await expect(confirmed.locator('.agenda-status-badge')).toHaveClass(/text-info-text/);
+
+    const scheduled = page.locator('.fc-event', { hasText: 'Luis Fernández' });
+    await expect(scheduled.locator('.agenda-status-badge')).toHaveText('Scheduled');
+    await expect(scheduled.locator('.agenda-status-badge')).toHaveClass(/text-muted-foreground/);
+
+    // The cancelled block is still visible, but its state now has its own badge
+    // rather than relying on the strike-through alone.
+    const cancelled = page.locator('.fc-event', { hasText: 'Unassigned' });
+    await expect(cancelled.locator('.agenda-status-badge')).toHaveText('Cancelled');
+    await expect(cancelled.locator('.agenda-status-badge')).toHaveClass(/text-danger-text/);
+  });
+
   test('names an appointment with no dentist instead of leaving it blank', async ({ page }) => {
     await page.goto('/agenda');
 

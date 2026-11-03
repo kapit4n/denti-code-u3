@@ -33,7 +33,7 @@ export const clinics = pgTable('clinics', {
   email: text('email'),
   /** IANA zone, e.g. `America/Lima`. All clinic-day maths uses this. */
   timeZone: text('time_zone').notNull().default('America/Lima'),
-  currencyCode: text('currency_code').notNull().default('USD'),
+  currencyCode: text('currency_code').notNull().default('BOB'),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

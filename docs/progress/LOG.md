@@ -4125,3 +4125,85 @@ e2e **168/168** · build 5/5 · typecheck, lint, boundary guard and format check
 from the two pre-existing React Compiler warnings and the existing boundary-scanner false
 positive. No migration, repository method or validation change; PostgreSQL integration
 assertions still skip without `TEST_DATABASE_URL`.
+
+---
+
+Session 72: the development data now shows the patient-list payment-due badge.
+
+Ana's two existing charges (12,000 + 4,500 = 16,500 minor units) are now folded into one
+issued invoice, `F001-00001`, and her existing 10,000-unit card payment is allocated
+against it. She owes 6,500; the list marks her. Luis's 8,000-unit payment remains
+unallocated and he has no issued document, so the badge is not shown for him. This is
+deliberate: the badge follows the invoice ledger, not a charge that was never billed.
+
+The seed gained `insertInvoicesPg` / `insertInvoicesSqlite` and
+`insertPaymentAllocationsPg` / `insertPaymentAllocationsSqlite`, with both engine paths
+kept in step. The charge rows are updated to point at the invoice even when they already
+existed, so re-running the seed against an existing database adds the new state without
+resetting it. The fixed invoice number is safe for the current development database;
+a database already holding `F001-00001` from app use would skip the seed invoice and
+needs the usual clean reseed.
+
+**Verification.** `db:seed` ran against the current SQLite file; database typecheck and
+lint passed. `GET /api/v1/patients?q=ana` answered `hasOutstandingBalance: true`; the
+profile's invoice read answered `totalMinor: 16500`, `allocatedMinor: 10000`,
+`balanceMinor: 6500`, and the balance read answered the same three figures. No commit.
+
+---
+
+Session 73: the agenda now names each appointment's status on its block.
+
+FullCalendar's `eventContent` was overridden in the one component allowed to know the
+library, so every block shows its time, a translated status badge and the patient/dentist
+title. The badge is drawn on its own card-coloured pill with a tone-matched border
+(`STATUS_TONE_BADGE_CLASS`), because the pastel `STATUS_TONE_CLASS` left a blue word on a
+blue block. The event block itself derives its background, border and text from the same
+status-tone table, replacing the older separate `STATUS_CLASSES` table. Confirmed and
+arrived are the info tone, treatment is warning, completed is success, cancelled and
+no-show are danger (cancelled keeps its strike-through), and scheduled is neutral.
+
+The custom renderer keeps the `fc-event-time` and `fc-event-title` class names so the
+existing timezone assertions and user styles continue to work. Units and the browser suite
+cover the badge text, its tone class and the three statuses in the agenda fixture.
+
+**Verification.** Agenda unit tests 40/40 · full e2e **169/169** · web build passed · app
+and e2e typecheck passed · app and e2e lint passed (app carries the two pre-existing React
+Compiler warnings) · Prettier clean. A full app test run still has one unrelated
+pre-existing failure in `zoned-wall-clock.test.ts` (the repeated-hour case picks the later
+New York occurrence, not the earlier one); no agenda test fails. No commit.
+
+---
+
+Session 74: the product now stores Bolivian bolivianos and shows the label **Bs**.
+
+The user chose "BOB data, show Bs", so this is not a display-only relabel of USD amounts.
+`packages/domain/src/billing/money.ts` gained `currencyDisplayLabel()` and
+`formatMoneyAmount()`; `BOB` maps to `Bs`, unknown codes fall back to the ISO code, and a
+null currency omits the label. `BOB` is in the two-decimal currency set. The dashboard,
+patient balance, statement and invoices cards, invoice and general payment dialogs, the
+payments ledger, reports and the CSV export all use the clinic currency through that
+formatter. The settings default and currency hint use `BOB`.
+
+The organization schemas default to `BOB` on both engines. Generated migrations are
+`database/migrations/0008_gorgeous_colonel_america.sql` and
+`database/migrations-sqlite/0007_dark_inhumans.sql`. The SQLite rebuild failed against an
+existing foreign-key constraint, so `database/migrate.ts` now disables foreign keys outside
+the migration transaction and runs `PRAGMA foreign_key_check` after re-enabling them.
+
+The seed writes `BOB` and upserts the clinic, so rerunning it refreshes that row's currency.
+It does not convert existing financial rows. The current development SQLite database was
+converted in place; a backup is at `/tmp/denti-code-u3.before-currency.db`. A fresh
+temporary SQLite database was migrated and seeded, and clinic, charge, invoice and payment
+rows all read `BOB` with no foreign-key violations.
+
+**Tests.** Domain **400/400**; app **377/378**, with only the known
+`zoned-wall-clock.test.ts` repeated-hour failure (expected `2026-11-01T05:30:00.000Z`,
+received `2026-11-01T06:30:00.000Z`). The new money tests cover BOB/Bs, an unknown-code
+fallback and the null label. Browser fixtures and assertions now use `Bs`; the settings
+spec deliberately keeps arbitrary currencies, and API integration fixtures keep explicit
+`USD` because they do not test defaults. Full e2e **169/169**.
+
+**Verification.** Web production build passed · full typecheck, lint, boundary guard and
+Prettier passed apart from the two pre-existing React Compiler warnings · SQLite migrate
+and seed passed on both the local file and a fresh temporary database · e2e **169/169**.
+Root `pnpm run test` remains red only for the wall-clock failure. No commit.

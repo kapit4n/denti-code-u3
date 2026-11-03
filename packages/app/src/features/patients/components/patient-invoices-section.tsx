@@ -10,7 +10,12 @@
  */
 
 import { useState } from 'react';
-import { formatMinorUnits, type InvoiceSummary } from '@denti-code-u3/domain';
+import {
+  currencyDisplayLabel,
+  formatMinorUnits,
+  formatMoneyAmount,
+  type InvoiceSummary,
+} from '@denti-code-u3/domain';
 import { ReceiptText } from 'lucide-react';
 
 import {
@@ -68,7 +73,7 @@ export function PatientInvoicesSection({ patientId, clinicTimeZone }: PatientInv
                     </span>
                   </span>
                   <span className="text-muted-foreground" data-testid="invoice-total">
-                    {formatMinorUnits(invoice.totalMinor)} {invoice.currency}
+                    {formatMoneyAmount(invoice.totalMinor, invoice.currency)}
                   </span>
                 </div>
 
@@ -93,7 +98,7 @@ export function PatientInvoicesSection({ patientId, clinicTimeZone }: PatientInv
                     <p className="text-xs" data-testid="invoice-balance">
                       {t('patients.invoices.outstanding', {
                         amount: formatMinorUnits(invoice.balanceMinor),
-                        currency: invoice.currency,
+                        currency: currencyDisplayLabel(invoice.currency),
                       })}
                     </p>
                     <Button

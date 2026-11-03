@@ -377,7 +377,7 @@ function renderWorkspace({
         unitPriceMinor: written.unitPriceMinor,
         discountMinor: written.discountMinor ?? 0,
         taxRatePercent: 0,
-        currency: 'USD',
+        currency: 'BOB',
       };
       state.visitCharges = [...state.visitCharges, raised];
       await chargeGate;
@@ -400,7 +400,7 @@ function renderWorkspace({
         clinicId: 'clinic-1',
         patientId: PATIENT_ID,
         method: written.method,
-        currency: state.visitCharges[0]?.currency ?? 'USD',
+        currency: state.visitCharges[0]?.currency ?? 'BOB',
         amountMinor: written.amountMinor,
         reference: written.reference ?? null,
         receivedAt: '2026-10-05T14:35:00.000Z',
@@ -1254,7 +1254,7 @@ describe('VisitWorkspace', () => {
           unitPriceMinor: 8500,
           discountMinor: 0,
           taxRatePercent: 0,
-          currency: 'USD',
+          currency: 'BOB',
         },
       ],
     });
@@ -1447,7 +1447,7 @@ describe('VisitWorkspace', () => {
           unitPriceMinor: 8500,
           discountMinor: 0,
           taxRatePercent: 0,
-          currency: 'USD',
+          currency: 'BOB',
         },
       ],
       visitPayments: [
@@ -1456,7 +1456,7 @@ describe('VisitWorkspace', () => {
           clinicId: 'clinic-1',
           patientId: PATIENT_ID,
           method: 'CARD',
-          currency: 'USD',
+          currency: 'BOB',
           amountMinor: 8500,
           reference: '4242',
           receivedAt: '2026-10-05T14:00:00.000Z',
@@ -1531,7 +1531,7 @@ describe('VisitWorkspace', () => {
           unitPriceMinor: 8500,
           discountMinor: 0,
           taxRatePercent: 0,
-          currency: 'USD',
+          currency: 'BOB',
         },
       ],
       visitPayments: [],
@@ -1615,7 +1615,7 @@ describe('VisitWorkspace', () => {
           unitPriceMinor: 8500,
           discountMinor: 0,
           taxRatePercent: 0,
-          currency: 'USD',
+          currency: 'BOB',
         },
       ],
       visitPayments: [],

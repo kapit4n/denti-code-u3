@@ -17,7 +17,7 @@
  */
 
 import { useState } from 'react';
-import { formatMinorUnits } from '@denti-code-u3/domain';
+import { currencyDisplayLabel, formatMinorUnits, formatMoneyAmount } from '@denti-code-u3/domain';
 import { FileText } from 'lucide-react';
 
 import {
@@ -108,9 +108,8 @@ export function PatientStatementSection({
                     <span className="font-medium">{describeLine(line, t)}</span>
                     <span className="tabular-nums" data-testid="statement-entry-amount">
                       {line.kind === 'INVOICE'
-                        ? formatMinorUnits(line.debitMinor)
-                        : `-${formatMinorUnits(line.creditMinor)}`}{' '}
-                      {statement.currency}
+                        ? formatMoneyAmount(line.debitMinor, statement.currency)
+                        : formatMoneyAmount(-line.creditMinor, statement.currency)}
                     </span>
                   </div>
                   <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2 text-xs text-muted-foreground">
@@ -122,7 +121,7 @@ export function PatientStatementSection({
                     <span className="tabular-nums" data-testid="statement-entry-balance">
                       {t('patients.statement.balance', {
                         amount: formatMinorUnits(line.balanceMinor),
-                        currency: statement.currency,
+                        currency: currencyDisplayLabel(statement.currency),
                       })}
                     </span>
                   </div>
@@ -134,19 +133,19 @@ export function PatientStatementSection({
               <div className="flex justify-between gap-4">
                 <dt className="text-muted-foreground">{t('patients.statement.billed')}</dt>
                 <dd className="tabular-nums" data-testid="statement-billed">
-                  {formatMinorUnits(statement.billedMinor)} {statement.currency}
+                  {formatMoneyAmount(statement.billedMinor, statement.currency)}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-muted-foreground">{t('patients.statement.paid')}</dt>
                 <dd className="tabular-nums" data-testid="statement-paid">
-                  {formatMinorUnits(statement.paidMinor)} {statement.currency}
+                  {formatMoneyAmount(statement.paidMinor, statement.currency)}
                 </dd>
               </div>
               <div className="flex justify-between gap-4 font-medium">
                 <dt>{t('patients.statement.closing')}</dt>
                 <dd className="tabular-nums" data-testid="statement-closing">
-                  {formatMinorUnits(statement.closingBalanceMinor)} {statement.currency}
+                  {formatMoneyAmount(statement.closingBalanceMinor, statement.currency)}
                 </dd>
               </div>
             </dl>

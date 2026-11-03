@@ -67,7 +67,7 @@ test.describe('Dashboard', () => {
 
     // 8000 minor units must read as 80.00 — the conversion belongs to
     // `formatMinorUnits`, never to a `/ 100` in the component.
-    await expect(page.getByTestId('stat-card-value-Collected this month')).toHaveText('80.00 USD');
+    await expect(page.getByTestId('stat-card-value-Collected this month')).toHaveText('80.00 Bs');
   });
 
   test('distinguishes an unknown metric from a zero one', async ({ page }) => {

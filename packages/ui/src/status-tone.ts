@@ -21,6 +21,23 @@ export const STATUS_TONE_CLASS: Readonly<Record<StatusTone, string>> = {
 };
 
 /**
+ * Tone → a badge that stays legible on a coloured surface.
+ *
+ * The pastel fill above is right on a card, but a blue status word on a blue agenda
+ * block disappears. These badges carry their own card-coloured surface and a matching
+ * border, so the state reads the same on a white panel and on a filled calendar block.
+ * The `-text` colours are the darker tone shades, chosen to keep small text readable
+ * on that light surface.
+ */
+export const STATUS_TONE_BADGE_CLASS: Readonly<Record<StatusTone, string>> = {
+  neutral: 'border-border bg-card text-muted-foreground',
+  info: 'border-info/40 bg-card text-info-text',
+  success: 'border-success/40 bg-card text-success-text',
+  warning: 'border-warning/50 bg-card text-warning-text',
+  danger: 'border-danger/40 bg-card text-danger-text',
+};
+
+/**
  * Best-effort tone for an arbitrary status string.
  *
  * This is a *presentation fallback* for statuses that have no explicit mapping

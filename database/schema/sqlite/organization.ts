@@ -47,7 +47,7 @@ export const clinics = sqliteTable('clinics', {
   email: text('email'),
   /** IANA zone, e.g. `America/Lima`. All clinic-day maths uses this. */
   timeZone: text('time_zone').notNull().default('America/Lima'),
-  currencyCode: text('currency_code').notNull().default('USD'),
+  currencyCode: text('currency_code').notNull().default('BOB'),
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowDefault),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(nowDefault),

@@ -50,6 +50,14 @@ describe('buildReportCsv', () => {
     expect(csv.endsWith('17%')).toBe(true);
   });
 
+  it('writes the boliviano label in money columns', () => {
+    const csv = buildReportCsv({ ...report, currencyCode: 'BOB' });
+
+    expect(csv).toContain('Currency,BOB');
+    expect(csv).toContain('Production,4500.00 Bs');
+    expect(csv).toContain('Collections,2300.00 Bs');
+  });
+
   it('says unknown capacity is unknown rather than zero', () => {
     const csv = buildReportCsv({
       ...report,

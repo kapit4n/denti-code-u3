@@ -12,7 +12,7 @@
 
 export { cn } from './cn.js';
 export type { StatusTone } from './status-tone.js';
-export { STATUS_TONE_CLASS, toneForStatus } from './status-tone.js';
+export { STATUS_TONE_BADGE_CLASS, STATUS_TONE_CLASS, toneForStatus } from './status-tone.js';
 
 export { Button, buttonVariants } from './button.js';
 export type { ButtonProps } from './button.js';

@@ -145,7 +145,7 @@ test.describe('Patient profile', () => {
     await expect(page.getByRole('link', { name: /Sofía Ramírez/ })).toHaveCount(0);
 
     await expect(page.getByText('Penicillin')).toBeVisible();
-    await expect(page.getByText('65.00 USD')).toBeVisible();
+    await expect(page.getByText('65.00 Bs')).toBeVisible();
     await expect(page.getByText('Sensitivity in the upper right quadrant')).toBeVisible();
     // Scoped to the outstanding-treatment row rather than to any "Restorative
     // plan" on the page: the plans card now draws the plan's own title too, and
@@ -190,10 +190,10 @@ test.describe('Patient profile', () => {
 
     await page.goto(`/patients/${LUIS_ID}`);
 
-    // Luis prepaid 80.00. Rendering "-80.00 USD" would state the opposite of
+    // Luis prepaid 80.00. Rendering "-80.00 Bs" would state the opposite of
     // what happened, so the word matters as much as the number.
-    await expect(page.getByText('Credit 80.00 USD')).toBeVisible();
-    await expect(page.getByText('-80.00 USD')).toHaveCount(0);
+    await expect(page.getByText('Credit 80.00 Bs')).toBeVisible();
+    await expect(page.getByText('-80.00 Bs')).toHaveCount(0);
   });
 
   test('reports a missing patient instead of rendering an empty shell', async ({ page }) => {

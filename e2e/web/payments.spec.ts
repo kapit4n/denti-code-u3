@@ -102,7 +102,7 @@ test.describe('Payments', () => {
 
     await expect(dialog.getByTestId('payments-record-patient')).toContainText('Ana García');
     await expect(dialog.getByTestId('payments-record-patient-balance')).toContainText(
-      'Owes 230.00 USD',
+      'Owes 230.00 Bs',
     );
 
     await expect(dialog.getByTestId('payments-record-invoice')).toBeEnabled();
@@ -112,7 +112,7 @@ test.describe('Payments', () => {
 
     await expect(dialog.getByTestId('payments-record-amount')).toHaveValue('230.00');
     await expect(dialog.getByTestId('payments-record-outstanding')).toHaveText(
-      '230.00 USD outstanding',
+      '230.00 Bs outstanding',
     );
     await expect(dialog.getByTestId('payments-record-treatments')).toContainText(
       'Composite filling',

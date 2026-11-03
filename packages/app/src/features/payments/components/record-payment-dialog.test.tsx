@@ -33,7 +33,7 @@ const OPEN_INVOICE = {
   patientId: ANA_ID,
   number: 'F001-00001',
   status: 'ISSUED',
-  currency: 'USD',
+  currency: 'BOB',
   subtotalMinor: 24_000,
   discountMinor: 1_000,
   taxRatePercent: 0,
@@ -57,7 +57,7 @@ const PAID_INVOICE = {
 };
 
 const BALANCE = {
-  currency: 'USD',
+  currency: 'BOB',
   billedMinor: 23_000,
   allocatedMinor: 0,
   outstandingMinor: 23_000,
@@ -83,7 +83,7 @@ const INVOICE_DETAIL = {
       unitPriceMinor: 12_000,
       discountMinor: 0,
       taxRatePercent: 0,
-      currency: 'USD',
+      currency: 'BOB',
     },
     {
       id: 'charge-2',
@@ -100,7 +100,7 @@ const INVOICE_DETAIL = {
       unitPriceMinor: 6_000,
       discountMinor: 1_000,
       taxRatePercent: 0,
-      currency: 'USD',
+      currency: 'BOB',
     },
   ],
 };
@@ -156,7 +156,7 @@ function renderDialog(options: HarnessOptions = {}) {
           id: 'payment-1',
           clinicId: 'clinic-1',
           patientId: ANA_ID,
-          currency: 'USD',
+          currency: 'BOB',
           method: 'CARD',
           amountMinor: 23_000,
           reference: 'front desk',
@@ -249,7 +249,7 @@ describe('RecordPaymentDialog', () => {
 
     expect(await screen.findByTestId('payments-record-patient')).toHaveTextContent('Ana Torres');
     expect(await screen.findByTestId('payments-record-patient-balance')).toHaveTextContent(
-      'Owes 230.00 USD',
+      'Owes 230.00 Bs',
     );
 
     await user.click(screen.getByTestId('payments-record-invoice'));
@@ -258,7 +258,7 @@ describe('RecordPaymentDialog', () => {
 
     expect(screen.getByTestId('payments-record-amount')).toHaveValue('230.00');
     expect(screen.getByTestId('payments-record-outstanding')).toHaveTextContent(
-      '230.00 USD outstanding',
+      '230.00 Bs outstanding',
     );
 
     expect(await screen.findByText('Composite filling')).toBeTruthy();
@@ -284,7 +284,7 @@ describe('RecordPaymentDialog', () => {
 
     expect(await screen.findByTestId('payments-record-patient')).toHaveTextContent('Ana Torres');
     expect(await screen.findByTestId('payments-record-patient-balance')).toHaveTextContent(
-      'Owes 230.00 USD',
+      'Owes 230.00 Bs',
     );
     expect(screen.queryByLabelText(/^Patient/)).toBeNull();
 

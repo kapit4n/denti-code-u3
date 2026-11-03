@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 71 (patient-list payment-due badge)
+> Last updated: session 74 (currency is BOB, shown as Bs)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -96,6 +96,38 @@ compuesta` and descriptions read as aesthetic fillings. Remaining seeded composi
 > qualification: an unqualified correlated id resolved to the inner invoice row and made
 > the smoke test read every patient as settled. No migration, port method or validation
 > change.
+>
+> **Session 72** made the development data exercise that badge. Ana's two existing
+> charges (16,500 minor units) are now one issued document, `F001-00001`, and her
+> existing 10,000-unit card payment is allocated against it. She therefore owes 6,500,
+> while Luis's payment remains unallocated and no badge is shown for him. The seed keeps
+> both engines in step, links the charges to the invoice, and stays idempotent. Running
+> it against the current SQLite database did not reset the file; it added the invoice and
+> allocation to the existing rows. `GET /api/v1/patients?q=ana` now answers
+> `hasOutstandingBalance: true`, and the profile reads 16,500 billed, 10,000 paid and
+> 6,500 outstanding.
+>
+> **Session 73** put the appointment status on each agenda block. FullCalendar now
+> renders custom event content: the time and a translated status badge on the first line,
+> the patient and dentist on the second. The badge has its own card-coloured pill and a
+> tone-matched border, so a blue status word no longer disappears into the blue event
+> block. The block's own surface and left border are derived from the same status-tone
+> table as the badge and the quick panel, so a confirmed visit, an arrival, treatment,
+> completion, cancellation and no-show each read consistently at a glance. Cancelled
+> visits keep their strike-through and remain visible. The calendar still translates the
+> header and the badge in both languages. Adapter, component and browser tests cover the
+> badge and its tone.
+>
+> **Session 74** moved the product's currency to the Bolivian boliviano. The clinic
+> default is now `BOB` on both engines, and money is displayed with the label `Bs`
+> through the domain's `formatMoneyAmount`/`currencyDisplayLabel`, rather than
+> relabelling stored USD amounts. The dashboard, patient balance, statement, invoices,
+> invoice and general payment dialogs, payments ledger, reports and CSV export all use
+> the shared formatter and the clinic's currency. The seed writes `BOB` and refreshes the
+> clinic currency on rerun; generated PostgreSQL and SQLite migrations change the column
+> defaults. SQLite migrations now disable foreign keys outside the transaction and run a
+> `foreign_key_check` after rebuilding tables. The local development database was
+> converted to `BOB`; the seed does not convert existing financial rows.
 
 ## Phase
 
@@ -3640,3 +3672,37 @@ database 6, API **132** passed / 281 skipped, app **375**, desktop 4) · full e2
 **167/167** · web build passed · typecheck, lint, boundary guard and format check clean
 apart from the two pre-existing React Compiler warnings and the existing boundary-scanner
 false positive. No commit.
+
+---
+
+Session 74: the product's money now uses the Bolivian boliviano (`BOB`) and is displayed
+as `Bs`. The user chose **"BOB data, show Bs"**, so stored amounts were not relabelled USD:
+the domain gained `currencyDisplayLabel()` for the label and `formatMoneyAmount()` for the
+amount-plus-label form, with `BOB` added to the two-decimal currencies. Unknown currencies
+fall back to their ISO code, and a null currency omits the label.
+
+The dashboard, patient balance, statement and invoices cards, invoice-scoped and general
+payment dialogs, payments ledger, reports and report CSV now pass the clinic currency
+through the shared formatter instead of appending the raw code. The settings fallback and
+currency hint use `BOB`. The PostgreSQL and SQLite organization schemas default to `BOB`,
+with generated migrations `0008_gorgeous_colonel_america.sql` and
+`0007_dark_inhumans.sql`. `database/migrate.ts` now disables SQLite foreign keys outside
+the migration transaction and runs `PRAGMA foreign_key_check` afterward; without that, the
+SQLite table rebuild failed on an existing foreign-key constraint.
+
+The seed writes `BOB` and upserts the clinic so a rerun refreshes its currency. It does not
+convert existing financial rows; the current development SQLite database was converted in
+place, with a backup at `/tmp/denti-code-u3.before-currency.db`. A fresh temporary SQLite
+database was migrated and seeded, and all clinic, charge, invoice and payment rows carried
+`BOB` with no foreign-key violations.
+
+**Tests.** Domain **400/400**. App **377/378**: the one failure is the pre-existing
+`zoned-wall-clock.test.ts` repeated-hour assertion (expected `05:30Z`, received `06:30Z`);
+all currency tests pass. Browser fixtures and specs now assert `Bs`, except the settings
+spec, which keeps arbitrary currencies on purpose; API integration fixtures keep explicit
+`USD` because they are not testing the default. Full e2e **169/169**.
+
+**Verification.** Web build passed; typecheck, lint, boundary guard and Prettier passed
+apart from the two pre-existing React Compiler warnings. Root `pnpm run test` is still red
+only because of the known wall-clock failure. SQLite migrate and seed passed on the local
+and a fresh temporary database. No commit. Docs: STATE and LOG updated for the currency.
