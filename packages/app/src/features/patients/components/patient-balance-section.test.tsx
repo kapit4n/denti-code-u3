@@ -139,7 +139,9 @@ describe('PatientBalanceSection', () => {
   it('names money in credit as credit, with the payments that caused it', async () => {
     renderSection({ balance: IN_CREDIT });
 
-    expect(await screen.findByTestId('patient-balance-value')).toHaveTextContent('-50.00 Bs');
+    const value = await screen.findByTestId('patient-balance-value');
+    expect(value).toHaveTextContent('50.00 Bs');
+    expect(value).not.toHaveTextContent('-');
     expect(screen.getByTestId('patient-balance-state')).toHaveTextContent('Credit on account');
     expect(screen.getByTestId('patient-balance-unallocated')).toHaveTextContent('50.00 Bs');
   });

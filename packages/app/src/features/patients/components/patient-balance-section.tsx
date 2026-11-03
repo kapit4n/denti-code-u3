@@ -12,9 +12,10 @@
  * below — a printed invoice and a screen that disagrees with it is the one way a
  * billing screen can lose a clinic's trust.
  *
- * The balance is drawn with its sign and its meaning, because three states look
- * identical in a column of digits: money owed, nothing owed, and money in credit.
- * A patient in credit is not a zero.
+ * The balance is drawn as a magnitude beside its meaning, because three states
+ * look identical in a column of digits: money owed, nothing owed, and money in
+ * credit. A credit is not shown as a negative debt; the state line says which
+ * direction the money runs.
  */
 
 import { formatMoneyAmount } from '@denti-code-u3/domain';
@@ -71,7 +72,7 @@ export function PatientBalanceSection({ patientId, onRecordPayment }: PatientBal
                     : ''
               }`}
             >
-              {formatMoneyAmount(balance.balanceMinor, balance.currency)}
+              {formatMoneyAmount(Math.abs(balance.balanceMinor), balance.currency)}
             </p>
             <p className="mt-1 text-sm text-muted-foreground" data-testid="patient-balance-state">
               {balance.balanceMinor > 0

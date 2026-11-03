@@ -8,6 +8,10 @@ export const dashboard = {
   'dashboard.section.todayAppointments': 'Citas de hoy',
   'dashboard.section.clinicStatistics': 'Estadísticas de la clínica',
   'dashboard.section.schedule': 'Agenda del día',
+  'dashboard.widgets.title': 'Secciones del panel',
+  'dashboard.widgets.description': 'Usa las flechas para cambiar el orden.',
+  'dashboard.widgets.moveUp': 'Mover {widget} hacia arriba',
+  'dashboard.widgets.moveDown': 'Mover {widget} hacia abajo',
   'dashboard.metrics.today': 'Hoy',
   'dashboard.metrics.clinic': 'Clínica',
 

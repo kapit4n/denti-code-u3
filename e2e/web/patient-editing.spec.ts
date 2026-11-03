@@ -65,6 +65,25 @@ function editRequest(recorded: readonly { method: string; url: string; body: unk
 }
 
 test.describe('Patient editing', () => {
+  test('adds an allergy from the profile without opening the edit form', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installPatientApi(page);
+
+    await page.goto(PROFILE_URL);
+    await page.getByTestId('add-allergy').click();
+    await page.getByTestId('allergy-input').fill('Latex');
+    await page.getByTestId('allergy-submit').click();
+
+    await expect.poll(() => editRequest(api.recorded)?.body).toBeDefined();
+    expect(editRequest(api.recorded)?.url).toContain(PROFILE_PATH);
+    expect(editRequest(api.recorded)?.body).toMatchObject({
+      firstName: anaProfile.firstName,
+      lastName: anaProfile.lastName,
+      allergies: 'Penicillin, Latex',
+    });
+    expect(errors).toEqual([]);
+  });
+
   test('the profile offers an edit action that opens the form', async ({ page }) => {
     const errors = watchForConsoleErrors(page);
     await installPatientApi(page);

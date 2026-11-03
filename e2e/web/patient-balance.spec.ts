@@ -56,8 +56,9 @@ test.describe('Patient balance', () => {
 
     const card = page.getByTestId('patient-balance');
     await expect(card).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Balance' })).toHaveCount(1);
     await expect(card.getByRole('heading', { name: 'Balance' })).toBeVisible();
-    await expect(card.getByText('What this patient owes this clinic')).toBeVisible();
+    await expect(card.getByText('Issued invoices and the payments received')).toBeVisible();
 
     await expect(card.getByTestId('patient-balance-value')).toContainText('230.00 Bs');
     await expect(card.getByTestId('patient-balance-state')).toContainText('Outstanding');
@@ -104,7 +105,7 @@ test.describe('Patient balance', () => {
     await page.goto(`/patients/${ANA_ID}`);
 
     const card = page.getByTestId('patient-balance');
-    await expect(card.getByTestId('patient-balance-value')).toContainText('-50.00 Bs');
+    await expect(card.getByTestId('patient-balance-value')).toHaveText('50.00 Bs');
     await expect(card.getByTestId('patient-balance-state')).toContainText('Credit on account');
     await expect(card.getByTestId('patient-balance-unallocated')).toContainText('50.00 Bs');
 

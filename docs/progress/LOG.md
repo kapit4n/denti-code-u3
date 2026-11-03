@@ -4274,3 +4274,103 @@ and cross-clinic progress 404s; SQLite smoke checks the visit bridge's history. 
 build passed · SQLite migrate passed · full e2e **173/173**. Root `pnpm run test` remains
 red only for the wall-clock failure. Session 75's dashboard countdown work is preserved in
 the same uncommitted change set. No commit.
+
+---
+
+Session 77: the patient profile can add an allergy without opening the edit form.
+
+The allergies card on `/patients/:patientId` is now `PatientAllergiesCard`. Its **Add
+allergy** button opens a one-field form; submitting appends the trimmed entry to the
+recorded text and sends the patient's complete editable details through the existing
+`PUT /api/v1/patients/:patientId`. The whole payload is needed because
+`updatePatientSchema` requires `firstName` and `lastName`; the loaded profile supplies
+them. The helper appends with `, ` and ignores an entry already present in the
+comma/semicolon-separated list, compared case-insensitively. A failed request keeps the
+draft and the form open; success closes and resets it. English and Spanish carry the new
+copy. The route's old read-only card is gone. There is no API, domain, validation or
+database change.
+
+**Tests.** Six new component tests cover append, empty-list, duplicate refusal, the full
+PUT body (names plus merged allergies), and the refusal path keeping the draft. The
+patient-editing browser spec gained the profile quick-add case. Full app **399/400**, with
+only the pre-existing `zoned-wall-clock.test.ts` repeated-hour failure. Full e2e
+**174/174**.
+
+**Verification.** Web production build passed · app and e2e typecheck and lint passed (the
+same two pre-existing React Compiler warnings) · boundary guard OK with the existing
+scanner false positive · Prettier clean on changed files · full e2e **174/174**. No
+commit.
+
+---
+
+Session 78: the patient profile now has one balance, and the development data behind it
+agrees with the visit payments.
+
+The older charges-minus-payments card was removed from `/patients/:patientId`: it could say
+`5.00` owed while the invoice-ledger card below called the same `80.00` an unapplied credit.
+The remaining `PatientBalanceSection` keeps its amount unsigned, so a credit reads
+`80.00 Bs` beside **Credit on account** rather than a negative debt. Its description now says
+**Issued invoices and payments received** (ES **Facturas emitidas y pagos recibidos**), and
+the browser suite asserts exactly one Balance heading. The API still exposes
+`financialBalance`, but the profile no longer draws a second balance from a different rule.
+
+`database/seed.ts` now issues Luis's 85.00 visit charge as `F001-00002` and allocates his
+existing 80.00 `PAY-000002` to it on both engines, idempotently. Rerunning the seed on the
+current SQLite database added the invoice and allocation and stamped the charge without
+resetting the file. The visit payment register now counts 80.00 paid / 5.00 due, and the
+patient balance reads 85.00 billed / 80.00 allocated / 5.00 outstanding instead of
+0 / 0 / -80.00. No API, domain, validation, migration or schema change.
+
+**Tests.** Patient balance component **6/6**; patient-balance and patient-profile browser
+specs **14/14**; full e2e **173/173** after the obsolete negative top-card test was removed;
+full app **399/400**, still only the pre-existing `zoned-wall-clock.test.ts` repeated-hour
+failure. Database, app and e2e typecheck and lint passed; the app kept its two React Compiler
+warnings. Web production build passed and a SQLite seed rerun was verified by querying the
+database. Boundary guard passed with its existing scanner false positive. The changed files
+are Prettier-clean; root `format:check` still names four generated migration meta files that
+this session did not touch. No commit.
+
+---
+
+Session 79: the dashboard schedule now stacks its four panels in one column and remembers the
+user's order.
+
+The dashboard's lower schedule area is `DashboardSchedule`. Today's Appointments, Calendar
+Preview, Upcoming Visits and Recent Patients render one per row at every viewport width,
+replacing the former three-column grid. Each panel carries accessible up/down controls; the
+first widget's up and the last widget's down are disabled. The order is stored device-locally
+in `localStorage` under `denti-code-dashboard-widget-order`; malformed, duplicate, incomplete
+or unknown saved values fall back to the default order: today-appointments, calendar-preview,
+upcoming-visits, recent-patients. The copy is translated in English and Spanish. The
+preference reorders widgets only; hiding widgets was not requested and is not implemented. No
+API, domain, validation, database or migration change.
+
+**Tests.** Ten new `dashboard-widget-order` unit tests cover the default fallback, saved-order
+validation, moving up/down, bounds and immutability. The targeted dashboard browser spec
+passes **13/13**, proving the single-column geometry, a reorder and persistence after reload.
+Full app **409/410**, with only the pre-existing `zoned-wall-clock.test.ts` repeated-hour
+failure; full e2e **174/174**. Web production build passed; app and e2e typecheck and lint
+passed (same two pre-existing React Compiler warnings); boundary guard passed with its
+existing scanner false positive. The changed files are Prettier-clean; root `format:check`
+still names four untouched generated migration metadata files. No commit.
+
+---
+
+Session 80: the left sidebar can collapse to an icon rail and remembers the choice.
+
+`Sidebar` now has a toggle at the top of its navigation. Expanded it keeps the existing
+labelled 16rem sidebar; collapsed it becomes a 5rem icon rail that keeps every navigation
+link, the product mark and Settings. The toggle's accessible name changes between **Collapse
+sidebar** and **Expand sidebar**, and collapsed links keep their accessible names and tooltips
+while their visible labels are hidden. The choice is stored device-locally under
+`denti-code-sidebar-collapsed`; absent, unreadable or malformed storage starts expanded, and a
+webview that refuses storage still collapses for the current session. English and Spanish copy
+was added. No API, domain, validation, database or migration change.
+
+**Tests.** Five unit tests cover the default, the exact stored value, unreadable storage,
+writing both states and write failure. The browser smoke spec covers collapse, visible-label
+removal with accessible names intact, persistence across reload and expansion. Full app
+**414/415**, with only the pre-existing `zoned-wall-clock.test.ts` repeated-hour failure; full
+e2e **175/175**. Production build, typecheck, lint, boundary guard and changed-file Prettier all
+passed (same two pre-existing React Compiler warnings and existing scanner false positive).
+This commit also carries the uncommitted sessions 75–79 work.

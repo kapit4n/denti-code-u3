@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 76 (appointment status history, recorded times and rescheduling)
+> Last updated: session 80 (collapsible left sidebar with a saved icon-rail preference)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -149,6 +149,42 @@ compuesta` and descriptions read as aesthetic fillings. Remaining seeded composi
 > PostgreSQL and SQLite migrations were generated and SQLite was migrated, and English and
 > Spanish copy plus unit, integration and browser coverage were added. Dashboard countdown
 > work from session 75 remains in the same uncommitted change set.
+>
+> **Session 77** added a quick **Add allergy** action to the patient profile. The allergies
+> card now opens a one-field form and appends the new allergy to the recorded text instead of
+> replacing it, so the receptionist no longer has to open and resubmit the full edit form for
+> this one change. The write still goes through `PUT /api/v1/patients/:patientId` with the
+> patient's complete editable details, because the update schema requires the first and last
+> names; the card sends them from the loaded profile. Duplicates are ignored by a
+> case-insensitive check over comma/semicolon-separated entries. The action is translated in
+> English and Spanish. No API, domain, validation or database change.
+>
+> **Session 78** left one balance on the patient profile and made the development data agree
+> with it. The old charges-minus-payments card is gone, because it could show 5.00 owed while
+> the invoice-ledger card below called the same 80.00 an unapplied credit. The remaining card
+> reads issued invoices and payments received, shows a credit as a positive amount beside
+> "Credit on account" instead of `-80.00`, and the browser suite asserts a single Balance
+> heading. The seed now issues Luis's 85.00 visit charge as `F001-00002` and allocates his
+> existing 80.00 payment, so his visit reads 80.00 paid / 5.00 due and his profile reads 5.00
+> outstanding. No API, domain, validation or schema change.
+>
+> **Session 79** put the dashboard schedule in one column and made its order a saved display
+> preference. Today's Appointments, Calendar Preview, Upcoming Visits and Recent Patients now
+> stack one per row at every width instead of sharing a three-column grid. Each panel has
+> accessible move-up/move-down controls, and the first up / last down are disabled. Order is
+> stored device-locally under `denti-code-dashboard-widget-order`; malformed, duplicate,
+> incomplete or unknown saved values fall back to the default order. English and Spanish
+> copy was added. The preference reorders widgets only — hiding widgets was not requested and
+> is not implemented. No API, domain, validation, database or migration change.
+>
+> **Session 80** made the left sidebar collapsible. The toggle sits at the top of its
+> navigation; expanded it keeps the existing labelled 16rem sidebar, and collapsed it becomes a
+> 5rem icon rail that keeps every navigation link, the product mark and Settings. The toggle's
+> accessible name changes between Collapse sidebar and Expand sidebar, and collapsed links keep
+> their accessible names and tooltips while their visible labels are hidden. The choice is
+> stored device-locally under `denti-code-sidebar-collapsed`; absent, unreadable or malformed
+> storage starts expanded. English and Spanish copy was added. No API, domain, validation,
+> database or migration change.
 
 ## Phase
 
@@ -3763,3 +3799,101 @@ failure remains the pre-existing `zoned-wall-clock.test.ts` repeated-hour case).
 **Verification.** Web production build passed · app and e2e typecheck and lint passed (app
 keeps the two pre-existing React Compiler warnings) · full e2e **171/171** · Prettier clean
 on the changed files.
+
+---
+
+Session 77: the patient profile can now add an allergy without opening the edit form.
+
+`PatientAllergiesCard` owns the allergies card on `/patients/:patientId`. Its **Add allergy**
+button opens a one-field form; on submit it appends the trimmed entry to the recorded text and
+sends the patient's complete editable details through the existing `PUT
+/api/v1/patients/:patientId`. The full payload is required because `updatePatientSchema` keeps
+`firstName` and `lastName` mandatory, and the loaded profile supplies them. Entries are
+separated with `, ` and a case-insensitive check over comma/semicolon-separated values refuses
+to list the same allergy twice. A failed write keeps the draft and the form open; success
+closes and resets it. English and Spanish copy was added. The old read-only card in the route
+was replaced; no API, domain, validation or database change was needed.
+
+**Tests.** New component tests **6/6** cover appending, the empty-list case, duplicate
+refusal, the full PUT body (including names and the merged allergy text), and the refusal
+path keeping the draft. The patient-editing browser spec gained one case, full e2e
+**174/174**. Full app suite **399/400**, with only the pre-existing
+`zoned-wall-clock.test.ts` repeated-hour failure.
+
+**Verification.** Web production build passed · app and e2e typecheck and lint passed (the
+same two pre-existing React Compiler warnings) · guard boundaries OK (the existing
+boundary-scanner false positive) · Prettier clean on the changed files · full e2e
+**174/174**. No commit.
+
+---
+
+Session 78: the patient profile now has one balance, and the development data behind it
+agrees with the visit payments.
+
+The older charges-minus-payments card was removed from `/patients/:patientId`: it could say
+`5.00` owed while the invoice-ledger card below called the same `80.00` an unapplied credit.
+The remaining `PatientBalanceSection` keeps its amount unsigned, so a credit reads
+`80.00 Bs` beside **Credit on account** rather than a negative debt. Its description now says
+**Issued invoices and payments received** (ES **Facturas emitidas y pagos recibidos**), and
+the browser suite asserts exactly one Balance heading.
+
+`database/seed.ts` now issues Luis's 85.00 visit charge as `F001-00002` and allocates his
+existing 80.00 `PAY-000002` to it on both engines, idempotently. Rerunning the seed on the
+current SQLite database added the invoice and allocation and stamped the charge without
+resetting the file. The visit payment register now counts 80.00 paid / 5.00 due, and the
+patient balance reads 85.00 billed / 80.00 allocated / 5.00 outstanding instead of
+0 / 0 / -80.00. No API, domain, validation, migration or schema change.
+
+**Tests.** Patient balance component **6/6**; patient-balance and patient-profile browser
+specs **14/14**; full e2e **173/173** after the obsolete negative top-card test was removed;
+full app **399/400**, still only the pre-existing `zoned-wall-clock.test.ts` repeated-hour
+failure. Database, app and e2e typecheck and lint passed; the app kept its two React Compiler
+warnings. Web production build passed and a SQLite seed rerun was verified by querying the
+database. Boundary guard passed with its existing scanner false positive. The changed files
+are Prettier-clean; root `format:check` still names four generated migration meta files that
+this session did not touch. No commit.
+
+---
+
+Session 79: the dashboard schedule now stacks its four panels in one column and remembers the
+user's order.
+
+The dashboard's lower schedule area is `DashboardSchedule`. Today's Appointments, Calendar
+Preview, Upcoming Visits and Recent Patients render one per row at every viewport width,
+replacing the former three-column grid. Each panel carries accessible up/down controls; the
+first widget's up and the last widget's down are disabled. The order is stored device-locally
+in `localStorage` under `denti-code-dashboard-widget-order`; malformed, duplicate, incomplete
+or unknown saved values fall back to the default order: today-appointments, calendar-preview,
+upcoming-visits, recent-patients. The copy is translated in English and Spanish. The
+preference reorders widgets only; hiding widgets was not requested and is not implemented. No
+API, domain, validation, database or migration change.
+
+**Tests.** Ten new `dashboard-widget-order` unit tests cover the default fallback, saved-order
+validation, moving up/down, bounds and immutability. The targeted dashboard browser spec
+passes **13/13**, proving the single-column geometry, a reorder and persistence after reload.
+Full app **409/410**, with only the pre-existing `zoned-wall-clock.test.ts` repeated-hour
+failure; full e2e **174/174**. Web production build passed; app and e2e typecheck and lint
+passed (same two pre-existing React Compiler warnings); boundary guard passed with its
+existing scanner false positive. The changed files are Prettier-clean; root `format:check`
+still names four untouched generated migration metadata files. No commit.
+
+---
+
+Session 80: the left sidebar can collapse to an icon rail and remembers the choice.
+
+`Sidebar` now has a toggle at the top of its navigation. Expanded it keeps the existing
+labelled 16rem sidebar; collapsed it becomes a 5rem icon rail that keeps every navigation
+link, the product mark and Settings. The toggle's accessible name changes between **Collapse
+sidebar** and **Expand sidebar**, and collapsed links keep their accessible names and tooltips
+while their visible labels are hidden. The choice is stored device-locally under
+`denti-code-sidebar-collapsed`; absent, unreadable or malformed storage starts expanded, and a
+webview that refuses storage still collapses for the current session. English and Spanish copy
+was added. No API, domain, validation, database or migration change.
+
+**Tests.** Five unit tests cover the default, the exact stored value, unreadable storage,
+writing both states and write failure. The browser smoke spec covers collapse, visible-label
+removal with accessible names intact, persistence across reload and expansion. Full app
+**414/415**, with only the pre-existing `zoned-wall-clock.test.ts` repeated-hour failure; full
+e2e **175/175**. Production build, typecheck, lint, boundary guard and changed-file Prettier all
+passed (same two pre-existing React Compiler warnings and existing scanner false positive).
+This commit also carries the uncommitted sessions 75–79 work.

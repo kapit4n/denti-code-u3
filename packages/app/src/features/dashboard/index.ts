@@ -5,3 +5,4 @@ export { QuickActionsPanel } from './components/quick-actions-panel.js';
 export { RecentPatients } from './components/recent-patients.js';
 export { UpcomingVisits } from './components/upcoming-visits.js';
 export { CalendarPreview } from './components/calendar-preview.js';
+export { DashboardSchedule } from './components/dashboard-schedule.js';

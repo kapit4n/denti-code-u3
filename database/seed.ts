@@ -99,6 +99,18 @@ const DEVELOPMENT_INVOICE_ID = '11111111-bbbb-4ccc-8ddd-000000000001';
 const DEVELOPMENT_INVOICE_PAYMENT_ID = '11111111-6666-4777-8888-000000000001';
 const DEVELOPMENT_INVOICE_PAYMENT_MINOR = 10_000;
 
+/**
+ * Luis's issued document and the prepayment allocated against it.
+ *
+ * The payment existed before the bill (it is what "Luis prepaid 80.00" meant), so
+ * it must be allocated once the charge is invoiced. Without the allocation the
+ * visit says 85.00 is due while the patient balance calls the same 80.00 an
+ * unapplied credit — two answers to one question.
+ */
+const DEVELOPMENT_LUIS_INVOICE_ID = '11111111-bbbb-4ccc-8ddd-000000000002';
+const DEVELOPMENT_LUIS_PAYMENT_ID = '11111111-6666-4777-8888-000000000002';
+const DEVELOPMENT_LUIS_PAYMENT_MINOR = 8_000;
+
 const now = new Date();
 
 /**
@@ -129,7 +141,7 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 function seedSummary(): string {
-  return `clinic ${DEVELOPMENT_CLINIC_ID}, 10 patients, 2 dentists, 2 rooms, 4 chairs, ${ALL_APPOINTMENTS.length} appointments (a week ahead), 10 visits (8 completed, 1 open, 1 cancelled), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 attachments, 10 odontogram entries, 3 charges, 1 issued invoice, 2 payments, 1 payment allocation`;
+  return `clinic ${DEVELOPMENT_CLINIC_ID}, 10 patients, 2 dentists, 2 rooms, 4 chairs, ${ALL_APPOINTMENTS.length} appointments (a week ahead), 10 visits (8 completed, 1 open, 1 cancelled), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 attachments, 10 odontogram entries, 3 charges, 2 issued invoices, 2 payments, 2 payment allocations`;
 }
 
 /**
@@ -1768,10 +1780,12 @@ async function insertChargesSqlite(db: BetterSQLite3Database<typeof sqliteSchema
 }
 
 /**
- * Ana's two unbilled charges become one issued document, and the payment she
- * already made is allocated against it without settling the whole total. That is
- * the state the list's **Payment due** badge exists to surface: a patient with an
- * invoice still open, not merely a charge that was never billed.
+ * The patient's charges become issued documents, and the money already received is
+ * allocated against them. Ana's document stays partially open, which is what the
+ * list's **Payment due** badge exists to surface. Luis's visit bill is also issued
+ * so its payment is visible in both the visit's payment register and the patient
+ * balance; an un-invoiced charge beside an unallocated payment would make those
+ * two screens disagree about the same 85.00.
  */
 async function insertInvoicesPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
   await db
@@ -1793,6 +1807,25 @@ async function insertInvoicesPg(db: PostgresJsDatabase<typeof pgSchema>): Promis
     })
     .onConflictDoNothing();
 
+  await db
+    .insert(pgSchema.invoices)
+    .values({
+      id: DEVELOPMENT_LUIS_INVOICE_ID,
+      number: 'F001-00002',
+      clinicId: DEVELOPMENT_CLINIC_ID,
+      patientId: '11111111-3333-4444-8555-000000000002',
+      status: 'PARTIALLY_PAID',
+      currency: currencyCode,
+      subtotalMinor: 8_500,
+      totalMinor: 8_500,
+      issuedAt: at(0, 10, 40),
+      dueAt: at(12, 9, 5),
+      createdBy: DEVELOPMENT_USERS[0].id,
+      createdAt: at(0, 10, 40),
+      updatedAt: at(0, 10, 40),
+    })
+    .onConflictDoNothing();
+
   for (const chargeId of [
     '11111111-5555-4666-8777-000000000001',
     '11111111-5555-4666-8777-000000000002',
@@ -1806,6 +1839,14 @@ async function insertInvoicesPg(db: PostgresJsDatabase<typeof pgSchema>): Promis
       })
       .where(eq(pgSchema.charges.id, chargeId));
   }
+
+  await db
+    .update(pgSchema.charges)
+    .set({
+      invoiceId: DEVELOPMENT_LUIS_INVOICE_ID,
+      invoicedAt: at(0, 10, 40),
+    })
+    .where(eq(pgSchema.charges.id, '11111111-5555-4666-8777-000000000003'));
 }
 
 /** The SQLite twin of `insertInvoicesPg`. */
@@ -1829,6 +1870,25 @@ async function insertInvoicesSqlite(db: BetterSQLite3Database<typeof sqliteSchem
     })
     .onConflictDoNothing();
 
+  await db
+    .insert(sqliteSchema.invoices)
+    .values({
+      id: DEVELOPMENT_LUIS_INVOICE_ID,
+      number: 'F001-00002',
+      clinicId: DEVELOPMENT_CLINIC_ID,
+      patientId: '11111111-3333-4444-8555-000000000002',
+      status: 'PARTIALLY_PAID',
+      currency: currencyCode,
+      subtotalMinor: 8_500,
+      totalMinor: 8_500,
+      issuedAt: at(0, 10, 40),
+      dueAt: at(12, 9, 5),
+      createdBy: DEVELOPMENT_USERS[0].id,
+      createdAt: at(0, 10, 40),
+      updatedAt: at(0, 10, 40),
+    })
+    .onConflictDoNothing();
+
   for (const chargeId of [
     '11111111-5555-4666-8777-000000000001',
     '11111111-5555-4666-8777-000000000002',
@@ -1842,6 +1902,14 @@ async function insertInvoicesSqlite(db: BetterSQLite3Database<typeof sqliteSchem
       })
       .where(eq(sqliteSchema.charges.id, chargeId));
   }
+
+  await db
+    .update(sqliteSchema.charges)
+    .set({
+      invoiceId: DEVELOPMENT_LUIS_INVOICE_ID,
+      invoicedAt: at(0, 10, 40),
+    })
+    .where(eq(sqliteSchema.charges.id, '11111111-5555-4666-8777-000000000003'));
 }
 
 async function insertPaymentsPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
@@ -1860,14 +1928,14 @@ async function insertPaymentsPg(db: PostgresJsDatabase<typeof pgSchema>): Promis
       },
       {
         // Landed earlier this month, so monthly revenue has something to report
-        // on the first of the month.
-        id: '11111111-6666-4777-8888-000000000002',
+        // on the first of the month. It is Luis's prepayment for the visit bill.
+        id: DEVELOPMENT_LUIS_PAYMENT_ID,
         number: 'PAY-000002',
         clinicId: DEVELOPMENT_CLINIC_ID,
         patientId: '11111111-3333-4444-8555-000000000002',
         method: 'CASH',
         currency: currencyCode,
-        amountMinor: 8000,
+        amountMinor: DEVELOPMENT_LUIS_PAYMENT_MINOR,
         receivedAt: new Date(now.getTime() - 24 * 60 * 60 * 1000),
       },
     ])
@@ -1889,13 +1957,13 @@ async function insertPaymentsSqlite(db: BetterSQLite3Database<typeof sqliteSchem
         receivedAt: new Date(now.getTime() - 2 * DAY),
       },
       {
-        id: '11111111-6666-4777-8888-000000000002',
+        id: DEVELOPMENT_LUIS_PAYMENT_ID,
         number: 'PAY-000002',
         clinicId: DEVELOPMENT_CLINIC_ID,
         patientId: '11111111-3333-4444-8555-000000000002',
         method: 'CASH',
         currency: currencyCode,
-        amountMinor: 8000,
+        amountMinor: DEVELOPMENT_LUIS_PAYMENT_MINOR,
         receivedAt: new Date(now.getTime() - 24 * 60 * 60 * 1000),
       },
     ])
@@ -1905,11 +1973,18 @@ async function insertPaymentsSqlite(db: BetterSQLite3Database<typeof sqliteSchem
 async function insertPaymentAllocationsPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
   await db
     .insert(pgSchema.paymentAllocations)
-    .values({
-      paymentId: DEVELOPMENT_INVOICE_PAYMENT_ID,
-      invoiceId: DEVELOPMENT_INVOICE_ID,
-      amountMinor: DEVELOPMENT_INVOICE_PAYMENT_MINOR,
-    })
+    .values([
+      {
+        paymentId: DEVELOPMENT_INVOICE_PAYMENT_ID,
+        invoiceId: DEVELOPMENT_INVOICE_ID,
+        amountMinor: DEVELOPMENT_INVOICE_PAYMENT_MINOR,
+      },
+      {
+        paymentId: DEVELOPMENT_LUIS_PAYMENT_ID,
+        invoiceId: DEVELOPMENT_LUIS_INVOICE_ID,
+        amountMinor: DEVELOPMENT_LUIS_PAYMENT_MINOR,
+      },
+    ])
     .onConflictDoNothing();
 }
 
@@ -1919,11 +1994,18 @@ async function insertPaymentAllocationsSqlite(
 ): Promise<void> {
   await db
     .insert(sqliteSchema.paymentAllocations)
-    .values({
-      paymentId: DEVELOPMENT_INVOICE_PAYMENT_ID,
-      invoiceId: DEVELOPMENT_INVOICE_ID,
-      amountMinor: DEVELOPMENT_INVOICE_PAYMENT_MINOR,
-    })
+    .values([
+      {
+        paymentId: DEVELOPMENT_INVOICE_PAYMENT_ID,
+        invoiceId: DEVELOPMENT_INVOICE_ID,
+        amountMinor: DEVELOPMENT_INVOICE_PAYMENT_MINOR,
+      },
+      {
+        paymentId: DEVELOPMENT_LUIS_PAYMENT_ID,
+        invoiceId: DEVELOPMENT_LUIS_INVOICE_ID,
+        amountMinor: DEVELOPMENT_LUIS_PAYMENT_MINOR,
+      },
+    ])
     .onConflictDoNothing();
 }
 let seedResult: string;

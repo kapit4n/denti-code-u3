@@ -39,6 +39,33 @@ test.describe('Smoke (web shell)', () => {
     await expect(page.getByText(/^Web · /)).toBeVisible();
   });
 
+  test('the sidebar collapses to an icon rail and remembers the choice', async ({ page }) => {
+    await page.goto('/');
+
+    const sidebar = page.getByTestId('sidebar');
+    const dashboardLink = page.getByRole('link', { name: 'Dashboard' });
+
+    await expect(sidebar).toHaveAttribute('data-collapsed', 'false');
+    await expect(dashboardLink).toContainText('Dashboard');
+
+    await page.getByRole('button', { name: 'Collapse sidebar' }).click();
+
+    await expect(sidebar).toHaveAttribute('data-collapsed', 'true');
+    await expect(page.getByRole('button', { name: 'Expand sidebar' })).toBeVisible();
+    await expect(dashboardLink).toBeVisible();
+    await expect(dashboardLink).not.toContainText('Dashboard');
+    expect(await page.evaluate(() => localStorage.getItem('denti-code-sidebar-collapsed'))).toBe(
+      'true',
+    );
+
+    await page.reload();
+
+    await expect(page.getByTestId('sidebar')).toHaveAttribute('data-collapsed', 'true');
+    await page.getByRole('button', { name: 'Expand sidebar' }).click();
+    await expect(page.getByTestId('sidebar')).toHaveAttribute('data-collapsed', 'false');
+    await expect(page.getByRole('link', { name: 'Dashboard' })).toContainText('Dashboard');
+  });
+
   test('the shell stays thin: it adds no markup of its own', async ({ page }) => {
     await page.goto('/');
 

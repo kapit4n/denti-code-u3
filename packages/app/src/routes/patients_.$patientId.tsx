@@ -33,15 +33,8 @@
 
 import { useState } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { currencyDisplayLabel, formatMinorUnits, formatMoneyAmount } from '@denti-code-u3/domain';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Button,
-} from '@denti-code-u3/ui';
+import { formatMinorUnits } from '@denti-code-u3/domain';
+import { Card, CardContent, CardHeader, CardTitle, Button } from '@denti-code-u3/ui';
 import { ArrowLeft, CalendarPlus } from 'lucide-react';
 
 import { AppointmentBookingDialog } from '../features/agenda/components/appointment-booking-dialog.js';
@@ -49,6 +42,7 @@ import { formatClinicDay, formatClinicDayTime } from '../features/clinic/format-
 import { useClinicSettings } from '../features/clinic/queries/clinic-settings-query.js';
 import { RecordPaymentDialog } from '../features/payments/components/record-payment-dialog.js';
 import { usePatient } from '../features/patients/hooks/use-patients.js';
+import { PatientAllergiesCard } from '../features/patients/components/patient-allergies-card.js';
 import { PatientTreatmentPlansSection } from '../features/patients/components/patient-treatment-plans-section.js';
 import { PatientInvoicesSection } from '../features/patients/components/patient-invoices-section.js';
 import { PatientStatementSection } from '../features/patients/components/patient-statement-section.js';
@@ -137,7 +131,7 @@ function PatientProfile() {
         </div>
       </header>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>{t('patients.profile.contact')}</CardTitle>
@@ -165,60 +159,7 @@ function PatientProfile() {
           </CardContent>
         </Card>
 
-        {/* Allergies are safety-critical, so they get their own card and are
-            never collapsed into a generic "medical history" line. */}
-        <Card className={patient.allergies ? 'border-destructive/50' : undefined}>
-          <CardHeader>
-            <CardTitle>{t('patients.profile.allergies')}</CardTitle>
-            <CardDescription>{t('patients.profile.allergiesDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm">
-            {patient.allergies ? (
-              <p className="font-medium text-destructive">{patient.allergies}</p>
-            ) : (
-              <p className="text-muted-foreground">{t('patients.profile.allergiesNone')}</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('patients.profile.balance')}</CardTitle>
-            <CardDescription>{t('patients.profile.balanceDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-1 text-sm">
-            {/*
-              A negative balance is a prepayment, not a debt. Showing it as
-              "-80.00" would read as money the patient owes, which is the
-              opposite of what happened.
-            */}
-            {patient.financialBalance.outstandingMinor < 0 ? (
-              <p className="text-lg font-semibold">
-                {t('patients.profile.credit', {
-                  amount: formatMinorUnits(Math.abs(patient.financialBalance.outstandingMinor)),
-                  currency: patient.financialBalance.currencyCode
-                    ? ` ${currencyDisplayLabel(patient.financialBalance.currencyCode)}`
-                    : '',
-                })}
-              </p>
-            ) : (
-              <p className="text-lg font-semibold">
-                {formatMoneyAmount(
-                  patient.financialBalance.outstandingMinor,
-                  patient.financialBalance.currencyCode,
-                )}
-              </p>
-            )}
-            <p className="text-muted-foreground">
-              {t(
-                patient.financialBalance.chargeCount === 1
-                  ? 'patients.profile.chargeCount.one'
-                  : 'patients.profile.chargeCount.other',
-                { count: patient.financialBalance.chargeCount },
-              )}
-            </p>
-          </CardContent>
-        </Card>
+        <PatientAllergiesCard patient={patient} />
       </div>
 
       <Card>

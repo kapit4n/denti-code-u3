@@ -36,13 +36,10 @@ import {
 
 import { AppointmentBookingDialog } from '../features/agenda/components/appointment-booking-dialog.js';
 import { useClinicSettings } from '../features/clinic/queries/clinic-settings-query.js';
-import { CalendarPreview } from '../features/dashboard/components/calendar-preview.js';
+import { DashboardSchedule } from '../features/dashboard/components/dashboard-schedule.js';
 import { QuickActions } from '../features/dashboard/components/quick-actions.js';
 import { QuickActionsPanel } from '../features/dashboard/components/quick-actions-panel.js';
-import { RecentPatients } from '../features/dashboard/components/recent-patients.js';
 import { StatCard } from '../features/dashboard/components/stat-card.js';
-import { TodayAppointments } from '../features/dashboard/components/today-appointments.js';
-import { UpcomingVisits } from '../features/dashboard/components/upcoming-visits.js';
 import { useDashboardStats } from '../features/dashboard/hooks/use-dashboard-stats.js';
 import { useTranslation } from '../i18n/index.js';
 
@@ -215,16 +212,7 @@ function Dashboard() {
 
       <QuickActionsPanel />
 
-      <section aria-label={t('dashboard.section.schedule')} className="grid gap-6 lg:grid-cols-3">
-        <div className="flex flex-col gap-6 lg:col-span-2">
-          <TodayAppointments />
-          <CalendarPreview />
-        </div>
-        <div className="flex flex-col gap-6">
-          <UpcomingVisits />
-          <RecentPatients />
-        </div>
-      </section>
+      <DashboardSchedule />
 
       {/* Both doors, one dialog: no slot (this is not a grid) and no patient (nobody has
           been named yet), so it asks for both. It closes itself once the API agrees and

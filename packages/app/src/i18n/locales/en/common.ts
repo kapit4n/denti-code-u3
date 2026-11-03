@@ -15,6 +15,8 @@ export const common = {
   'common.nav.settings': 'Settings',
   'common.nav.primary': 'Primary',
   'common.shell.clinicManagement': 'Clinic management',
+  'common.shell.collapseSidebar': 'Collapse sidebar',
+  'common.shell.expandSidebar': 'Expand sidebar',
   'common.shell.dentalClinicManagement': 'Dental clinic management',
   'common.shell.foundationBody':
     'The application foundation is in place. Clinical features arrive in later milestones; no business logic runs in this shell.',

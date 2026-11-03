@@ -11,6 +11,8 @@ export const common = {
   'common.nav.settings': 'Configuración',
   'common.nav.primary': 'Principal',
   'common.shell.clinicManagement': 'Gestión de clínica',
+  'common.shell.collapseSidebar': 'Contraer barra lateral',
+  'common.shell.expandSidebar': 'Expandir barra lateral',
   'common.shell.dentalClinicManagement': 'Gestión de clínica dental',
   'common.shell.foundationBody':
     'La base de la aplicación está lista. Las funciones clínicas llegarán en hitos posteriores; en este shell no se ejecuta lógica de negocio.',

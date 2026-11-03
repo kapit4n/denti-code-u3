@@ -256,6 +256,41 @@ test.describe('Dashboard', () => {
     );
   });
 
+  test('keeps the dashboard sections in one column and remembers their order', async ({ page }) => {
+    await page.goto('/dashboard');
+
+    const widgets = page.getByTestId('dashboard-widget');
+    await expect(widgets).toHaveCount(4);
+
+    const widgetIds = () =>
+      widgets.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-widget-id')));
+
+    await expect
+      .poll(widgetIds)
+      .toEqual(['today-appointments', 'calendar-preview', 'upcoming-visits', 'recent-patients']);
+
+    const boxes = await widgets.evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const rect = node.getBoundingClientRect();
+        return { left: Math.round(rect.left), top: Math.round(rect.top) };
+      }),
+    );
+    expect(new Set(boxes.map((box) => box.left)).size).toBe(1);
+    expect(boxes.slice(1).every((box, index) => box.top > boxes[index]!.top)).toBe(true);
+
+    await page.getByRole('button', { name: "Move Today's Appointments down" }).click();
+
+    await expect
+      .poll(widgetIds)
+      .toEqual(['calendar-preview', 'today-appointments', 'upcoming-visits', 'recent-patients']);
+
+    await page.reload();
+    await expect(widgets).toHaveCount(4);
+    await expect
+      .poll(widgetIds)
+      .toEqual(['calendar-preview', 'today-appointments', 'upcoming-visits', 'recent-patients']);
+  });
+
   test('renders one bar per day that has bookings', async ({ page }) => {
     await page.goto('/dashboard');
 

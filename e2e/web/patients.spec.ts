@@ -145,7 +145,7 @@ test.describe('Patient profile', () => {
     await expect(page.getByRole('link', { name: /Sofía Ramírez/ })).toHaveCount(0);
 
     await expect(page.getByText('Penicillin')).toBeVisible();
-    await expect(page.getByText('65.00 Bs')).toBeVisible();
+    await expect(page.getByTestId('patient-balance-value')).toHaveText('230.00 Bs');
     await expect(page.getByText('Sensitivity in the upper right quadrant')).toBeVisible();
     // Scoped to the outstanding-treatment row rather than to any "Restorative
     // plan" on the page: the plans card now draws the plan's own title too, and
@@ -176,24 +176,6 @@ test.describe('Patient profile', () => {
     await expect(page.getByText('Nothing booked.')).toBeVisible();
     await expect(page.getByRole('heading', { name: /Luis Fernández/ })).toBeVisible();
     expect(errors).toEqual([]);
-  });
-
-  test('labels a negative balance as credit rather than as debt', async ({ page }) => {
-    await installApi(page, {
-      ...clinicFixture(),
-      [`${LIST_PATH}/${LUIS_ID}`]: { body: luisProfile },
-      [`${LIST_PATH}/${LUIS_ID}/odontogram`]: { body: luisOdontogram },
-      [`${LIST_PATH}/${LUIS_ID}/treatment-plans`]: { body: noTreatmentPlans },
-      [`${LIST_PATH}/${LUIS_ID}/invoices`]: { body: noInvoices },
-      [`${LIST_PATH}/${LUIS_ID}/balance`]: { body: anaBalance },
-    });
-
-    await page.goto(`/patients/${LUIS_ID}`);
-
-    // Luis prepaid 80.00. Rendering "-80.00 Bs" would state the opposite of
-    // what happened, so the word matters as much as the number.
-    await expect(page.getByText('Credit 80.00 Bs')).toBeVisible();
-    await expect(page.getByText('-80.00 Bs')).toHaveCount(0);
   });
 
   test('reports a missing patient instead of rendering an empty shell', async ({ page }) => {
