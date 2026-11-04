@@ -127,6 +127,8 @@ import {
 
 export interface VisitWorkspaceProps {
   readonly visitId: string;
+  /** An open planned line chosen on the agenda, to select in the treatment form. */
+  readonly initialTreatmentPlanItemId?: string;
 }
 
 /**
@@ -153,7 +155,7 @@ const VISIT_SECTIONS: readonly {
   { id: 'attachments', labelKey: 'visits.section.attachments' },
 ];
 
-export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
+export function VisitWorkspace({ visitId, initialTreatmentPlanItemId }: VisitWorkspaceProps) {
   const { t } = useTranslation();
   const visitQuery = useVisit(visitId);
   const { data: clinic } = useClinicSettings();
@@ -164,7 +166,9 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
   const dentistsQuery = useDentists({ onlyActive: false });
   const chairsQuery = useChairs({ onlyActive: false });
   const closure = useVisitClosure();
-  const [section, setSection] = useState<VisitSectionId>('summary');
+  const [section, setSection] = useState<VisitSectionId>(
+    initialTreatmentPlanItemId ? 'treatments' : 'summary',
+  );
 
   if (visitQuery.isPending) {
     return <p className="text-sm text-muted-foreground">{t('visits.workspace.loading')}</p>;
@@ -338,6 +342,7 @@ export function VisitWorkspace({ visitId }: VisitWorkspaceProps) {
               visitId={visit.id}
               patientId={visit.patientId}
               clinicTimeZone={clinic?.timeZone}
+              initialTreatmentPlanItemId={initialTreatmentPlanItemId}
             />
           ) : null}
           {section === 'prescriptions' ? (
@@ -859,12 +864,40 @@ interface VisitTreatmentsSectionProps {
   readonly patientId: string;
   /** Absent while the clinic is still being fetched; the times then wait for it. */
   readonly clinicTimeZone: string | undefined;
+  /** A line chosen on the agenda, selected once the plans have loaded. */
+  readonly initialTreatmentPlanItemId?: string;
 }
 
-function VisitTreatmentsSection({
+function VisitTreatmentsSection(props: VisitTreatmentsSectionProps) {
+  const { t } = useTranslation();
+  const plansQuery = usePatientTreatmentPlans(
+    props.patientId,
+    Boolean(props.initialTreatmentPlanItemId),
+  );
+  const catalogueQuery = useTreatments();
+
+  if (props.initialTreatmentPlanItemId && (plansQuery.isPending || catalogueQuery.isPending)) {
+    return (
+      <Card data-testid="visit-treatments">
+        <CardHeader>
+          <CardTitle>{t('visits.treatments.title')}</CardTitle>
+          <CardDescription>{t('visits.treatments.description')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">{t('visits.treatments.planLoading')}</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return <VisitTreatmentsSectionBody {...props} />;
+}
+
+function VisitTreatmentsSectionBody({
   visitId,
   patientId,
   clinicTimeZone,
+  initialTreatmentPlanItemId,
 }: VisitTreatmentsSectionProps) {
   const { t } = useTranslation();
   const catalogueQuery = useTreatments();
@@ -876,9 +909,14 @@ function VisitTreatmentsSection({
   const finishTreatment = useFinishVisitTreatment();
   const recordSupply = useRecordTreatmentSupply();
   const completeItem = useCompleteTreatmentPlanItem();
-  const [treatmentId, setTreatmentId] = useState('');
-  const [planItemId, setPlanItemId] = useState('');
-  const [tooth, setTooth] = useState('');
+  const initialLine = initialTreatmentPlanItemId
+    ? plansQuery.data?.items
+        .flatMap((plan) => plan.items)
+        .find((item) => item.id === initialTreatmentPlanItemId && !item.isCompleted)
+    : undefined;
+  const [treatmentId, setTreatmentId] = useState(initialLine?.treatmentId ?? '');
+  const [planItemId, setPlanItemId] = useState(initialLine?.treatmentId ? initialLine.id : '');
+  const [tooth, setTooth] = useState(initialLine?.treatmentId ? (initialLine.tooth ?? '') : '');
   const [draft, setDraft] = useState('');
 
   const failure = describeTreatmentFailure(record.error, t('visits.treatments.error'), {

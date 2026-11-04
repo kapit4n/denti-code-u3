@@ -13,10 +13,12 @@
  * receptionist books the wrong patient into the wrong chair.
  */
 
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Navigate } from '@tanstack/react-router';
+import { useState } from 'react';
 import { AlertCircle, CalendarDays } from 'lucide-react';
 
 import { AgendaCalendar } from '../features/agenda/components/agenda-calendar.js';
+import type { StartedVisitFromPanel } from '../features/agenda/components/appointment-quick-panel.js';
 import { useClinicSettings } from '../features/clinic/queries/clinic-settings-query.js';
 import { useTranslation } from '../i18n/index.js';
 
@@ -36,10 +38,26 @@ export const Route = createFileRoute('/agenda')({
 function Agenda() {
   const { t } = useTranslation();
   const { appointmentId, date } = Route.useSearch();
+  const [startedVisit, setStartedVisit] = useState<StartedVisitFromPanel | null>(null);
   const { data: clinic, isPending, error } = useClinicSettings();
+
+  const openStartedVisit = (started: StartedVisitFromPanel) => {
+    setStartedVisit(started);
+  };
 
   return (
     <div className="flex flex-col gap-4">
+      {startedVisit && (
+        <Navigate
+          to="/visits/$visitId"
+          params={{ visitId: startedVisit.visitId }}
+          search={
+            startedVisit.treatmentPlanItemId
+              ? { treatmentPlanItemId: startedVisit.treatmentPlanItemId }
+              : {}
+          }
+        />
+      )}
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">{t('agenda.title')}</h1>
         <p className="text-sm text-muted-foreground">
@@ -62,7 +80,12 @@ function Agenda() {
       )}
 
       {clinic && (
-        <AgendaCalendar clinic={clinic} focusedAppointmentId={appointmentId} initialDate={date} />
+        <AgendaCalendar
+          clinic={clinic}
+          focusedAppointmentId={appointmentId}
+          initialDate={date}
+          onOpenVisit={openStartedVisit}
+        />
       )}
     </div>
   );

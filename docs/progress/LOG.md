@@ -4502,3 +4502,30 @@ with only the pre-existing `zoned-wall-clock.test.ts` repeated-hour failure; API
 boundary guard kept its existing scanner false positive; changed files are Prettier-clean; web
 production build passed. PostgreSQL-only API tests skipped (no server on `127.0.0.1:5433`). No
 commit.
+
+---
+
+Session 86: planned treatments can now be started from the agenda.
+
+An **ARRIVED** appointment's quick panel lists the patient's open planned lines, with their
+derived **In progress** / **Not started** state, last session time and a **Start** or
+**Continue** action. The action creates the appointment's visit through the existing bodyless
+`POST /api/v1/visits` with `{ appointmentId }`; there is no new endpoint or write path, and the
+existing `409` remains the answer when the appointment already has a visit. On success the
+agenda opens `/visits/:visitId` with the chosen plan item as `treatmentPlanItemId`, the
+workspace selects its treatments section, and the treatment form is pre-filled with that line.
+Lines lacking a catalogue treatment remain listed but disabled.
+
+TanStack Router's imperative navigate call did not typecheck for `/visits/$visitId`; the agenda
+route therefore renders `<Navigate>` from state handed back by the quick panel through the
+calendar. In the workspace, a wrapper prefetches the plan and catalogue reads before mounting
+the form. Initializing the form from the cached line avoids a render-time state update that made
+Radix's hidden select input emit an empty value and clear the preselection. No API, domain,
+validation, database or migration change; English and Spanish agenda copy was added.
+
+**Tests.** Targeted agenda/visit tests **61/61**; full app **422/423**, with only the
+pre-existing `zoned-wall-clock.test.ts` repeated-hour failure. Root typecheck passed; app lint
+passed with the two existing React Compiler warnings; web production build and boundary guard
+passed (guard keeps its existing scanner false positive). The PostgreSQL-only API tests remain
+skipped because no server is listening on `127.0.0.1:5433`; this slice's e2e was not run. No
+commit.

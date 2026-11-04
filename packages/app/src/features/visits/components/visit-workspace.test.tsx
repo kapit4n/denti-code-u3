@@ -126,6 +126,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 interface HarnessOptions {
   /** The language the workspace is rendered in. */
   readonly locale?: Locale;
+  /** A planned line chosen on the agenda, selected when the workspace opens. */
+  readonly initialTreatmentPlanItemId?: string;
   /** The visit the API answers with, before any closure. */
   readonly visit?: Record<string, unknown>;
   readonly visitStatus?: number;
@@ -207,6 +209,7 @@ interface HarnessOptions {
 
 function renderWorkspace({
   locale = 'en',
+  initialTreatmentPlanItemId,
   visit = OPEN_VISIT,
   visitStatus = 200,
   visitAfterClosure,
@@ -589,7 +592,9 @@ function renderWorkspace({
   const visitRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/visits/$visitId',
-    component: () => <VisitWorkspace visitId={VISIT_ID} />,
+    component: () => (
+      <VisitWorkspace visitId={VISIT_ID} initialTreatmentPlanItemId={initialTreatmentPlanItemId} />
+    ),
   });
   const router = createRouter({
     routeTree: rootRoute.addChildren([patientsRoute, patientRoute, visitRoute]),
@@ -1389,6 +1394,40 @@ describe('VisitWorkspace', () => {
         expect.objectContaining({ method: 'POST' }),
       ),
     );
+  });
+
+  it('opens on the planned line the agenda chose and selects it in the form', async () => {
+    renderWorkspace({
+      initialTreatmentPlanItemId: 'item-open',
+      patientPlans: [
+        {
+          id: 'plan-1',
+          title: 'Full mouth rehab',
+          status: 'ACCEPTED',
+          items: [
+            {
+              id: 'item-open',
+              treatmentId: 'treatment-1',
+              treatmentName: 'Composite filling',
+              treatmentCode: 'COMPO',
+              tooth: '16',
+              isCompleted: false,
+              sessions: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    const panel = await screen.findByTestId('visit-treatment-plan');
+    await waitFor(() =>
+      expect(screen.getByTestId('treatment-catalogue')).toHaveTextContent('Composite filling'),
+    );
+    expect(screen.getByTestId('treatment-tooth')).toHaveValue('16');
+    expect(screen.getByTestId('treatment-plan-item')).toHaveTextContent(
+      'Full mouth rehab — tooth 16',
+    );
+    expect(panel).toBeTruthy();
   });
 
   it('keeps the form the clinician filled and says why when the treatment is refused', async () => {

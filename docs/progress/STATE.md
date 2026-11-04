@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 85 (planned treatments continue across visits)
+> Last updated: session 86 (start planned treatments from the agenda)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -4076,3 +4076,30 @@ with only the pre-existing `zoned-wall-clock.test.ts` repeated-hour failure; API
 boundary guard kept its existing scanner false positive; changed files are Prettier-clean; web
 production build passed. The API suite's PostgreSQL-only tests remain skipped because no
 PostgreSQL is listening on `127.0.0.1:5433`. No commit.
+
+---
+
+Session 86: the agenda can start a patient's planned treatment directly.
+
+Once an appointment is **ARRIVED**, the quick panel lists the patient's open treatment-plan
+lines with their **In progress** / **Not started** state and last session time. **Start** and
+**Continue** create the appointment's visit through the existing bodyless
+`POST /api/v1/visits` with `{ appointmentId }` — no second write path — and then open
+`/visits/:visitId` with the chosen line as `treatmentPlanItemId`. The visit workspace opens on
+the treatments section and pre-fills that line once the plan read is cached. If a visit already
+exists the API's existing `409` is shown in the panel. Lines without a catalogue treatment stay
+visible but cannot be started.
+
+TanStack Router's imperative navigation did not typecheck for `/visits/$visitId`, so the agenda
+route renders `<Navigate>` from state supplied by the quick panel through the calendar. The
+workspace wrapper prefetches plans and catalogue before mounting the form, which avoids a
+render-time state update that made Radix's hidden select input clear the preselection.
+
+No API, domain, validation, database or migration change. English and Spanish agenda copy was
+added.
+
+**Tests.** Targeted agenda/visit tests **61/61**; full app **422/423**, with only the
+pre-existing `zoned-wall-clock.test.ts` repeated-hour failure. Root typecheck passed; app lint
+passed with the two existing React Compiler warnings; web production build and boundary guard
+passed (guard keeps its existing scanner false positive). E2E was not run for this slice. No
+commit.

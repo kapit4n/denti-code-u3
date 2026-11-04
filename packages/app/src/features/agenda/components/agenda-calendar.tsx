@@ -71,7 +71,7 @@ import {
 } from '../appointment-status-presentation.js';
 import { toBusinessHours, toScrollTime } from '../adapters/to-business-hours.js';
 import { describeAppointmentFailure } from '../describe-appointment-failure.js';
-import { AppointmentQuickPanel } from './appointment-quick-panel.js';
+import { AppointmentQuickPanel, type StartedVisitFromPanel } from './appointment-quick-panel.js';
 import { AppointmentBookingDialog } from './appointment-booking-dialog.js';
 import { AgendaFilterBar } from './agenda-filter-bar.js';
 import { useTranslation } from '../../../i18n/index.js';
@@ -82,9 +82,16 @@ export interface AgendaCalendarProps {
   readonly focusedAppointmentId?: string;
   /** The clinic-local day the grid opens on, as an ISO instant. */
   readonly initialDate?: string;
+  /** Opens the workspace of a visit the quick panel just started. */
+  readonly onOpenVisit?: (started: StartedVisitFromPanel) => void;
 }
 
-export function AgendaCalendar({ clinic, focusedAppointmentId, initialDate }: AgendaCalendarProps) {
+export function AgendaCalendar({
+  clinic,
+  focusedAppointmentId,
+  initialDate,
+  onOpenVisit,
+}: AgendaCalendarProps) {
   const { locale, t } = useTranslation();
 
   /**
@@ -418,7 +425,12 @@ export function AgendaCalendar({ clinic, focusedAppointmentId, initialDate }: Ag
         follows the write never reaches a component that is no longer mounted.
       */}
       {panelEntry ? (
-        <AppointmentQuickPanel entry={panelEntry} clinic={clinic} onClose={closePanel} />
+        <AppointmentQuickPanel
+          entry={panelEntry}
+          clinic={clinic}
+          onClose={closePanel}
+          onVisitStarted={onOpenVisit}
+        />
       ) : null}
 
       {/*

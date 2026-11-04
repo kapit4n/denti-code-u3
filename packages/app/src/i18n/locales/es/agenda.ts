@@ -61,6 +61,21 @@ export const agenda = {
   'agenda.panel.chooseTime': 'Elegir otra hora',
   'agenda.panel.newTime': 'Nueva hora de la cita',
   'agenda.panel.moveAppointment': 'Mover cita',
+  'agenda.panel.plannedTitle': 'Tratamientos planificados',
+  'agenda.panel.plannedHint':
+    'Elige qué se hace hoy. La visita se abrirá con ese tratamiento planificado seleccionado.',
+  'agenda.panel.plannedLoading': 'Cargando los tratamientos planificados del paciente…',
+  'agenda.panel.plannedLoadError':
+    'No se pudieron cargar los tratamientos planificados del paciente.',
+  'agenda.panel.plannedEmpty': 'Este paciente no tiene tratamientos planificados pendientes.',
+  'agenda.panel.planInProgress': 'En curso',
+  'agenda.panel.planNotStarted': 'Sin iniciar',
+  'agenda.panel.planLastSession': 'Última sesión {time}',
+  'agenda.panel.planStart': 'Iniciar',
+  'agenda.panel.planContinue': 'Continuar',
+  'agenda.panel.planStarting': 'Iniciando…',
+  'agenda.panel.planTooth': 'Diente {tooth} · ',
+  'agenda.panel.planFallback': 'Tratamiento planificado',
 
   'agenda.progress.title': 'Progreso',
   'agenda.progress.loading': 'Cargando el historial de la cita…',

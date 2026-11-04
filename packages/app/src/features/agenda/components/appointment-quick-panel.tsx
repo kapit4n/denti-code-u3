@@ -32,7 +32,14 @@ import {
   DialogTitle,
   Label,
 } from '@denti-code-u3/ui';
-import { AlertCircle, CalendarClock, Loader2, Stethoscope, UserRound } from 'lucide-react';
+import {
+  AlertCircle,
+  CalendarClock,
+  ClipboardList,
+  Loader2,
+  Stethoscope,
+  UserRound,
+} from 'lucide-react';
 import {
   addMinutes,
   allowedAppointmentTransitions,
@@ -54,14 +61,23 @@ import {
 import { formatClinicDayTime, formatClinicTimeRange } from '../../clinic/format-clinic-time.js';
 import { instantToZonedWallClock, zonedWallClockToInstant } from '../../clinic/zoned-wall-clock.js';
 import { useTranslation } from '../../../i18n/index.js';
+import { usePatientTreatmentPlans } from '../../patients/hooks/use-patients.js';
+import { useStartVisit } from '../../visits/mutations/use-start-visit.js';
 import { AppointmentProgressTimeline } from './appointment-progress-timeline.js';
 import { AppointmentWallClockFields } from './appointment-wall-clock-fields.js';
+
+export interface StartedVisitFromPanel {
+  readonly visitId: string;
+  readonly treatmentPlanItemId?: string;
+}
 
 export interface AppointmentQuickPanelProps {
   readonly entry: AgendaEntry;
   readonly clinic: Clinic;
   /** Called when the panel should go away: closed by hand, or after a write. */
   readonly onClose: () => void;
+  /** Called when the panel created a visit, so the host can open its workspace. */
+  readonly onVisitStarted?: (started: StartedVisitFromPanel) => void;
 }
 
 function wallClockParts(wallClock: string | undefined): { date: string; time: string } {
@@ -69,10 +85,17 @@ function wallClockParts(wallClock: string | undefined): { date: string; time: st
   return { date, time };
 }
 
-export function AppointmentQuickPanel({ entry, clinic, onClose }: AppointmentQuickPanelProps) {
+export function AppointmentQuickPanel({
+  entry,
+  clinic,
+  onClose,
+  onVisitStarted,
+}: AppointmentQuickPanelProps) {
   const { locale, t } = useTranslation();
   const transition = useTransitionAppointmentStatus();
   const reschedule = useRescheduleAppointment();
+  const startVisit = useStartVisit();
+  const plansQuery = usePatientTreatmentPlans(entry.patientId, entry.status === 'ARRIVED');
   const [reason, setReason] = useState('');
   const [recording, setRecording] = useState<{
     readonly to: 'ARRIVED' | 'IN_TREATMENT';
@@ -96,20 +119,47 @@ export function AppointmentQuickPanel({ entry, clinic, onClose }: AppointmentQui
 
   const allowed = allowedAppointmentTransitions(entry.status);
   const canReschedule = isScheduleEditable(entry.status);
-  const busy = transition.isPending || reschedule.isPending;
+  const busy = transition.isPending || reschedule.isPending || startVisit.isPending;
 
-  const failure = describeAppointmentFailure(transition.error ?? reschedule.error, {
-    timeZone: clinic.timeZone,
-    fallback: t('agenda.panel.updateError'),
-    locale,
-    messages: {
-      conflict: t('agenda.failure.conflict'),
-      conflictOne: t('agenda.failure.conflictOne'),
-      conflictMany: t('agenda.failure.conflictMany'),
-      notFound: t('agenda.failure.notFound'),
-      network: t('agenda.failure.network'),
+  const failure = describeAppointmentFailure(
+    transition.error ?? reschedule.error ?? startVisit.error,
+    {
+      timeZone: clinic.timeZone,
+      fallback: t('agenda.panel.updateError'),
+      locale,
+      messages: {
+        conflict: t('agenda.failure.conflict'),
+        conflictOne: t('agenda.failure.conflictOne'),
+        conflictMany: t('agenda.failure.conflictMany'),
+        notFound: t('agenda.failure.notFound'),
+        network: t('agenda.failure.network'),
+      },
     },
-  });
+  );
+
+  const openPlanLines =
+    plansQuery.data?.items.flatMap((plan) =>
+      plan.items.filter((item) => !item.isCompleted).map((item) => ({ plan, item })),
+    ) ?? [];
+
+  const openPlannedVisit = (treatmentPlanItemId?: string) => {
+    startVisit.mutate(
+      { appointmentId: entry.id },
+      {
+        onSuccess: ({ visit }) => {
+          if (onVisitStarted) {
+            onVisitStarted(
+              treatmentPlanItemId
+                ? { visitId: visit.id, treatmentPlanItemId }
+                : { visitId: visit.id },
+            );
+            return;
+          }
+          onClose();
+        },
+      },
+    );
+  };
 
   const sendTransition = (to: AppointmentStatus, why?: string, occurredAt?: string) => {
     transition.mutate(
@@ -226,6 +276,95 @@ export function AppointmentQuickPanel({ entry, clinic, onClose }: AppointmentQui
         {entry.notes ? <p className="rounded-md bg-muted p-3 text-sm">{entry.notes}</p> : null}
 
         <AppointmentProgressTimeline appointmentId={entry.id} timeZone={clinic.timeZone} />
+
+        {entry.status === 'ARRIVED' ? (
+          <section className="space-y-2" data-testid="agenda-planned-treatments">
+            <h3 className="flex items-center gap-2 text-sm font-medium">
+              <ClipboardList aria-hidden className="size-4" />
+              {t('agenda.panel.plannedTitle')}
+            </h3>
+
+            {plansQuery.isPending ? (
+              <p className="text-sm text-muted-foreground">{t('agenda.panel.plannedLoading')}</p>
+            ) : plansQuery.error ? (
+              <p role="alert" className="text-sm text-destructive">
+                {t('agenda.panel.plannedLoadError')}
+              </p>
+            ) : openPlanLines.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t('agenda.panel.plannedEmpty')}</p>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">{t('agenda.panel.plannedHint')}</p>
+                <ul className="space-y-2">
+                  {openPlanLines.map(({ plan, item }) => {
+                    const lastSession = item.sessions.at(-1);
+                    const inProgress = item.sessions.length > 0;
+                    const starting =
+                      startVisit.isPending && startVisit.variables?.appointmentId === entry.id;
+
+                    return (
+                      <li
+                        key={item.id}
+                        data-testid="agenda-planned-treatment"
+                        className="rounded-md bg-muted/40 p-2 text-sm"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-medium">
+                              {item.tooth ? t('agenda.panel.planTooth', { tooth: item.tooth }) : ''}
+                              {item.treatmentName?.trim() ||
+                                item.treatmentCode ||
+                                t('agenda.panel.planFallback')}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {plan.title?.trim() || t('agenda.panel.planFallback')}
+                            </p>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {inProgress
+                              ? t('agenda.panel.planInProgress')
+                              : t('agenda.panel.planNotStarted')}
+                          </span>
+                        </div>
+                        {lastSession ? (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {t('agenda.panel.planLastSession', {
+                              time: formatClinicDayTime(
+                                lastSession.performedAt,
+                                clinic.timeZone,
+                                locale,
+                              ),
+                            })}
+                          </p>
+                        ) : null}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="mt-2"
+                          data-testid="agenda-start-planned-treatment"
+                          disabled={busy || item.treatmentId === null}
+                          onClick={() => openPlannedVisit(item.id)}
+                        >
+                          {starting ? (
+                            <>
+                              <Loader2 aria-hidden className="size-3 animate-spin" />
+                              {t('agenda.panel.planStarting')}
+                            </>
+                          ) : inProgress ? (
+                            t('agenda.panel.planContinue')
+                          ) : (
+                            t('agenda.panel.planStart')
+                          )}
+                        </Button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
+          </section>
+        ) : null}
 
         {recording ? (
           <div className="space-y-2 rounded-md border p-3">

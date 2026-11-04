@@ -21,11 +21,21 @@ import { createFileRoute } from '@tanstack/react-router';
 
 import { VisitWorkspace } from '../features/visits/components/visit-workspace.js';
 
+export interface VisitSearch {
+  /** The planned line the agenda chose before opening this workspace. */
+  readonly treatmentPlanItemId?: string;
+}
+
 export const Route = createFileRoute('/visits_/$visitId')({
+  validateSearch: (search: Record<string, unknown>): VisitSearch => ({
+    treatmentPlanItemId:
+      typeof search.treatmentPlanItemId === 'string' ? search.treatmentPlanItemId : undefined,
+  }),
   component: VisitPage,
 });
 
 function VisitPage() {
   const { visitId } = Route.useParams();
-  return <VisitWorkspace visitId={visitId} />;
+  const { treatmentPlanItemId } = Route.useSearch();
+  return <VisitWorkspace visitId={visitId} initialTreatmentPlanItemId={treatmentPlanItemId} />;
 }

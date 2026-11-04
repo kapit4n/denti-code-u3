@@ -93,15 +93,18 @@ export interface PatientTreatmentPlansResponse {
  * rather than `[]` — "not here" and "nothing planned" are different sentences and
  * the section would say the wrong one. The `progress` on each plan is the
  * server's projection of the rows, not a count this screen does for itself.
+ *
+ * `enabled` lets a screen that only sometimes needs the plans keep the hook
+ * unconditional, as the agenda does for an arrived appointment.
  */
-export function usePatientTreatmentPlans(patientId: string) {
+export function usePatientTreatmentPlans(patientId: string, enabled = true) {
   const client = useApiClient();
 
   return useQuery({
     queryKey: ['patients', 'treatment-plans', patientId],
     queryFn: () =>
       client.get<PatientTreatmentPlansResponse>(`/patients/${patientId}/treatment-plans`),
-    enabled: patientId.length > 0,
+    enabled: enabled && patientId.length > 0,
   });
 }
 

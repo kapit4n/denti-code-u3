@@ -12,7 +12,7 @@
 
 import { ApiClient } from '@denti-code-u3/api-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -70,18 +70,28 @@ function renderPanel({
   entry = ENTRY,
   reply,
   progress = [],
+  plans = [],
   onClose = vi.fn(),
+  onVisitStarted = vi.fn(),
   locale = 'en',
 }: {
   readonly entry?: AgendaEntry;
   readonly reply?: () => Promise<Response>;
   readonly progress?: readonly AppointmentProgressEntry[];
+  readonly plans?: readonly Record<string, unknown>[];
   readonly onClose?: () => void;
+  readonly onVisitStarted?: (started: {
+    readonly visitId: string;
+    readonly treatmentPlanItemId?: string;
+  }) => void;
   readonly locale?: Locale;
 } = {}) {
   const fetchImplementation = vi.fn<typeof fetch>((input) => {
     if (String(input).endsWith('/progress')) {
       return Promise.resolve(json({ items: progress }));
+    }
+    if (String(input).endsWith('/treatment-plans')) {
+      return Promise.resolve(json({ items: plans }));
     }
     return (reply ?? (() => Promise.resolve(json({ ...entry, status: 'ARRIVED' }))))();
   });
@@ -92,13 +102,18 @@ function renderPanel({
     <QueryClientProvider client={queryClient}>
       <ApiClientProvider baseUrl={BASE_URL} client={client}>
         <I18nProvider initialLocale={locale}>
-          <AppointmentQuickPanel entry={entry} clinic={CLINIC} onClose={onClose} />
+          <AppointmentQuickPanel
+            entry={entry}
+            clinic={CLINIC}
+            onClose={onClose}
+            onVisitStarted={onVisitStarted}
+          />
         </I18nProvider>
       </ApiClientProvider>
     </QueryClientProvider>,
   );
 
-  return { fetchImplementation, onClose };
+  return { fetchImplementation, onClose, onVisitStarted };
 }
 
 function writes(fetchImplementation: ReturnType<typeof vi.fn>) {
@@ -400,5 +415,169 @@ describe('AppointmentQuickPanel', () => {
     renderPanel({ entry: { ...ENTRY, notes: 'Bring the crown from the lab' } });
 
     expect(screen.getByText('Bring the crown from the lab')).toBeTruthy();
+  });
+
+  it("shows the patient's open planned treatments once the patient has arrived", async () => {
+    renderPanel({
+      entry: { ...ENTRY, status: 'ARRIVED' },
+      plans: [
+        {
+          id: 'plan-1',
+          dentistId: null,
+          status: 'ACCEPTED',
+          title: 'Restorative plan',
+          notes: null,
+          presentedAt: null,
+          acceptedAt: null,
+          updatedAt: '2026-10-01T12:00:00.000Z',
+          progress: { total: 2, completed: 0, percentComplete: 0 },
+          items: [
+            {
+              id: 'item-not-started',
+              treatmentId: 'treatment-1',
+              treatmentCode: 'RESINA',
+              treatmentName: 'Composite filling',
+              tooth: '16',
+              surfaces: [],
+              quantity: 1,
+              estimatedPriceMinor: 10000,
+              isCompleted: false,
+              completedAt: null,
+              notes: null,
+              sessions: [],
+            },
+            {
+              id: 'item-in-progress',
+              treatmentId: 'treatment-2',
+              treatmentCode: 'ENDO',
+              treatmentName: 'Root canal',
+              tooth: '24',
+              surfaces: [],
+              quantity: 1,
+              estimatedPriceMinor: 20000,
+              isCompleted: false,
+              completedAt: null,
+              notes: null,
+              sessions: [
+                {
+                  id: 'session-1',
+                  visitId: 'visit-old',
+                  tooth: '24',
+                  notes: null,
+                  performedAt: '2026-10-04T15:00:00.000Z',
+                  endedAt: '2026-10-04T15:45:00.000Z',
+                },
+              ],
+            },
+            {
+              id: 'item-completed',
+              treatmentId: 'treatment-3',
+              treatmentCode: 'PROFILAXIS',
+              treatmentName: 'Cleaning',
+              tooth: null,
+              surfaces: [],
+              quantity: 1,
+              estimatedPriceMinor: 5000,
+              isCompleted: true,
+              completedAt: '2026-10-01T12:00:00.000Z',
+              notes: null,
+              sessions: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    const section = await screen.findByTestId('agenda-planned-treatments');
+    await waitFor(() => expect(section).toHaveTextContent('Composite filling'));
+    expect(section).toHaveTextContent('Root canal');
+    expect(within(section).getByText('In progress')).toBeTruthy();
+    expect(within(section).getByText('Not started')).toBeTruthy();
+    expect(within(section).queryByText('Cleaning')).toBeNull();
+    expect(within(section).getByRole('button', { name: 'Start' })).toBeTruthy();
+    expect(within(section).getByRole('button', { name: 'Continue' })).toBeTruthy();
+  });
+
+  it('starts the visit for the chosen planned line and opens its workspace', async () => {
+    const user = userEvent.setup();
+    const { fetchImplementation, onVisitStarted } = renderPanel({
+      entry: { ...ENTRY, status: 'ARRIVED' },
+      plans: [
+        {
+          id: 'plan-1',
+          dentistId: null,
+          status: 'ACCEPTED',
+          title: 'Restorative plan',
+          notes: null,
+          presentedAt: null,
+          acceptedAt: null,
+          updatedAt: '2026-10-01T12:00:00.000Z',
+          progress: { total: 1, completed: 0, percentComplete: 0 },
+          items: [
+            {
+              id: 'item-in-progress',
+              treatmentId: 'treatment-2',
+              treatmentCode: 'ENDO',
+              treatmentName: 'Root canal',
+              tooth: '24',
+              surfaces: [],
+              quantity: 1,
+              estimatedPriceMinor: 20000,
+              isCompleted: false,
+              completedAt: null,
+              notes: null,
+              sessions: [
+                {
+                  id: 'session-1',
+                  visitId: 'visit-old',
+                  tooth: '24',
+                  notes: null,
+                  performedAt: '2026-10-04T15:00:00.000Z',
+                  endedAt: '2026-10-04T15:45:00.000Z',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      reply: () =>
+        Promise.resolve(
+          json(
+            {
+              visit: {
+                id: 'visit-new',
+                clinicId: 'clinic-1',
+                patientId: 'pat-1',
+                dentistId: 'den-1',
+                appointmentId: 'appt-1',
+                status: 'OPEN',
+                startedAt: '2026-10-05T14:05:00.000Z',
+              },
+              appointment: {
+                ...ENTRY,
+                status: 'IN_TREATMENT',
+                visitId: 'visit-new',
+              },
+            },
+            201,
+          ),
+        ),
+    });
+
+    const section = await screen.findByTestId('agenda-planned-treatments');
+    await user.click(await within(section).findByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => expect(writes(fetchImplementation)).toHaveLength(1));
+    const [url, init] = writes(fetchImplementation)[0] ?? [];
+    expect(String(url)).toBe(`${BASE_URL}/visits`);
+    expect(init?.method).toBe('POST');
+    expect(sentBody(fetchImplementation)).toEqual({ appointmentId: 'appt-1' });
+
+    await waitFor(() =>
+      expect(onVisitStarted).toHaveBeenCalledWith({
+        visitId: 'visit-new',
+        treatmentPlanItemId: 'item-in-progress',
+      }),
+    );
   });
 });
