@@ -57,6 +57,7 @@ import {
   anaProfile,
   anaVisitHistory,
   existingVisitTreatment,
+  finishedVisitTreatment,
   filedNote,
   linkedTreatment,
   filedPrescription,
@@ -65,6 +66,9 @@ import {
   openVisit,
   recordedPayment,
   recordedTreatment,
+  recordedVisitTreatmentSupply,
+  recordedSupplyResult,
+  inventoryItems,
   treatmentsCatalogue,
   visitNote,
   visitPayment,
@@ -72,6 +76,7 @@ import {
   visitPrescription,
   visitPrescriptions,
   visitTreatments,
+  visitTreatmentSupplies,
   visitWorkspaceFixtures,
   visitCharge,
   visitCharges,
@@ -122,6 +127,17 @@ function treatmentsReads(
     (entry) =>
       entry.method === 'GET' &&
       new URL(entry.url).pathname === `/api/v1/visits/${VISIT_ID}/treatments`,
+  ).length;
+}
+
+/** How many times this visit's supplies were read — one on open, one after the write. */
+function suppliesReads(
+  recorded: readonly { readonly method: string; readonly url: string }[],
+): number {
+  return recorded.filter(
+    (entry) =>
+      entry.method === 'GET' &&
+      new URL(entry.url).pathname === `/api/v1/visits/${VISIT_ID}/treatment-supplies`,
   ).length;
 }
 
@@ -489,6 +505,118 @@ test.describe('Visit workspace', () => {
 
     // Two reads, not one: the section's own, and the one the invalidation asked for.
     await expect.poll(() => treatmentsReads(api.recorded)).toBe(2);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('finishes a treatment and redraws the server’s end time', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...visitWorkspaceFixtures({
+        '/api/v1/treatments': { body: treatmentsCatalogue },
+        [`/api/v1/visits/${VISIT_ID}/treatments`]: {
+          body: visitTreatments([existingVisitTreatment]),
+        },
+        [`/api/v1/visits/${VISIT_ID}/treatment-supplies`]: {
+          body: visitTreatmentSupplies([]),
+        },
+        '/api/v1/inventory/items': { body: inventoryItems },
+        [`POST /api/v1/visits/${VISIT_ID}/treatments/${existingVisitTreatment.id}/finish`]: {
+          body: finishedVisitTreatment,
+        },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+    await page.getByTestId('visit-section-treatments').click();
+
+    const record = page.getByTestId('treatment-record');
+    await expect(record).toContainText('Started');
+    await expect(record).toContainText('08:00');
+    await expect(page.getByTestId('finish-treatment')).toBeVisible();
+
+    // Swapped before the click: the record's read is done, and the only possible
+    // source of the end time on screen is the refetch after the write.
+    await installApi(page, {
+      [`/api/v1/visits/${VISIT_ID}/treatments`]: {
+        body: visitTreatments([finishedVisitTreatment]),
+      },
+    });
+
+    await page.getByTestId('finish-treatment').click();
+
+    await expect(record).toContainText('Finished');
+    await expect(record).toContainText('08:35');
+    await expect(page.getByTestId('finish-treatment')).toHaveCount(0);
+    await expect.poll(() => treatmentsReads(api.recorded)).toBe(2);
+
+    const post = api.recorded.find(
+      (entry) =>
+        entry.method === 'POST' &&
+        new URL(entry.url).pathname ===
+          `/api/v1/visits/${VISIT_ID}/treatments/${existingVisitTreatment.id}/finish`,
+    );
+    expect(post).toBeTruthy();
+    expect(post?.body).toBeUndefined();
+
+    expect(errors).toEqual([]);
+  });
+
+  test('records a supply against a treatment and redraws with the server’s row', async ({
+    page,
+  }) => {
+    const errors = watchForConsoleErrors(page);
+    const api = await installApi(page, {
+      ...visitWorkspaceFixtures({
+        '/api/v1/treatments': { body: treatmentsCatalogue },
+        [`/api/v1/visits/${VISIT_ID}/treatments`]: {
+          body: visitTreatments([existingVisitTreatment]),
+        },
+        [`/api/v1/visits/${VISIT_ID}/treatment-supplies`]: {
+          body: visitTreatmentSupplies([]),
+        },
+        '/api/v1/inventory/items': { body: inventoryItems },
+        [`POST /api/v1/visits/${VISIT_ID}/treatments/${existingVisitTreatment.id}/supplies`]: {
+          body: recordedSupplyResult,
+          status: 201,
+        },
+      }),
+    });
+
+    await page.goto(`/visits/${VISIT_ID}`);
+    await page.getByTestId('visit-section-treatments').click();
+
+    await expect(page.getByText('No supplies recorded for this treatment.')).toBeVisible();
+
+    await page.getByTestId('supply-item').click();
+    await page.getByRole('option', { name: /Composite resin A2/ }).click();
+    await page.getByTestId('supply-quantity').fill('2');
+
+    await installApi(page, {
+      [`/api/v1/visits/${VISIT_ID}/treatment-supplies`]: {
+        body: visitTreatmentSupplies([recordedVisitTreatmentSupply]),
+      },
+    });
+
+    await page.getByTestId('record-supply').click();
+
+    // The name and unit are resolved from the inventory fixture; 08:36 is the
+    // server's recordedAt in the clinic's clock, not the browser's.
+    await expect(page.getByText('Composite resin A2 × 2 syringe')).toBeVisible();
+    await expect(page.getByText(/08:36/)).toBeVisible();
+    await expect(page.getByText('No supplies recorded for this treatment.')).toHaveCount(0);
+    await expect.poll(() => suppliesReads(api.recorded)).toBe(2);
+
+    const post = api.recorded.find(
+      (entry) =>
+        entry.method === 'POST' &&
+        new URL(entry.url).pathname ===
+          `/api/v1/visits/${VISIT_ID}/treatments/${existingVisitTreatment.id}/supplies`,
+    );
+    expect(post?.body).toEqual({
+      itemId: '11111111-aaaa-4bbb-8ccc-000000000001',
+      quantity: 2,
+    });
 
     expect(errors).toEqual([]);
   });

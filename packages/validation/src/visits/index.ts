@@ -131,6 +131,29 @@ export const recordVisitTreatmentSchema = z.object({
 export type RecordVisitTreatmentInput = z.infer<typeof recordVisitTreatmentSchema>;
 
 /**
+ * Record a supply consumed by one treatment on a visit.
+ *
+ * The body names the item and the quantity; the treatment is the path and the visit
+ * is the parent path, so neither can be restated differently. `recordedAt` is absent
+ * because the server owns the clock, and the movement type is absent because this
+ * door only ever consumes stock — `USAGE` is the use case's decision, not a client's.
+ *
+ * The quantity is a positive whole number, the same wire rule every inventory
+ * movement keeps. The domain still enforces the rule this schema cannot see: the
+ * outflow may not take the item below zero.
+ */
+export const recordTreatmentSupplySchema = z.object({
+  itemId: uuidSchema,
+  quantity: z
+    .number()
+    .int()
+    .positive('The quantity must be a whole number greater than zero')
+    .max(2_147_483_647, 'The quantity is too large'),
+});
+
+export type RecordTreatmentSupplyInput = z.infer<typeof recordTreatmentSupplySchema>;
+
+/**
  * The routes a medication can be taken by, mirrored from the domain enum's values.
  *
  * Mirrored as literals because this package holds no domain dependency, the same

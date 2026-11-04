@@ -32,6 +32,7 @@ export type PaymentId = Brand<string, 'PaymentId'>;
 export type InventoryItemId = Brand<string, 'InventoryItemId'>;
 export type ClinicalNoteId = Brand<string, 'ClinicalNoteId'>;
 export type VisitTreatmentExecutionId = Brand<string, 'VisitTreatmentExecutionId'>;
+export type VisitTreatmentSupplyId = Brand<string, 'VisitTreatmentSupplyId'>;
 export type VisitAttachmentId = Brand<string, 'VisitAttachmentId'>;
 export type OdontogramEntryId = Brand<string, 'OdontogramEntryId'>;
 
@@ -55,6 +56,7 @@ export type ClinicIdentifier =
   | InventoryItemId
   | ClinicalNoteId
   | VisitTreatmentExecutionId
+  | VisitTreatmentSupplyId
   | VisitAttachmentId
   | OdontogramEntryId;
 
@@ -77,5 +79,7 @@ export const asInventoryItemId = (value: string): InventoryItemId => value as In
 export const asClinicalNoteId = (value: string): ClinicalNoteId => value as ClinicalNoteId;
 export const asVisitTreatmentExecutionId = (value: string): VisitTreatmentExecutionId =>
   value as VisitTreatmentExecutionId;
+export const asVisitTreatmentSupplyId = (value: string): VisitTreatmentSupplyId =>
+  value as VisitTreatmentSupplyId;
 export const asVisitAttachmentId = (value: string): VisitAttachmentId => value as VisitAttachmentId;
 export const asOdontogramEntryId = (value: string): OdontogramEntryId => value as OdontogramEntryId;

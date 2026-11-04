@@ -51,6 +51,7 @@ import type {
   TreatmentPlanRepository,
   TreatmentRecordRepository,
   TreatmentRepository,
+  TreatmentSupplyRepository,
   UnitOfWork,
   VisitAttachmentRepository,
 } from '@denti-code-u3/domain';
@@ -60,10 +61,12 @@ import {
   addVisitCharge,
   addVisitPrescription,
   completeVisitRecord,
+  finishVisitTreatment,
   getVisit,
   issueVisitInvoice,
   listClinicalNotes,
   listTreatmentRecords,
+  listTreatmentSupplies,
   listVisitAttachments,
   listVisitCharges,
   listVisitPayments,
@@ -71,6 +74,7 @@ import {
   listVisitsForActor,
   listVisitsForPatient,
   payVisitCharges,
+  recordTreatmentSupply,
   recordVisitTreatment,
   reopenVisitRecord,
   startVisit,
@@ -83,6 +87,7 @@ import {
   createPaymentSchema,
   createPrescriptionSchema,
   createVisitAttachmentSchema,
+  recordTreatmentSupplySchema,
   recordVisitTreatmentSchema,
   startVisitSchema,
   startWalkInVisitSchema,
@@ -94,6 +99,7 @@ import {
   asChargeId,
   asClinicalNoteId,
   asDentistId,
+  asInventoryItemId,
   asInvoiceId,
   asPatientId,
   asPaymentId,
@@ -102,9 +108,11 @@ import {
   asVisitAttachmentId,
   asVisitId,
   asVisitTreatmentExecutionId,
+  asVisitTreatmentSupplyId,
   type ClinicId,
   type PatientId,
   type VisitId,
+  type VisitTreatmentExecutionId,
 } from '@denti-code-u3/types';
 
 import { sendProblem } from '../problem.js';
@@ -180,6 +188,7 @@ export interface VisitsDependencies {
    * the pair needs atomicity a transaction could buy.
    */
   readonly treatmentRecords: TreatmentRecordRepository;
+  readonly treatmentSupplies: TreatmentSupplyRepository;
   readonly treatments: TreatmentRepository;
 
   /**
@@ -263,6 +272,7 @@ export async function registerVisitsRoutes(
     clinicalNotes,
     attachments,
     treatmentRecords,
+    treatmentSupplies,
     treatments,
     treatmentPlans,
     prescriptions,
@@ -782,6 +792,124 @@ export async function registerVisitsRoutes(
   );
 
   /**
+   * `POST /api/v1/visits/:visitId/treatments/:recordId/finish` — close one treatment.
+   *
+   * 200 with the record as it now stands. The finish time is the clinic's clock; a
+   * record that is already finished is returned unchanged, so a repeated click is not
+   * an error. The record is resolved through this visit, so an id from another visit
+   * or another clinic is the same 404 as one that does not exist.
+   */
+  app.post(
+    '/api/v1/visits/:visitId/treatments/:recordId/finish',
+    { config: { permission: 'treatments:write' } },
+    async (request, reply) => {
+      const path = readTreatmentRecordPath(request.params, request.clinicId as ClinicId);
+
+      if (!path.valid) {
+        return sendInvalidVisitId(
+          reply,
+          request,
+          'The treatment record id in the path is not a uuid',
+        );
+      }
+
+      try {
+        const finished = await finishVisitTreatment(path.clinicId, path.visitId, path.recordId, {
+          visits,
+          treatmentRecords,
+          clock,
+        });
+
+        return reply.status(200).send(finished);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
+
+  /**
+   * `GET /api/v1/visits/:visitId/treatment-supplies` — what the treatments used.
+   *
+   * 200 with `{ supplies: [...] }`, oldest first, and `[]` for a visit whose
+   * treatments consumed nothing. The rows carry the treatment record they belong to,
+   * so the workspace can group them without a second query per treatment. A visit
+   * this clinic does not hold is a 404, not an empty list (ADR 0014).
+   */
+  app.get(
+    '/api/v1/visits/:visitId/treatment-supplies',
+    { config: { permission: 'treatments:read' } },
+    async (request, reply) => {
+      const path = readVisitId(request.params, request.clinicId as ClinicId);
+
+      if (!path.valid) {
+        return sendInvalidVisitId(reply, request);
+      }
+
+      try {
+        const supplies = await listTreatmentSupplies(path.clinicId, path.visitId, {
+          visits,
+          treatmentSupplies,
+        });
+
+        return reply.status(200).send({ supplies });
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
+
+  /**
+   * `POST /api/v1/visits/:visitId/treatments/:recordId/supplies` — consume stock for
+   * one treatment.
+   *
+   * 201 with the supply line, the item as its stock now stands, and the `USAGE`
+   * movement that was appended. The treatment is resolved on this visit before the
+   * stock is read, and the three writes happen in one transaction: a refusal leaves
+   * neither a supply line nor a stock change behind. `USAGE` is not in the body —
+   * this door only ever consumes.
+   */
+  app.post(
+    '/api/v1/visits/:visitId/treatments/:recordId/supplies',
+    { config: { permission: 'treatments:write' } },
+    async (request, reply) => {
+      const path = readTreatmentRecordPath(request.params, request.clinicId as ClinicId);
+
+      if (!path.valid) {
+        return sendInvalidVisitId(
+          reply,
+          request,
+          'The treatment record id in the path is not a uuid',
+        );
+      }
+
+      const parsed = recordTreatmentSupplySchema.safeParse(request.body);
+
+      if (!parsed.success) {
+        return sendInvalidBody(reply, request, 'The supply could not be recorded', parsed.error);
+      }
+
+      try {
+        const recorded = await recordTreatmentSupply(
+          path.clinicId,
+          path.visitId,
+          path.recordId,
+          { itemId: asInventoryItemId(parsed.data.itemId), quantity: parsed.data.quantity },
+          {
+            unitOfWork,
+            clock,
+            newSupplyId: () => asVisitTreatmentSupplyId(ids.nextId()),
+            newMovementId: () => ids.nextId(),
+          },
+        );
+
+        return reply.status(201).send(recorded);
+      } catch (error) {
+        return sendProblem(reply, request, error);
+      }
+    },
+  );
+
+  /**
    * `GET /api/v1/visits/:visitId/prescriptions` — what the patient was sent home with.
    *
    * 200 with `{ prescriptions: [...] }`, in the order the course was handed over, and
@@ -1211,6 +1339,36 @@ type ParsedVisitPath =
  * above exists to prevent, written by the guard's own author. An empty-string default for
  * a brand that means "a clinic somebody named" is a hole with a lid on it.
  */
+type ParsedTreatmentRecordPath =
+  | {
+      readonly valid: true;
+      readonly clinicId: ClinicId;
+      readonly visitId: VisitId;
+      readonly recordId: VisitTreatmentExecutionId;
+    }
+  | { readonly valid: false };
+
+function readTreatmentRecordPath(params: unknown, clinicId: ClinicId): ParsedTreatmentRecordPath {
+  const visitId = (params as { visitId?: unknown } | undefined)?.visitId;
+  const recordId = (params as { recordId?: unknown } | undefined)?.recordId;
+
+  if (
+    typeof visitId !== 'string' ||
+    !uuidSchema.safeParse(visitId).success ||
+    typeof recordId !== 'string' ||
+    !uuidSchema.safeParse(recordId).success
+  ) {
+    return { valid: false };
+  }
+
+  return {
+    valid: true,
+    clinicId,
+    visitId: asVisitId(visitId),
+    recordId: asVisitTreatmentExecutionId(recordId),
+  };
+}
+
 function readVisitId(params: unknown, clinicId: ClinicId): ParsedVisitPath {
   const candidate = (params as { visitId?: unknown } | undefined)?.visitId;
 

@@ -24,6 +24,7 @@ import type {
   TreatmentPlanId,
   UserId,
   VisitId,
+  VisitTreatmentExecutionId,
 } from '@denti-code-u3/types';
 import type {
   AgendaEntry,
@@ -45,6 +46,7 @@ import type {
   TreatmentRecord,
   TreatmentPlanProgress,
   TreatmentPlanStatus,
+  TreatmentSupply,
 } from '../treatment/index.js';
 import type { OdontogramEntryRecord } from '../odontogram/index.js';
 import type {
@@ -143,6 +145,7 @@ export interface Repositories {
   readonly charges: ChargeRepository;
   readonly treatments: TreatmentRepository;
   readonly treatmentRecords: TreatmentRecordRepository;
+  readonly treatmentSupplies: TreatmentSupplyRepository;
   readonly treatmentPlans: TreatmentPlanRepository;
   readonly clinics: ClinicRepository;
   readonly dentists: DentistRepository;
@@ -894,6 +897,20 @@ export interface TreatmentPlanRepository {
 export interface TreatmentRecordRepository {
   findForVisit(clinicId: ClinicId, visitId: VisitId): Promise<readonly TreatmentRecord[]>;
   save(record: TreatmentRecord): Promise<void>;
+  finish(recordId: VisitTreatmentExecutionId, endedAt: IsoDateTime): Promise<void>;
+}
+
+/**
+ * Supplies consumed by a recorded treatment.
+ *
+ * The supplies table has no clinic column of its own: it belongs to a treatment
+ * execution, which belongs to a visit. The read therefore joins the execution and
+ * the visit, and the write happens only after the use case has resolved both the
+ * visit and the record in this clinic.
+ */
+export interface TreatmentSupplyRepository {
+  findForVisit(clinicId: ClinicId, visitId: VisitId): Promise<readonly TreatmentSupply[]>;
+  add(supply: TreatmentSupply): Promise<void>;
 }
 
 /**

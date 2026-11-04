@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 82 (patient-profile appointments open the agenda quick panel)
+> Last updated: session 83 (visit treatments finish and consume supplies)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -203,6 +203,21 @@ compuesta` and descriptions read as aesthetic fillings. Remaining seeded composi
 > link once, while a different link still opens. The row says **Open in agenda** and the
 > agenda keeps all of its existing writes. No API, domain, validation, database or migration
 > change.
+
+> **Session 83** made the visit workspace guide the clinical workflow. The summary now shows a
+> **Patient flow** card: arrival time from the appointment's `ARRIVED` progress event, visit
+> start, treatment start/finish counts, recorded supplies and a warning while treatments
+> remain unfinished. Treatments can be finished through a bodyless
+> `POST /api/v1/visits/:visitId/treatments/:recordId/finish`; finishing is idempotent and uses
+> the server clock. Each treatment can record supplies from inventory through
+> `POST /api/v1/visits/:visitId/treatments/:recordId/supplies`, with a per-treatment supply
+> list, atomic stock deduction, `USAGE` movement and `treatments:write` permission. A nullable
+> `visit_treatment_executions.ended_at` was added (existing rows backfilled) and a new
+> `visit_treatment_supplies` table links multiple consumables to each treatment. Both engines
+> changed (PostgreSQL migration `0010`, SQLite `0009`), and English/Spanish copy was added.
+> Completing a visit still does not reject unfinished treatments; the UI warns and disables
+> the action, and that product rule remains open. Supply rows are append-only; there is no
+> edit or delete yet. No commit.
 
 ## Phase
 
@@ -3962,3 +3977,45 @@ are unchanged.
 including the profile-to-agenda path asserting the October 1 grid and the panel for Ana's
 overdue appointment; full e2e **177/177**. Full typecheck, lint, boundary guard and changed-
 file Prettier passed. Web production build passed. No commit.
+
+---
+
+Session 83: the visit workspace now guides treatment completion and records supplies.
+
+The visit summary gained a **Patient flow** card. It reads the appointment's `ARRIVED` progress
+event instead of adding `visits.arrivedAt`; a walk-in's visit start remains the only arrival
+signal. The card shows visit start, how many treatments have started and finished, how many
+supplies were recorded, and warns while treatments remain unfinished. A treatment can be
+finished with a bodyless `POST /api/v1/visits/:visitId/treatments/:recordId/finish`; the
+endpoint stamps the server clock, is idempotent, and leaves the record untouched when already
+finished. `visit_treatment_executions.ended_at` is nullable and existing rows were backfilled
+to `performed_at`.
+
+Each treatment can now record inventory consumption through
+`POST /api/v1/visits/:visitId/treatments/:recordId/supplies`, and its supplies are read through
+`GET /api/v1/visits/:visitId/treatment-supplies`. The write resolves the visit, treatment
+record and inventory item in one transaction, applies a `USAGE` stock movement, appends the
+ledger row, updates the cached stock and inserts `visit_treatment_supplies`. Foreign visits,
+records and items answer `NOT_FOUND`; overdraw answers `409 INSUFFICIENT_STOCK`. The table has
+no clinic id — tenancy is reached through the treatment execution — and no unique item index,
+because the same item may legitimately be supplied more than once. Both engines changed:
+PostgreSQL migration `0010_thankful_jean_grey.sql` and SQLite `0009_illegal_screwball.sql`.
+The seed now carries `endedAt`. English and Spanish copy was added.
+
+The UI keeps the two actions separate. Treatments list unfinished and finished rows, the finish
+button confirms through the mutation, and clinic-local start/finish labels include the date.
+The supply list names the item, quantity and recorded time; the form chooses an inventory item
+and quantity. Reads require `treatments:read` and writes `treatments:write`; requiring
+`inventory:write` would shut out the dentist role. A visit can still be completed while
+treatments remain unfinished — the card only warns and disables the button — and supply rows
+are append-only, with no edit or delete. Those remain product questions, not silent omissions.
+
+**Tests.** Domain **413/413**; visit-workspace component **37/37**; appointment-booking dialog
+**14/14** in isolation. The full app run was **415/417**: the deterministic
+`zoned-wall-clock.test.ts` repeated-hour failure, plus one load-sensitive booking-dialog
+timeout that passes in isolation. API SQLite smoke **34/34**; targeted visit-workspace browser
+spec **24/24**; full e2e **179/179**. App, API and e2e typecheck passed; full lint passed with
+the two existing React Compiler warnings; boundary guard passed with its existing scanner
+false positive. Web production build passed. PostgreSQL integration tests for finish/supply
+were added but could not run here: no PostgreSQL is listening on `127.0.0.1:5433`. Root
+`format:check` still names two untouched generated migration metadata snapshots. No commit.

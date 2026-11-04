@@ -64,8 +64,10 @@ import type {
 /**
  * One treatment performed in one visit, as the table holds it.
  *
- * `performedAt` is the clinic's clock, the same hand that stamps a note's `createdAt`
- * and a visit's `startedAt`: nothing about *when* happened is a client's to say.
+ * `performedAt` is when the treatment started and `endedAt` when it finished; both
+ * are the clinic's clock, the same hand that stamps a note's `createdAt` and a
+ * visit's `startedAt`. Nothing about *when* happened is a client's to say. A record
+ * is in progress while `endedAt` is null.
  */
 export interface TreatmentRecord {
   readonly id: VisitTreatmentExecutionId;
@@ -75,6 +77,7 @@ export interface TreatmentRecord {
   readonly tooth: string | null;
   readonly notes: string | null;
   readonly performedAt: IsoDateTime;
+  readonly endedAt: IsoDateTime | null;
   readonly treatmentPlanItemId: string | null;
 }
 
@@ -211,10 +214,49 @@ export async function recordVisitTreatment(
     tooth,
     notes,
     performedAt: dependencies.clock.now(),
+    endedAt: null,
     treatmentPlanItemId,
   };
 
   await dependencies.treatmentRecords.save(record);
 
   return record;
+}
+
+/** What finishing a treatment needs: the visit read, the record written and a clock. */
+export interface FinishTreatmentDependencies extends TreatmentRecordReadDependencies {
+  readonly clock: Clock;
+}
+
+/**
+ * Finish one treatment recorded on a visit this clinic holds.
+ *
+ * A record that is already finished is returned unchanged, so a repeated click or a
+ * retried request is not an error. The finish time is the clinic's clock, never a
+ * value from the request. A record id that does not belong to this visit answers
+ * the same `NOT_FOUND` as an id that does not exist.
+ */
+export async function finishVisitTreatment(
+  clinicId: ClinicId,
+  visitId: VisitId,
+  treatmentRecordId: VisitTreatmentExecutionId,
+  dependencies: FinishTreatmentDependencies,
+): Promise<TreatmentRecord> {
+  await getVisit(clinicId, visitId, { visits: dependencies.visits });
+
+  const records = await dependencies.treatmentRecords.findForVisit(clinicId, visitId);
+  const record = records.find((candidate) => candidate.id === treatmentRecordId);
+
+  if (!record) {
+    throw notFound('TreatmentRecord', treatmentRecordId);
+  }
+
+  if (record.endedAt) {
+    return record;
+  }
+
+  const finishedAt = dependencies.clock.now();
+  await dependencies.treatmentRecords.finish(record.id, finishedAt);
+
+  return { ...record, endedAt: finishedAt };
 }

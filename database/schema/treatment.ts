@@ -5,9 +5,10 @@
  * `treatment_plan_item` is one line of a proposal for a specific patient.
  */
 
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
   integer,
   pgTable,
@@ -18,6 +19,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import { treatmentPlanStatusEnum } from './enums.js';
+import { inventoryItems } from './inventory.js';
 import { patients } from './patient.js';
 import { clinics, dentists } from './organization.js';
 import { visits } from './visit.js';
@@ -132,6 +134,28 @@ export const visitTreatmentExecutions = pgTable(
     tooth: text('tooth'),
     notes: text('notes'),
     performedAt: timestamp('performed_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Null while the treatment is in progress. */
+    endedAt: timestamp('ended_at', { withTimezone: true }),
   },
   (table) => [index('visit_treatment_executions_visit_idx').on(table.visitId)],
+);
+
+export const visitTreatmentSupplies = pgTable(
+  'visit_treatment_supplies',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    treatmentRecordId: uuid('treatment_record_id')
+      .notNull()
+      .references(() => visitTreatmentExecutions.id, { onDelete: 'cascade' }),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => inventoryItems.id, { onDelete: 'restrict' }),
+    quantity: integer('quantity').notNull(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('visit_treatment_supplies_record_idx').on(table.treatmentRecordId),
+    index('visit_treatment_supplies_item_idx').on(table.itemId),
+    check('visit_treatment_supplies_quantity_positive', sql`${table.quantity} > 0`),
+  ],
 );

@@ -52,6 +52,7 @@ import { DrizzlePrescriptionRepository } from '../src/infrastructure/persistence
 import { DrizzlePaymentRepository } from '../src/infrastructure/persistence/repositories/payment-repository.js';
 import { DrizzleTreatmentPlanRepository } from '../src/infrastructure/persistence/repositories/treatment-plan-repository.js';
 import { DrizzleTreatmentRecordRepository } from '../src/infrastructure/persistence/repositories/treatment-record-repository.js';
+import { DrizzleTreatmentSupplyRepository } from '../src/infrastructure/persistence/repositories/treatment-supply-repository.js';
 import { DrizzleTreatmentRepository } from '../src/infrastructure/persistence/repositories/treatment-repository.js';
 import { DrizzleUnitOfWork } from '../src/infrastructure/persistence/postgres/unit-of-work.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
@@ -98,6 +99,10 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
 
   const treatment = '7f7f1111-1111-4111-8111-111111111111';
   const foreignTreatment = '7f7f2222-2222-4222-8222-222222222222';
+
+  /** A stock item the supply tests draw from, reset by `clearFixtures`. */
+  const inventoryItem = '7f7f3333-3333-4333-8333-333333333333';
+  const INVENTORY_STOCK = 5;
 
   const day = '2026-04-16';
   const NOW = `${day}T14:30:00.000Z`;
@@ -265,6 +270,28 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       headers: { 'x-clinic-id': clinic },
     });
 
+  const finishTreatment = (visitId: string, recordId: string, clinic = clinicId) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/treatments/${recordId}/finish`,
+      headers: { 'x-clinic-id': clinic },
+    });
+
+  const getSupplies = (visitId: string, clinic = clinicId) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${visitId}/treatment-supplies`,
+      headers: { 'x-clinic-id': clinic },
+    });
+
+  const recordSupply = (visitId: string, recordId: string, payload: unknown, clinic = clinicId) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/treatments/${recordId}/supplies`,
+      headers: { 'x-clinic-id': clinic },
+      payload: payload as object,
+    });
+
   const recordTreatment = (visitId: string, payload: unknown, clinic = clinicId) =>
     app.inject({
       method: 'POST',
@@ -425,6 +452,9 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
     await sql`update visits set appointment_id = null where clinic_id in (${clinicId}, ${otherClinicId})`;
     await sql`delete from visits where clinic_id in (${clinicId}, ${otherClinicId})`;
     await sql`delete from appointments where clinic_id in (${clinicId}, ${otherClinicId})`;
+    // The supply tests draw this item down; every test starts from the same shelf.
+    await sql`delete from stock_movements where item_id = ${inventoryItem}`;
+    await sql`update inventory_items set stock = ${INVENTORY_STOCK} where id = ${inventoryItem}`;
   };
 
   beforeAll(async () => {
@@ -472,6 +502,7 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       // exercised by the treatment tests below; each write is a read-then-write pair
       // the way the notes' is (ADR 0014).
       treatmentRecords: new DrizzleTreatmentRecordRepository(db),
+      treatmentSupplies: new DrizzleTreatmentSupplyRepository(db),
       treatments: new DrizzleTreatmentRepository(db),
       // The patient's plans, read-only here: a record may name the plan item it
       // fulfils, and the use case resolves it on the patient's own plan before the
@@ -558,6 +589,11 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
         (${foreignTreatment}, ${otherClinicId}, 'RCT', 'Root canal therapy', 60000)
       on conflict (id) do nothing
     `;
+    await sql`
+      insert into inventory_items (id, clinic_id, name, unit, stock)
+      values (${inventoryItem}, ${clinicId}, 'Composite resin A2', 'syringe', ${INVENTORY_STOCK})
+      on conflict (id) do nothing
+    `;
   });
 
   afterAll(async () => {
@@ -574,6 +610,7 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
     await sql`delete from dentists where id in (${dentist}, ${otherDentist}, ${inactiveDentist})`;
     await sql`delete from chairs where id in (${chair}, ${otherChair}, ${inactiveChair})`;
     await sql`delete from treatments where id in (${treatment}, ${foreignTreatment})`;
+    await sql`delete from inventory_items where id = ${inventoryItem}`;
     await sql`delete from clinics where id in (${clinicId}, ${otherClinicId})`;
     await sql.end({ timeout: 5 });
   });
@@ -1605,6 +1642,108 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
         expect(response.statusCode).toBe(422);
         expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
       }
+    });
+  });
+
+  describe('treatment finish and its supplies', () => {
+    const record = async (visitId: string) => {
+      const recorded = await recordTreatment(visitId, { treatmentId: treatment, tooth: '16' });
+      expect(recorded.statusCode).toBe(201);
+      return (recorded.json() as { id: string; endedAt: string | null }).id;
+    };
+
+    it('finishes a treatment with the clock’s time, and a repeat is the same answer', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+      const recordId = await record(visitId);
+
+      const finished = await finishTreatment(visitId, recordId);
+      expect(finished.statusCode).toBe(200);
+      const body = finished.json() as { id: string; endedAt: string };
+      expect(body.id).toBe(recordId);
+      expect(new Date(body.endedAt).toISOString()).toBe(NOW);
+
+      const [row] = await sql`
+        select ended_at from visit_treatment_executions where id = ${recordId}
+      `;
+      expect((row as { ended_at: Date }).ended_at.toISOString()).toBe(NOW);
+
+      const repeated = await finishTreatment(visitId, recordId);
+      expect(repeated.statusCode).toBe(200);
+      expect(repeated.json()).toEqual(body);
+    });
+
+    it('records a supply, takes it off the shelf and lists it with the visit', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+      const recordId = await record(visitId);
+
+      const supplied = await recordSupply(visitId, recordId, {
+        itemId: inventoryItem,
+        quantity: 2,
+      });
+      expect(supplied.statusCode).toBe(201);
+      const body = supplied.json() as {
+        supply: { id: string; treatmentRecordId: string; itemId: string; quantity: number };
+        item: { stock: number };
+        movement: { type: string; quantity: number; reference: string };
+      };
+      expect(body.supply).toMatchObject({
+        treatmentRecordId: recordId,
+        itemId: inventoryItem,
+        quantity: 2,
+      });
+      expect(body.item.stock).toBe(INVENTORY_STOCK - 2);
+      expect(body.movement).toMatchObject({
+        type: 'USAGE',
+        quantity: 2,
+        reference: `Treatment ${recordId}`,
+      });
+
+      const listed = await getSupplies(visitId);
+      expect(listed.statusCode).toBe(200);
+      expect((listed.json() as { supplies: unknown[] }).supplies).toEqual([body.supply]);
+
+      const [item] = await sql`select stock from inventory_items where id = ${inventoryItem}`;
+      expect(item).toMatchObject({ stock: INVENTORY_STOCK - 2 });
+      const [movement] = await sql`
+        select type, quantity from stock_movements where item_id = ${inventoryItem}
+      `;
+      expect(movement).toMatchObject({ type: 'USAGE', quantity: 2 });
+    });
+
+    it('refuses to take more than the shelf holds, and writes no supply or movement', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+      const recordId = await record(visitId);
+
+      const refused = await recordSupply(visitId, recordId, {
+        itemId: inventoryItem,
+        quantity: INVENTORY_STOCK + 1,
+      });
+      expect(refused.statusCode).toBe(409);
+      expect(refused.json()).toMatchObject({ error: { code: 'DOMAIN_RULE_VIOLATION' } });
+
+      const [supplies] = await sql`select count(*)::int as total from visit_treatment_supplies`;
+      expect((supplies as { total: number }).total).toBe(0);
+      const [movements] = await sql`
+        select count(*)::int as total from stock_movements where item_id = ${inventoryItem}
+      `;
+      expect((movements as { total: number }).total).toBe(0);
+    });
+
+    it('answers 404 for a treatment record from another visit, and for a foreign visit', async () => {
+      const visitId = await seedVisit({ startedAt: `${day}T09:00:00.000Z` });
+      const otherVisit = await seedVisit({ startedAt: `${day}T10:00:00.000Z` });
+      const recordId = await record(visitId);
+      const foreign = await seedVisit({
+        startedAt: `${day}T11:00:00.000Z`,
+        clinic: otherClinicId,
+      });
+
+      expect((await finishTreatment(otherVisit, recordId)).statusCode).toBe(404);
+      expect((await getSupplies(foreign)).statusCode).toBe(404);
+      expect(
+        (await recordSupply(otherVisit, recordId, { itemId: inventoryItem, quantity: 1 }))
+          .statusCode,
+      ).toBe(404);
     });
   });
 

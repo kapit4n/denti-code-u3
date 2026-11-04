@@ -4421,3 +4421,45 @@ are unchanged.
 including the profile-to-agenda path asserting the October 1 grid and the panel for Ana's
 overdue appointment; full e2e **177/177**. Full typecheck, lint, boundary guard and changed-
 file Prettier passed. Web production build passed. No commit.
+
+---
+
+Session 83: the visit workspace now guides treatment completion and records supplies.
+
+The visit summary gained a **Patient flow** card. It reads the appointment's `ARRIVED` progress
+event instead of adding `visits.arrivedAt`; a walk-in's visit start remains the only arrival
+signal. The card shows visit start, how many treatments have started and finished, how many
+supplies were recorded, and warns while treatments remain unfinished. A treatment can be
+finished with a bodyless `POST /api/v1/visits/:visitId/treatments/:recordId/finish`; the
+endpoint stamps the server clock, is idempotent, and leaves the record untouched when already
+finished. `visit_treatment_executions.ended_at` is nullable and existing rows were backfilled
+to `performed_at`.
+
+Each treatment can now record inventory consumption through
+`POST /api/v1/visits/:visitId/treatments/:recordId/supplies`, and its supplies are read through
+`GET /api/v1/visits/:visitId/treatment-supplies`. The write resolves the visit, treatment
+record and inventory item in one transaction, applies a `USAGE` stock movement, appends the
+ledger row, updates the cached stock and inserts `visit_treatment_supplies`. Foreign visits,
+records and items answer `NOT_FOUND`; overdraw answers `409 INSUFFICIENT_STOCK`. The table has
+no clinic id — tenancy is reached through the treatment execution — and no unique item index,
+because the same item may legitimately be supplied more than once. Both engines changed:
+PostgreSQL migration `0010_thankful_jean_grey.sql` and SQLite `0009_illegal_screwball.sql`.
+The seed now carries `endedAt`. English and Spanish copy was added.
+
+The UI keeps the two actions separate. Treatments list unfinished and finished rows, the finish
+button confirms through the mutation, and clinic-local start/finish labels include the date.
+The supply list names the item, quantity and recorded time; the form chooses an inventory item
+and quantity. Reads require `treatments:read` and writes `treatments:write`; requiring
+`inventory:write` would shut out the dentist role. A visit can still be completed while
+treatments remain unfinished — the card only warns and disables the button — and supply rows
+are append-only, with no edit or delete. Those remain product questions, not silent omissions.
+
+**Tests.** Domain **413/413**; visit-workspace component **37/37**; appointment-booking dialog
+**14/14** in isolation. The full app run was **415/417**: the deterministic
+`zoned-wall-clock.test.ts` repeated-hour failure, plus one load-sensitive booking-dialog
+timeout that passes in isolation. API SQLite smoke **34/34**; targeted visit-workspace browser
+spec **24/24**; full e2e **179/179**. App, API and e2e typecheck passed; full lint passed with
+the two existing React Compiler warnings; boundary guard passed with its existing scanner
+false positive. Web production build passed. PostgreSQL integration tests for finish/supply
+were added but could not run here: no PostgreSQL is listening on `127.0.0.1:5433`. Root
+`format:check` still names two untouched generated migration metadata snapshots. No commit.

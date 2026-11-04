@@ -1452,6 +1452,108 @@ describe('API on SQLite', () => {
     expect(unnamed.json().error.code).toBe('VALIDATION_ERROR');
   });
 
+  it('finishes a treatment and records the supplies it consumed in one step', async () => {
+    const item = await app.inject({
+      method: 'POST',
+      url: '/api/v1/inventory/items',
+      payload: { name: 'Flow resin', sku: 'FLOW-A2', unit: 'syringe', openingStock: 5 },
+    });
+    expect(item.statusCode).toBe(201);
+    const itemId = item.json().item.id as string;
+
+    const recorded = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/treatments`,
+      payload: { treatmentId, tooth: '37' },
+    });
+    expect(recorded.statusCode).toBe(201);
+    const recordId = recorded.json().id as string;
+    expect(recorded.json().endedAt).toBeNull();
+
+    const finished = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/treatments/${recordId}/finish`,
+      payload: {},
+    });
+    expect(finished.statusCode).toBe(200);
+    expect(finished.json()).toMatchObject({ id: recordId, tooth: '37' });
+    expect(finished.json().endedAt).toEqual(expect.any(String));
+
+    // Repeating the finish is the same answer, not a second write: a retried click
+    // must not move a clinical time.
+    const finishedAgain = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/treatments/${recordId}/finish`,
+      payload: {},
+    });
+    expect(finishedAgain.statusCode).toBe(200);
+    expect(finishedAgain.json().endedAt).toBe(finished.json().endedAt);
+
+    const supplied = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/treatments/${recordId}/supplies`,
+      payload: { itemId, quantity: 2 },
+    });
+    expect(supplied.statusCode).toBe(201);
+    expect(supplied.json()).toMatchObject({
+      supply: { treatmentRecordId: recordId, itemId, quantity: 2 },
+      item: { id: itemId, stock: 3 },
+      movement: { itemId, type: 'USAGE', quantity: 2 },
+    });
+
+    const listed = await app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${visitId}/treatment-supplies`,
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json().supplies).toEqual([
+      expect.objectContaining({ treatmentRecordId: recordId, itemId, quantity: 2 }),
+    ]);
+
+    const history = await app.inject({
+      method: 'GET',
+      url: `/api/v1/inventory/items/${itemId}/movements`,
+    });
+    expect(history.statusCode).toBe(200);
+    expect(history.json().items).toHaveLength(2);
+    expect(history.json().items[0]).toMatchObject({ type: 'USAGE', quantity: 2 });
+
+    // More than the shelf holds is the domain's refusal, and nothing is written: the
+    // shelf, the ledger and the supply list all stay where they were.
+    const short = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/treatments/${recordId}/supplies`,
+      payload: { itemId, quantity: 4 },
+    });
+    expect(short.statusCode).toBe(409);
+    expect(short.json().error.code).toBe('DOMAIN_RULE_VIOLATION');
+    const afterShort = await app.inject({
+      method: 'GET',
+      url: `/api/v1/inventory/items/${itemId}/movements`,
+    });
+    expect(afterShort.json().items).toHaveLength(2);
+
+    const zero = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/treatments/${recordId}/supplies`,
+      payload: { itemId, quantity: 0 },
+    });
+    expect(zero.statusCode).toBe(422);
+
+    // Another clinic's visit has neither record to finish nor supplies to list.
+    const foreignFinish = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${foreignVisitId}/treatments/${recordId}/finish`,
+      payload: {},
+    });
+    expect(foreignFinish.statusCode).toBe(404);
+    const foreignSupplies = await app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${foreignVisitId}/treatment-supplies`,
+    });
+    expect(foreignSupplies.statusCode).toBe(404);
+  });
+
   it('summarises the day on the dashboard, occupancy included', async () => {
     // Two disjoint 30-minute bookings from a capacity of 08:00–17:00 × one
     // dentist: 60 of 540 minutes, which rounds to 11% occupancy.

@@ -135,6 +135,7 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     prescriptions,
     treatmentPlans,
     treatmentRecords,
+    treatmentSupplies,
     treatments,
   } = connection.repositories;
 
@@ -245,6 +246,7 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     // What was done, and the catalogue that names it — the same read-then-write
     // shape as the notes, and a plain repository for the same reason (ADR 0014).
     treatmentRecords,
+    treatmentSupplies,
     treatments,
     // The patient's plans, read-only here: a record may name the planned item it
     // fulfils, and the write resolves that item on the patient's own plan before it

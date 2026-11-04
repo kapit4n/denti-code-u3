@@ -9,12 +9,14 @@
  * column here — see the same mapping in `database/schema/sqlite/visit.ts`.
  */
 
-import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
+import { check, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 import { TREATMENT_PLAN_STATUSES } from '@denti-code-u3/domain';
 
 import { nowDefault, uuidDefault } from './defaults.js';
 import { enumCheck } from './enum-check.js';
+import { inventoryItems } from './inventory.js';
 import { clinics, dentists } from './organization.js';
 import { patients } from './patient.js';
 import { visits } from './visit.js';
@@ -104,6 +106,28 @@ export const visitTreatmentExecutions = sqliteTable(
     tooth: text('tooth'),
     notes: text('notes'),
     performedAt: integer('performed_at', { mode: 'timestamp_ms' }).notNull().default(nowDefault),
+    /** Null while the treatment is in progress. */
+    endedAt: integer('ended_at', { mode: 'timestamp_ms' }),
   },
   (table) => [index('visit_treatment_executions_visit_idx').on(table.visitId)],
+);
+
+export const visitTreatmentSupplies = sqliteTable(
+  'visit_treatment_supplies',
+  {
+    id: text('id').primaryKey().default(uuidDefault),
+    treatmentRecordId: text('treatment_record_id')
+      .notNull()
+      .references(() => visitTreatmentExecutions.id, { onDelete: 'cascade' }),
+    itemId: text('item_id')
+      .notNull()
+      .references(() => inventoryItems.id, { onDelete: 'restrict' }),
+    quantity: integer('quantity').notNull(),
+    recordedAt: integer('recorded_at', { mode: 'timestamp_ms' }).notNull().default(nowDefault),
+  },
+  (table) => [
+    index('visit_treatment_supplies_record_idx').on(table.treatmentRecordId),
+    index('visit_treatment_supplies_item_idx').on(table.itemId),
+    check('visit_treatment_supplies_quantity_positive', sql`${table.quantity} > 0`),
+  ],
 );

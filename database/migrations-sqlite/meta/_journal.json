@@ -64,6 +64,13 @@
       "when": 1793738774150,
       "tag": "0008_giant_iron_fist",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1793757110588,
+      "tag": "0009_illegal_screwball",
+      "breakpoints": true
     }
   ]
 }

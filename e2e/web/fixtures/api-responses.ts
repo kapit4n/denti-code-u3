@@ -1227,6 +1227,57 @@ export function visitTreatments(treatments: readonly Record<string, unknown>[]):
   return { treatments };
 }
 
+/** The same record after the clinician finished it: the server's end time. */
+export const finishedVisitTreatment = {
+  ...existingVisitTreatment,
+  endedAt: '2026-10-05T13:35:00.000Z',
+} as const;
+
+/** A supply line already recorded on the open visit. */
+export const existingVisitTreatmentSupply = {
+  id: '11111111-cccc-4ddd-8eee-000000000021',
+  treatmentRecordId: existingVisitTreatment.id,
+  itemId: '11111111-aaaa-4bbb-8ccc-000000000001',
+  quantity: 1,
+  recordedAt: '2026-10-05T13:20:00.000Z',
+} as const;
+
+/**
+ * The row a spec writes, and the row the API answers the supply POST with.
+ *
+ * `recordedAt` is the server's clock, so a spec that reads 08:36 off the new line
+ * is reading a value the browser could not have invented.
+ */
+export const recordedVisitTreatmentSupply = {
+  id: '11111111-cccc-4ddd-8eee-000000000022',
+  treatmentRecordId: existingVisitTreatment.id,
+  itemId: '11111111-aaaa-4bbb-8ccc-000000000001',
+  quantity: 2,
+  recordedAt: '2026-10-05T13:36:00.000Z',
+} as const;
+
+export function visitTreatmentSupplies(
+  supplies: readonly Record<string, unknown>[],
+): Fixture['body'] {
+  return { supplies };
+}
+
+/** What the supply POST answers: the line, the item after the draw, and the movement. */
+export const recordedSupplyResult = {
+  supply: recordedVisitTreatmentSupply,
+  item: { id: recordedVisitTreatmentSupply.itemId, stock: 0 },
+  movement: {
+    id: '11111111-cccc-4ddd-8eee-000000000023',
+    itemId: recordedVisitTreatmentSupply.itemId,
+    type: 'USAGE',
+    quantity: 2,
+    unitCostMinor: null,
+    reference: `Treatment ${existingVisitTreatment.id}`,
+    notes: null,
+    performedAt: recordedVisitTreatmentSupply.recordedAt,
+  },
+} as const;
+
 /**
  * A prescription already on the open visit, as
  * `GET /api/v1/visits/:visitId/prescriptions` answers for it.
@@ -1461,6 +1512,11 @@ export function visitWorkspaceFixtures(overrides: MockedResponses = {}): MockedR
   return {
     [`/api/v1/visits/${VISIT_ID}`]: { body: openVisit },
     [`/api/v1/visits/${COMPLETED_VISIT_ID}`]: { body: completedVisit },
+    [`/api/v1/visits/${VISIT_ID}/treatment-supplies`]: {
+      body: visitTreatmentSupplies([]),
+    },
+    [`/api/v1/appointments/${ANA_APPOINTMENT_ID}/progress`]: { body: ANA_PROGRESS },
+    '/api/v1/inventory/items': { body: inventoryItems },
     [`/api/v1/patients/${ANA_ID}`]: { body: anaProfile },
     [`/api/v1/patients/${ANA_ID}/odontogram`]: { body: anaOdontogram },
     [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },

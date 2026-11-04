@@ -1435,6 +1435,7 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
       tooth: '16',
       notes: 'Sin complicaciones.',
       performedAt: new Date(now.getTime() - 21 * DAY + 20 * 60 * 1000),
+      endedAt: new Date(now.getTime() - 21 * DAY + 20 * 60 * 1000),
     })
     .onConflictDoNothing();
 
@@ -1446,6 +1447,7 @@ async function insertVisitsAndPlansPg(db: PostgresJsDatabase<typeof pgSchema>): 
       treatmentId: '11111111-aaaa-4999-8ccc-000000000004',
       notes: 'Se dieron instrucciones de higiene dental.',
       performedAt: at(0, 10, 25),
+      endedAt: at(0, 10, 25),
     })
     .onConflictDoNothing();
 
@@ -1609,6 +1611,7 @@ async function insertVisitsAndPlansSqlite(
       tooth: '16',
       notes: 'Sin complicaciones.',
       performedAt: new Date(now.getTime() - 21 * DAY + 20 * 60 * 1000),
+      endedAt: new Date(now.getTime() - 21 * DAY + 20 * 60 * 1000),
     })
     .onConflictDoNothing();
 
@@ -1620,6 +1623,7 @@ async function insertVisitsAndPlansSqlite(
       treatmentId: '11111111-aaaa-4999-8ccc-000000000004',
       notes: 'Se dieron instrucciones de higiene dental.',
       performedAt: at(0, 10, 25),
+      endedAt: at(0, 10, 25),
     })
     .onConflictDoNothing();
 

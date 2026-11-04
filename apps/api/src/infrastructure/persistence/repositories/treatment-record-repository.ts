@@ -38,6 +38,7 @@ import {
   type ClinicId,
   type IsoDateTime,
   type VisitId,
+  type VisitTreatmentExecutionId,
 } from '@denti-code-u3/types';
 import { and, asc, eq } from 'drizzle-orm';
 
@@ -53,6 +54,7 @@ const RECORD_COLUMNS = {
   tooth: visitTreatmentExecutions.tooth,
   notes: visitTreatmentExecutions.notes,
   performedAt: visitTreatmentExecutions.performedAt,
+  endedAt: visitTreatmentExecutions.endedAt,
   treatmentPlanItemId: visitTreatmentExecutions.treatmentPlanItemId,
 } as const;
 
@@ -70,6 +72,13 @@ export class DrizzleTreatmentRecordRepository implements TreatmentRecordReposito
     return rows.map(toEntity);
   }
 
+  async finish(recordId: VisitTreatmentExecutionId, endedAt: IsoDateTime): Promise<void> {
+    await this.db
+      .update(visitTreatmentExecutions)
+      .set({ endedAt: new Date(endedAt) })
+      .where(eq(visitTreatmentExecutions.id, recordId));
+  }
+
   async save(record: TreatmentRecord): Promise<void> {
     try {
       await this.db.insert(visitTreatmentExecutions).values({
@@ -80,6 +89,7 @@ export class DrizzleTreatmentRecordRepository implements TreatmentRecordReposito
         notes: record.notes,
         treatmentPlanItemId: record.treatmentPlanItemId,
         performedAt: new Date(record.performedAt),
+        endedAt: record.endedAt ? new Date(record.endedAt) : null,
       });
     } catch (error) {
       if (isForeignKeyViolation(error)) {
@@ -102,6 +112,7 @@ function toEntity(row: {
   notes: string | null;
   treatmentPlanItemId: string | null;
   performedAt: Date;
+  endedAt: Date | null;
 }): TreatmentRecord {
   return {
     id: asVisitTreatmentExecutionId(row.id),
@@ -111,5 +122,6 @@ function toEntity(row: {
     notes: row.notes,
     treatmentPlanItemId: row.treatmentPlanItemId ?? null,
     performedAt: row.performedAt.toISOString() as IsoDateTime,
+    endedAt: row.endedAt ? (row.endedAt.toISOString() as IsoDateTime) : null,
   };
 }

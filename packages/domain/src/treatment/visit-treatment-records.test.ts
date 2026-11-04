@@ -49,6 +49,7 @@ import type {
 import type { Visit } from '../visit/index.js';
 import {
   type TreatmentRecord,
+  finishVisitTreatment,
   listTreatmentRecords,
   recordVisitTreatment,
 } from './visit-treatment-records.js';
@@ -97,6 +98,7 @@ function aRecord(overrides: Partial<TreatmentRecord> = {}): TreatmentRecord {
     tooth: '36',
     notes: null,
     performedAt: NOW,
+    endedAt: null,
     treatmentPlanItemId: null,
     ...overrides,
   };
@@ -138,6 +140,7 @@ function aPlan(overrides: Partial<TreatmentPlanSummary> = {}): TreatmentPlanSumm
 /** What the fakes recorded, so a test can assert on the calls and not only the answers. */
 interface Recorded {
   saved: TreatmentRecord[];
+  finished: { recordId: ReturnType<typeof asVisitTreatmentExecutionId>; endedAt: IsoDateTime }[];
   reads: { clinicId: ClinicId; visitId: VisitId }[];
   catalogueReads: { clinicId: ClinicId; treatmentId: TreatmentId }[];
   planReads: { clinicId: ClinicId; patientId: PatientId }[];
@@ -157,7 +160,13 @@ function harness(
     plans?: readonly TreatmentPlanSummary[];
   } = {},
 ) {
-  const recorded: Recorded = { saved: [], reads: [], catalogueReads: [], planReads: [] };
+  const recorded: Recorded = {
+    saved: [],
+    finished: [],
+    reads: [],
+    catalogueReads: [],
+    planReads: [],
+  };
   const catalogue = 'catalogue' in options ? (options.catalogue ?? []) : [aTreatment()];
   const held = options.held ?? [];
   const plans = options.plans ?? [];
@@ -189,6 +198,9 @@ function harness(
     },
     save: async (record) => {
       recorded.saved.push(record);
+    },
+    finish: async (recordId, endedAt) => {
+      recorded.finished.push({ recordId, endedAt });
     },
   };
 
@@ -234,6 +246,7 @@ describe('recordVisitTreatment', () => {
       notes: 'No complications.',
       treatmentPlanItemId: null,
       performedAt: NOW,
+      endedAt: null,
     });
     expect(recorded.saved).toEqual([record]);
     // Both scoping reads happened: the visit and the treatment, in that order.
@@ -413,6 +426,51 @@ describe('recordVisitTreatment — the plan link', () => {
     expect(plan.items.map((item) => item.isCompleted)).toEqual([false]);
     expect(plan.progress.completed).toBe(0);
     expect(recorded.planReads).toHaveLength(1);
+  });
+});
+
+describe('finishVisitTreatment', () => {
+  it('stamps the clock’s finish time on the record it was asked to finish', async () => {
+    const { recorded, dependencies } = harness({ held: [aRecord()] });
+
+    const finished = await finishVisitTreatment(CLINIC, VISIT, RECORD_ID, dependencies);
+
+    expect(finished).toEqual(aRecord({ endedAt: NOW }));
+    expect(recorded.finished).toEqual([{ recordId: RECORD_ID, endedAt: NOW }]);
+    expect(recorded.reads).toEqual([{ clinicId: CLINIC, visitId: VISIT }]);
+  });
+
+  it('returns an already-finished record unchanged, without writing it again', async () => {
+    const endedAt = '2026-10-05T14:15:00.000Z' as IsoDateTime;
+    const { recorded, dependencies } = harness({ held: [aRecord({ endedAt })] });
+
+    const finished = await finishVisitTreatment(CLINIC, VISIT, RECORD_ID, dependencies);
+
+    expect(finished.endedAt).toBe(endedAt);
+    expect(recorded.finished).toEqual([]);
+  });
+
+  it('answers NOT_FOUND when the record is not on this visit, and writes nothing', async () => {
+    const { recorded, dependencies } = harness({ held: [aRecord()] });
+
+    await expect(
+      finishVisitTreatment(
+        CLINIC,
+        VISIT,
+        asVisitTreatmentExecutionId('99999999-9999-4999-8999-999999999999'),
+        dependencies,
+      ),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(recorded.finished).toEqual([]);
+  });
+
+  it('answers NOT_FOUND for a visit this clinic does not hold', async () => {
+    const { recorded, dependencies } = harness();
+
+    await expect(
+      finishVisitTreatment(OTHER_CLINIC, VISIT, RECORD_ID, dependencies),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(recorded.reads).toEqual([]);
   });
 });
 

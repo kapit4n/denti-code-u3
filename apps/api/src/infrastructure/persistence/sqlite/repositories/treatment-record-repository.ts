@@ -20,6 +20,7 @@ import {
   type ClinicId,
   type IsoDateTime,
   type VisitId,
+  type VisitTreatmentExecutionId,
 } from '@denti-code-u3/types';
 import { and, asc, eq } from 'drizzle-orm';
 
@@ -35,6 +36,7 @@ const RECORD_COLUMNS = {
   tooth: visitTreatmentExecutions.tooth,
   notes: visitTreatmentExecutions.notes,
   performedAt: visitTreatmentExecutions.performedAt,
+  endedAt: visitTreatmentExecutions.endedAt,
   treatmentPlanItemId: visitTreatmentExecutions.treatmentPlanItemId,
 } as const;
 
@@ -52,6 +54,14 @@ export class SQLiteTreatmentRecordRepository implements TreatmentRecordRepositor
     return rows.map(toEntity);
   }
 
+  async finish(recordId: VisitTreatmentExecutionId, endedAt: IsoDateTime): Promise<void> {
+    this.db
+      .update(visitTreatmentExecutions)
+      .set({ endedAt: new Date(endedAt) })
+      .where(eq(visitTreatmentExecutions.id, recordId))
+      .run();
+  }
+
   async save(record: TreatmentRecord): Promise<void> {
     try {
       this.db
@@ -64,6 +74,7 @@ export class SQLiteTreatmentRecordRepository implements TreatmentRecordRepositor
           notes: record.notes,
           treatmentPlanItemId: record.treatmentPlanItemId,
           performedAt: new Date(record.performedAt),
+          endedAt: record.endedAt ? new Date(record.endedAt) : null,
         })
         .run();
     } catch (error) {
@@ -87,6 +98,7 @@ function toEntity(row: {
   notes: string | null;
   treatmentPlanItemId: string | null;
   performedAt: Date;
+  endedAt: Date | null;
 }): TreatmentRecord {
   return {
     id: asVisitTreatmentExecutionId(row.id),
@@ -96,5 +108,6 @@ function toEntity(row: {
     notes: row.notes,
     treatmentPlanItemId: row.treatmentPlanItemId ?? null,
     performedAt: row.performedAt.toISOString() as IsoDateTime,
+    endedAt: row.endedAt ? (row.endedAt.toISOString() as IsoDateTime) : null,
   };
 }

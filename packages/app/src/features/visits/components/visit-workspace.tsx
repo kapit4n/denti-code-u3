@@ -47,12 +47,14 @@ import { AlertCircle, ArrowLeft, FileText, Loader2 } from 'lucide-react';
 import { useCreateVisitInvoice } from '../mutations/use-create-visit-invoice.js';
 import type {
   Charge,
+  InventoryItem,
   MedicationRoute,
   Payment,
   PaymentMethod,
   TreatmentPlanItemSummary,
   TreatmentPlanSummary,
   TreatmentRecord,
+  TreatmentSupply,
   Visit,
 } from '@denti-code-u3/domain';
 import { formatMinorUnits } from '@denti-code-u3/domain';
@@ -77,7 +79,9 @@ import { useTranslation, type Translate, type TranslationKey } from '../../../i1
 import { formatClinicDayTime } from '../../clinic/format-clinic-time.js';
 import { useClinicSettings } from '../../clinic/queries/clinic-settings-query.js';
 import { usePatient, usePatientTreatmentPlans } from '../../patients/hooks/use-patients.js';
+import { AppointmentProgressTimeline } from '../../agenda/components/appointment-progress-timeline.js';
 import { useChairs, useDentists } from '../../agenda/queries/bookable-resources-query.js';
+import { useInventory } from '../../inventory/queries/inventory-query.js';
 // The catalogue the picker draws from lives with the feature that administers it.
 import { useTreatments } from '../../treatments/queries/catalogue-query.js';
 import { chargeLineTotal, chargesTotal, parseMajorUnitsToMinor } from '../charge-presentation.js';
@@ -93,6 +97,8 @@ import { useCreateClinicalNote } from '../mutations/use-create-clinical-note.js'
 import { useCreatePayment } from '../mutations/use-create-payment.js';
 import { useCreatePrescription } from '../mutations/use-create-prescription.js';
 import { useCreateVisitAttachment } from '../mutations/use-create-visit-attachment.js';
+import { useFinishVisitTreatment } from '../mutations/use-finish-visit-treatment.js';
+import { useRecordTreatmentSupply } from '../mutations/use-record-treatment-supply.js';
 import { useRecordVisitTreatment } from '../mutations/use-record-visit-treatment.js';
 import { useVisitClosure } from '../mutations/use-visit-closure.js';
 import { medicationRouteLabel, medicationRouteOptions } from '../prescription-presentation.js';
@@ -106,6 +112,7 @@ import { useVisitCharges } from '../queries/charges-query.js';
 import { useVisitAttachments } from '../queries/visit-attachments-query.js';
 import { useVisitPayments } from '../queries/payments-query.js';
 import { useVisitPrescriptions } from '../queries/prescriptions-query.js';
+import { useVisitTreatmentSupplies } from '../queries/treatment-supplies-query.js';
 import { useVisitTreatments } from '../queries/treatments-query.js';
 import { useVisitNotes } from '../queries/visit-notes-query.js';
 import { useVisit } from '../queries/visit-query.js';
@@ -409,6 +416,38 @@ function VisitSummarySection({
           </dl>
         </CardContent>
       </Card>
+
+      {visit.appointmentId && clinicTimeZone ? (
+        <Card data-testid="visit-workflow">
+          <CardHeader>
+            <CardTitle>{t('visits.summary.workflowTitle')}</CardTitle>
+            <CardDescription>{t('visits.summary.workflowDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AppointmentProgressTimeline
+              appointmentId={visit.appointmentId}
+              timeZone={clinicTimeZone}
+            />
+          </CardContent>
+        </Card>
+      ) : !visit.appointmentId ? (
+        <Card data-testid="visit-workflow">
+          <CardHeader>
+            <CardTitle>{t('visits.summary.workflowTitle')}</CardTitle>
+            <CardDescription>{t('visits.summary.workflowDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm">
+            <p>{t('visits.summary.walkInArrival')}</p>
+            <p className="text-muted-foreground">
+              {visit.startedAt && clinicTimeZone ? (
+                formatClinicDayTime(visit.startedAt, clinicTimeZone)
+              ) : (
+                <span>{t('common.readingClinicClock')}</span>
+              )}
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/*
         Its own card, never folded into the facts above: the summary is what the
@@ -829,8 +868,12 @@ function VisitTreatmentsSection({
   const { t } = useTranslation();
   const catalogueQuery = useTreatments();
   const recordsQuery = useVisitTreatments(visitId);
+  const suppliesQuery = useVisitTreatmentSupplies(visitId);
+  const inventoryQuery = useInventory();
   const plansQuery = usePatientTreatmentPlans(patientId);
   const record = useRecordVisitTreatment();
+  const finishTreatment = useFinishVisitTreatment();
+  const recordSupply = useRecordTreatmentSupply();
   const [treatmentId, setTreatmentId] = useState('');
   const [planItemId, setPlanItemId] = useState('');
   const [tooth, setTooth] = useState('');
@@ -840,8 +883,27 @@ function VisitTreatmentsSection({
     notFound: t('visits.failure.notFound'),
     network: t('visits.failure.treatmentNetwork'),
   });
+  const finishFailure = describeTreatmentFailure(
+    finishTreatment.error,
+    t('visits.treatments.finishError'),
+    {
+      notFound: t('visits.failure.notFound'),
+      network: t('visits.failure.treatmentNetwork'),
+    },
+  );
+  const supplyFailure = describeTreatmentFailure(
+    recordSupply.error,
+    t('visits.treatments.supplyError'),
+    {
+      notFound: t('visits.failure.notFound'),
+      network: t('visits.failure.treatmentNetwork'),
+    },
+  );
   const ready = treatmentId.length > 0;
   const catalogue = catalogueQuery.data?.items ?? [];
+  const supplies = suppliesQuery.data?.supplies ?? [];
+  const inventory = inventoryQuery.data?.items ?? [];
+  const supplyableItems = inventory.filter((item) => item.isActive);
 
   // The planned, still-open lines for the treatment just chosen: linking is only
   // meaningful against work this patient's plan has not yet had done. A plan whose
@@ -876,14 +938,47 @@ function VisitTreatmentsSection({
                 className="rounded-md border p-3 text-sm"
                 data-testid="treatment-record"
               >
-                <p className="mb-1 text-xs text-muted-foreground">
-                  {clinicTimeZone ? (
-                    formatClinicDayTime(performed.performedAt, clinicTimeZone)
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    {t('visits.treatments.startedAt', {
+                      time: clinicTimeZone
+                        ? formatClinicDayTime(performed.performedAt, clinicTimeZone)
+                        : t('common.readingClinicClock'),
+                    })}
+                  </p>
+                  {performed.endedAt ? (
+                    <p className="text-xs text-muted-foreground" data-testid="treatment-ended">
+                      {t('visits.treatments.finishedAt', {
+                        time: clinicTimeZone
+                          ? formatClinicDayTime(performed.endedAt, clinicTimeZone)
+                          : t('common.readingClinicClock'),
+                      })}
+                    </p>
                   ) : (
-                    <span className="text-muted-foreground">{t('common.readingClinicClock')}</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      data-testid="finish-treatment"
+                      disabled={
+                        finishTreatment.isPending &&
+                        finishTreatment.variables?.treatmentRecordId === performed.id
+                      }
+                      onClick={() =>
+                        finishTreatment.mutate({ visitId, treatmentRecordId: performed.id })
+                      }
+                    >
+                      {finishTreatment.isPending &&
+                      finishTreatment.variables?.treatmentRecordId === performed.id
+                        ? t('visits.treatments.finishing')
+                        : t('visits.treatments.finish')}
+                    </Button>
                   )}
+                </div>
+
+                <p className="mt-1 font-medium">
+                  {resolveTreatmentName(performed, catalogueQuery, t)}
                 </p>
-                <p className="font-medium">{resolveTreatmentName(performed, catalogueQuery, t)}</p>
                 {performed.tooth ? (
                   <p>{t('visits.treatments.tooth', { tooth: performed.tooth })}</p>
                 ) : null}
@@ -894,152 +989,322 @@ function VisitTreatmentsSection({
                     {performed.notes}
                   </p>
                 ) : null}
+
+                <div className="mt-3 space-y-2 border-t pt-3" data-testid="treatment-supplies">
+                  <p className="text-xs font-medium">{t('visits.treatments.suppliesTitle')}</p>
+                  {suppliesQuery.isPending ? (
+                    <p className="text-xs text-muted-foreground">
+                      {t('visits.treatments.suppliesLoading')}
+                    </p>
+                  ) : suppliesQuery.error ? (
+                    <p className="text-xs text-destructive" role="alert">
+                      {t('visits.treatments.suppliesLoadError')}
+                    </p>
+                  ) : (
+                    <TreatmentSupplyList
+                      supplies={supplies.filter(
+                        (supply) => supply.treatmentRecordId === performed.id,
+                      )}
+                      inventory={inventory}
+                      clinicTimeZone={clinicTimeZone}
+                    />
+                  )}
+
+                  {inventoryQuery.isPending ? (
+                    <p className="text-xs text-muted-foreground">
+                      {t('visits.treatments.inventoryLoading')}
+                    </p>
+                  ) : supplyableItems.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      {t('visits.treatments.noInventory')}
+                    </p>
+                  ) : (
+                    <TreatmentSupplyForm
+                      id={performed.id}
+                      items={supplyableItems}
+                      isPending={recordSupply.isPending}
+                      onRecord={(itemId, quantity, done) =>
+                        recordSupply.mutate(
+                          {
+                            visitId,
+                            treatmentRecordId: performed.id,
+                            itemId,
+                            quantity,
+                          },
+                          { onSuccess: done },
+                        )
+                      }
+                    />
+                  )}
+                </div>
               </li>
             ))}
           </ul>
         )}
 
-        <form
-          className="space-y-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!ready) {
-              return;
-            }
-            record.mutate(
-              { visitId, treatmentId, tooth, notes: draft, treatmentPlanItemId: planItemId },
-              {
-                onSuccess: () => {
-                  setTreatmentId('');
-                  setPlanItemId('');
-                  setTooth('');
-                  setDraft('');
+        <div className="space-y-2 border-t pt-4">
+          <p className="text-sm font-medium">{t('visits.treatments.startTitle')}</p>
+          <form
+            className="space-y-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!ready) {
+                return;
+              }
+              record.mutate(
+                { visitId, treatmentId, tooth, notes: draft, treatmentPlanItemId: planItemId },
+                {
+                  onSuccess: () => {
+                    setTreatmentId('');
+                    setPlanItemId('');
+                    setTooth('');
+                    setDraft('');
+                  },
                 },
-              },
-            );
-          }}
-        >
-          <div className="space-y-1">
-            <Label htmlFor="treatment-catalogue">{t('visits.treatments.treatmentLabel')}</Label>
-            <Select
-              value={treatmentId}
-              // Changing the treatment changes which planned items can apply, so a
-              // chosen link is dropped rather than left pointing at another treatment's
-              // line — the server would refuse it, and the form should not offer it.
-              onValueChange={(value) => {
-                setTreatmentId(value);
-                setPlanItemId('');
-              }}
-              disabled={record.isPending}
-            >
-              <SelectTrigger id="treatment-catalogue" data-testid="treatment-catalogue">
-                <SelectValue placeholder={t('visits.treatments.chooseTreatment')} />
-              </SelectTrigger>
-              <SelectContent>
-                {catalogue.map((treatment) => (
-                  <SelectItem key={treatment.id} value={treatment.id}>
-                    {treatment.code ? `${treatment.code} · ${treatment.name}` : treatment.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {catalogueQuery.isPending ? (
-              <p className="text-xs text-muted-foreground" role="status">
-                {t('visits.treatments.loadingCatalogue')}
-              </p>
-            ) : null}
-            {!catalogueQuery.isPending && catalogue.length === 0 ? (
-              // Said out loud rather than showing an empty dropdown: a clinic with
-              // no catalogue cannot record anything, and a silent select looks like
-              // a form that has not loaded.
-              <p className="text-xs text-muted-foreground">{t('visits.treatments.noCatalogue')}</p>
-            ) : null}
-          </div>
-
-          {/* Offered only when this patient's plan has an open line for the chosen
-              treatment: linking is provenance, so a record with nothing planned for it
-              simply has no item to name. */}
-          {plannedItems.length > 0 ? (
+              );
+            }}
+          >
             <div className="space-y-1">
-              <Label htmlFor="treatment-plan-item">{t('visits.treatments.planItem')}</Label>
+              <Label htmlFor="treatment-catalogue">{t('visits.treatments.treatmentLabel')}</Label>
               <Select
-                value={planItemId || NOT_LINKED}
-                onValueChange={(value) => setPlanItemId(value === NOT_LINKED ? '' : value)}
+                value={treatmentId}
+                // Changing the treatment changes which planned items can apply, so a
+                // chosen link is dropped rather than left pointing at another treatment's
+                // line — the server would refuse it, and the form should not offer it.
+                onValueChange={(value) => {
+                  setTreatmentId(value);
+                  setPlanItemId('');
+                }}
                 disabled={record.isPending}
               >
-                <SelectTrigger id="treatment-plan-item" data-testid="treatment-plan-item">
-                  <SelectValue placeholder={t('visits.treatments.notLinked')} />
+                <SelectTrigger id="treatment-catalogue" data-testid="treatment-catalogue">
+                  <SelectValue placeholder={t('visits.treatments.chooseTreatment')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NOT_LINKED}>{t('visits.treatments.notLinked')}</SelectItem>
-                  {plannedItems.map(({ plan, item }) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {describePlannedItem(t, plan, item)}
+                  {catalogue.map((treatment) => (
+                    <SelectItem key={treatment.id} value={treatment.id}>
+                      {treatment.code ? `${treatment.code} · ${treatment.name}` : treatment.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">{t('visits.treatments.fulfilHint')}</p>
+              {catalogueQuery.isPending ? (
+                <p className="text-xs text-muted-foreground" role="status">
+                  {t('visits.treatments.loadingCatalogue')}
+                </p>
+              ) : null}
+              {!catalogueQuery.isPending && catalogue.length === 0 ? (
+                // Said out loud rather than showing an empty dropdown: a clinic with
+                // no catalogue cannot record anything, and a silent select looks like
+                // a form that has not loaded.
+                <p className="text-xs text-muted-foreground">
+                  {t('visits.treatments.noCatalogue')}
+                </p>
+              ) : null}
             </div>
-          ) : null}
 
-          <div className="space-y-1">
-            <Label htmlFor="treatment-tooth">{t('visits.treatments.toothLabel')}</Label>
-            <input
-              id="treatment-tooth"
-              data-testid="treatment-tooth"
-              value={tooth}
-              onChange={(event) => setTooth(event.target.value)}
-              maxLength={2}
-              disabled={record.isPending}
-              className="w-full rounded-md border bg-background p-2 text-sm"
-              placeholder={t('visits.treatments.toothPlaceholder')}
-              inputMode="numeric"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <Label htmlFor="treatment-notes">{t('visits.treatments.notesLabel')}</Label>
-            <textarea
-              id="treatment-notes"
-              data-testid="treatment-notes"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              rows={2}
-              disabled={record.isPending}
-              className="w-full rounded-md border bg-background p-2 text-sm"
-              placeholder={t('visits.treatments.notesPlaceholder')}
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="submit"
-              data-testid="record-treatment"
-              disabled={record.isPending || !ready}
-            >
-              {t('visits.treatments.record')}
-            </Button>
-            {record.isPending ? (
-              <p className="text-sm text-muted-foreground" role="status">
-                <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
-                {t('common.saving')}
-              </p>
+            {/* Offered only when this patient's plan has an open line for the chosen
+                treatment: linking is provenance, so a record with nothing planned for it
+                simply has no item to name. */}
+            {plannedItems.length > 0 ? (
+              <div className="space-y-1">
+                <Label htmlFor="treatment-plan-item">{t('visits.treatments.planItem')}</Label>
+                <Select
+                  value={planItemId || NOT_LINKED}
+                  onValueChange={(value) => setPlanItemId(value === NOT_LINKED ? '' : value)}
+                  disabled={record.isPending}
+                >
+                  <SelectTrigger id="treatment-plan-item" data-testid="treatment-plan-item">
+                    <SelectValue placeholder={t('visits.treatments.notLinked')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NOT_LINKED}>{t('visits.treatments.notLinked')}</SelectItem>
+                    {plannedItems.map(({ plan, item }) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {describePlannedItem(t, plan, item)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{t('visits.treatments.fulfilHint')}</p>
+              </div>
             ) : null}
-          </div>
-        </form>
 
-        {failure ? (
-          <div
-            role="alert"
-            className="flex items-start gap-2 rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive"
-          >
-            <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
-            <span>{failure}</span>
-          </div>
-        ) : null}
+            <div className="space-y-1">
+              <Label htmlFor="treatment-tooth">{t('visits.treatments.toothLabel')}</Label>
+              <input
+                id="treatment-tooth"
+                data-testid="treatment-tooth"
+                value={tooth}
+                onChange={(event) => setTooth(event.target.value)}
+                maxLength={2}
+                disabled={record.isPending}
+                className="w-full rounded-md border bg-background p-2 text-sm"
+                placeholder={t('visits.treatments.toothPlaceholder')}
+                inputMode="numeric"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="treatment-notes">{t('visits.treatments.notesLabel')}</Label>
+              <textarea
+                id="treatment-notes"
+                data-testid="treatment-notes"
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                rows={2}
+                disabled={record.isPending}
+                className="w-full rounded-md border bg-background p-2 text-sm"
+                placeholder={t('visits.treatments.notesPlaceholder')}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="submit"
+                data-testid="record-treatment"
+                disabled={record.isPending || !ready}
+              >
+                {t('visits.treatments.record')}
+              </Button>
+              {record.isPending ? (
+                <p className="text-sm text-muted-foreground" role="status">
+                  <Loader2 aria-hidden className="mr-1 inline size-4 animate-spin" />
+                  {t('common.saving')}
+                </p>
+              ) : null}
+            </div>
+          </form>
+        </div>
+
+        {failure ? <TreatmentFailureAlert message={failure} /> : null}
+        {finishFailure ? <TreatmentFailureAlert message={finishFailure} /> : null}
+        {supplyFailure ? <TreatmentFailureAlert message={supplyFailure} /> : null}
       </CardContent>
     </Card>
+  );
+}
+
+function TreatmentFailureAlert({ message }: { readonly message: string }) {
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-2 rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive"
+    >
+      <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+interface TreatmentSupplyListProps {
+  readonly supplies: readonly TreatmentSupply[];
+  readonly inventory: readonly InventoryItem[];
+  readonly clinicTimeZone: string | undefined;
+}
+
+function TreatmentSupplyList({ supplies, inventory, clinicTimeZone }: TreatmentSupplyListProps) {
+  const { t } = useTranslation();
+
+  if (supplies.length === 0) {
+    return <p className="text-xs text-muted-foreground">{t('visits.treatments.suppliesEmpty')}</p>;
+  }
+
+  return (
+    <ul className="space-y-1 text-xs text-muted-foreground">
+      {supplies.map((supply) => {
+        const item = inventory.find((candidate) => candidate.id === supply.itemId);
+        return (
+          <li key={supply.id} className="flex flex-wrap justify-between gap-x-3">
+            <span>
+              {t('visits.treatments.supplyLine', {
+                item: item?.name ?? t('visits.treatments.unknownSupply'),
+                quantity: supply.quantity,
+                unit: item?.unit ?? '',
+              })}
+            </span>
+            <time dateTime={supply.recordedAt}>
+              {clinicTimeZone ? formatClinicDayTime(supply.recordedAt, clinicTimeZone) : null}
+            </time>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+interface TreatmentSupplyFormProps {
+  readonly id: string;
+  readonly items: readonly InventoryItem[];
+  readonly isPending: boolean;
+  readonly onRecord: (itemId: string, quantity: number, done: () => void) => void;
+}
+
+function TreatmentSupplyForm({ id, items, isPending, onRecord }: TreatmentSupplyFormProps) {
+  const { t } = useTranslation();
+  const [itemId, setItemId] = useState('');
+  const [quantity, setQuantity] = useState('1');
+  const parsedQuantity = Number.parseInt(quantity, 10);
+  const selected = items.find((item) => item.id === itemId);
+  const ready =
+    selected !== undefined &&
+    selected.stock > 0 &&
+    Number.isInteger(parsedQuantity) &&
+    parsedQuantity > 0;
+
+  return (
+    <form
+      className="space-y-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!ready || !selected) {
+          return;
+        }
+        onRecord(selected.id, parsedQuantity, () => {
+          setItemId('');
+          setQuantity('1');
+        });
+      }}
+    >
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_auto] sm:items-end">
+        <div className="space-y-1">
+          <Label htmlFor={`supply-item-${id}`}>{t('visits.treatments.supplyItem')}</Label>
+          <Select value={itemId} onValueChange={setItemId} disabled={isPending}>
+            <SelectTrigger id={`supply-item-${id}`} data-testid="supply-item">
+              <SelectValue placeholder={t('visits.treatments.chooseSupply')} />
+            </SelectTrigger>
+            <SelectContent>
+              {items.map((item) => (
+                <SelectItem key={item.id} value={item.id} disabled={item.stock <= 0}>
+                  {t('visits.treatments.supplyOption', {
+                    item: item.name,
+                    stock: item.stock,
+                    unit: item.unit,
+                  })}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`supply-quantity-${id}`}>{t('visits.treatments.supplyQuantity')}</Label>
+          <input
+            id={`supply-quantity-${id}`}
+            data-testid="supply-quantity"
+            type="number"
+            min={1}
+            step={1}
+            value={quantity}
+            onChange={(event) => setQuantity(event.target.value)}
+            disabled={isPending}
+            className="w-full rounded-md border bg-background p-2 text-sm"
+          />
+        </div>
+        <Button type="submit" data-testid="record-supply" disabled={!ready || isPending}>
+          {isPending ? t('visits.treatments.supplySaving') : t('visits.treatments.supplyAdd')}
+        </Button>
+      </div>
+    </form>
   );
 }
 

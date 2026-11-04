@@ -101,6 +101,21 @@ const TREATMENTS_ITEMS: Record<string, unknown>[] = [
   },
 ];
 
+const INVENTORY_ITEMS: Record<string, unknown>[] = [
+  {
+    id: 'item-1',
+    clinicId: 'clinic-1',
+    name: 'Composite resin A2',
+    sku: 'COMP-A2',
+    description: null,
+    unit: 'syringe',
+    stock: 10,
+    minStock: 2,
+    costMinor: 4500,
+    isActive: true,
+  },
+];
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -148,6 +163,10 @@ interface HarnessOptions {
   readonly catalogue?: Record<string, unknown>[];
   /** The treatments the API answers with when the treatments section is opened. */
   readonly visitTreatments?: Record<string, unknown>[];
+  /** The supply lines the API answers with for this visit. */
+  readonly visitTreatmentSupplies?: Record<string, unknown>[];
+  /** The inventory items the supply picker reads. */
+  readonly inventoryItems?: Record<string, unknown>[];
   /** The patient's plans, read by the "planned item" picker in the treatments form. */
   readonly patientPlans?: Record<string, unknown>[];
   /** When set, recording a treatment is refused with this envelope. */
@@ -201,6 +220,8 @@ function renderWorkspace({
   attachmentGate,
   catalogue = TREATMENTS_ITEMS,
   visitTreatments = [],
+  visitTreatmentSupplies = [],
+  inventoryItems = INVENTORY_ITEMS,
   patientPlans = [],
   treatmentRefusal,
   treatmentGate,
@@ -219,6 +240,8 @@ function renderWorkspace({
     notes: [...notes],
     visitAttachments: [...visitAttachments],
     visitTreatments: [...visitTreatments],
+    visitTreatmentSupplies: [...visitTreatmentSupplies],
+    otherInventoryItems: [...inventoryItems],
     patientPlans: [...patientPlans],
     visitPrescriptions: [...visitPrescriptions],
     visitCharges: [...visitCharges],
@@ -232,6 +255,12 @@ function renderWorkspace({
 
     if (method === 'GET' && path === `/api/v1/visits/${VISIT_ID}`) {
       return jsonResponse(state.visit, visitStatus);
+    }
+    if (method === 'GET' && path === '/api/v1/appointments/appointment-1/progress') {
+      return jsonResponse({ items: [] });
+    }
+    if (method === 'GET' && path === '/api/v1/inventory/items') {
+      return jsonResponse({ items: state.otherInventoryItems });
     }
     // The notes are routed before the closure branch below, which matches any path
     // under the visit — `/notes` would otherwise be read as a closure and answered
@@ -309,12 +338,85 @@ function renderWorkspace({
         notes: written.notes ?? null,
         treatmentPlanItemId: written.treatmentPlanItemId ?? null,
         performedAt: '2026-10-05T14:35:00.000Z',
+        endedAt: null,
       };
       state.visitTreatments = [...state.visitTreatments, performed];
       // The answer waits on the gate: the request has been made, and the screen has
       // not been told about it yet.
       await treatmentGate;
       return jsonResponse(performed, 201);
+    }
+    if (path === `/api/v1/visits/${VISIT_ID}/treatment-supplies` && method === 'GET') {
+      return jsonResponse({ supplies: state.visitTreatmentSupplies });
+    }
+    if (
+      method === 'POST' &&
+      path.startsWith(`/api/v1/visits/${VISIT_ID}/treatments/`) &&
+      path.endsWith('/finish')
+    ) {
+      const recordId = decodeURIComponent(path.split('/').at(-2) ?? '');
+      const record = state.visitTreatments.find((candidate) => candidate.id === recordId);
+      if (!record) {
+        return jsonResponse(
+          { error: { code: 'NOT_FOUND', message: 'gone', requestId: 'test' } },
+          404,
+        );
+      }
+      const finished = {
+        ...record,
+        endedAt: record.endedAt ?? '2026-10-05T14:45:00.000Z',
+      };
+      state.visitTreatments = state.visitTreatments.map((candidate) =>
+        candidate.id === recordId ? finished : candidate,
+      );
+      return jsonResponse(finished);
+    }
+    if (
+      method === 'POST' &&
+      path.startsWith(`/api/v1/visits/${VISIT_ID}/treatments/`) &&
+      path.endsWith('/supplies')
+    ) {
+      const recordId = decodeURIComponent(path.split('/').at(-2) ?? '');
+      const written = JSON.parse(String(init?.body)) as { itemId: string; quantity: number };
+      const item = state.otherInventoryItems.find(
+        (candidate) => candidate.id === written.itemId,
+      ) as Record<string, unknown> | undefined;
+      if (!item) {
+        return jsonResponse(
+          { error: { code: 'NOT_FOUND', message: 'gone', requestId: 'test' } },
+          404,
+        );
+      }
+      const supply = {
+        id: `supply-${state.visitTreatmentSupplies.length + 1}`,
+        treatmentRecordId: recordId,
+        itemId: written.itemId,
+        quantity: written.quantity,
+        recordedAt: '2026-10-05T14:40:00.000Z',
+      };
+      state.visitTreatmentSupplies = [...state.visitTreatmentSupplies, supply];
+      state.otherInventoryItems = state.otherInventoryItems.map((candidate) =>
+        candidate.id === written.itemId
+          ? { ...candidate, stock: Number(candidate.stock) - written.quantity }
+          : candidate,
+      );
+      return jsonResponse(
+        {
+          supply,
+          item: state.otherInventoryItems.find((candidate) => candidate.id === written.itemId),
+          movement: {
+            id: `movement-${state.visitTreatmentSupplies.length}`,
+            itemId: written.itemId,
+            type: 'USAGE',
+            quantity: written.quantity,
+            unitCostMinor: null,
+            reference: `Treatment ${recordId}`,
+            notes: null,
+            performedAt: '2026-10-05T14:40:00.000Z',
+          },
+        },
+        201,
+      );
     }
     if (path === `/api/v1/visits/${VISIT_ID}/prescriptions` && method === 'GET') {
       return jsonResponse({ prescriptions: state.visitPrescriptions });
@@ -1029,6 +1131,71 @@ describe('VisitWorkspace', () => {
         (init?.method ?? 'GET').toUpperCase() === 'GET',
     );
     expect(visitReads).toHaveLength(1);
+  });
+
+  it('finishes a treatment, using the server’s answer as the end time', async () => {
+    const { fetchImplementation } = renderWorkspace({
+      visitTreatments: [
+        {
+          id: 'treatment-record-1',
+          visitId: VISIT_ID,
+          treatmentId: 'treatment-1',
+          tooth: '16',
+          notes: null,
+          performedAt: '2026-10-05T14:00:00.000Z',
+          endedAt: null,
+        },
+      ],
+    });
+
+    await user.click(await screen.findByTestId('visit-section-treatments'));
+    await user.click(await screen.findByTestId('finish-treatment'));
+
+    const post = fetchImplementation.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}/treatments/treatment-record-1/finish`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'POST',
+    );
+    expect(post).toBeTruthy();
+
+    expect(await screen.findByTestId('treatment-ended')).toHaveTextContent('09:45');
+    expect(screen.queryByTestId('finish-treatment')).toBeNull();
+  });
+
+  it('records a supply against a treatment and shows it once the server has answered', async () => {
+    const { fetchImplementation } = renderWorkspace({
+      visitTreatments: [
+        {
+          id: 'treatment-record-1',
+          visitId: VISIT_ID,
+          treatmentId: 'treatment-1',
+          tooth: '16',
+          notes: null,
+          performedAt: '2026-10-05T14:00:00.000Z',
+          endedAt: null,
+        },
+      ],
+      visitTreatmentSupplies: [],
+    });
+
+    await user.click(await screen.findByTestId('visit-section-treatments'));
+
+    expect(await screen.findByText('No supplies recorded for this treatment.')).toBeTruthy();
+    await chooseFrom('supply-item', /Composite resin A2/);
+    await user.clear(screen.getByTestId('supply-quantity'));
+    await user.type(screen.getByTestId('supply-quantity'), '2');
+    await user.click(screen.getByTestId('record-supply'));
+
+    const post = fetchImplementation.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith(`/visits/${VISIT_ID}/treatments/treatment-record-1/supplies`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'POST',
+    );
+    expect(post).toBeTruthy();
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ itemId: 'item-1', quantity: 2 });
+
+    expect(await screen.findByText('Composite resin A2 × 2 syringe')).toBeTruthy();
+    expect(screen.queryByText('No supplies recorded for this treatment.')).toBeNull();
   });
 
   it('lets a recorded treatment name the open planned item it fulfils, and only that', async () => {
