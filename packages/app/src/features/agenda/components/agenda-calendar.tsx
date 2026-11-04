@@ -333,6 +333,11 @@ export function AgendaCalendar({ clinic, focusedAppointmentId, initialDate }: Ag
           scrollTime={toScrollTime(clinic)}
           nowIndicator
           allDaySlot={false}
+          // Overlapping appointments share a column side by side. FullCalendar's
+          // default stacks them on top of one another, which hides the lower block's
+          // time and status badge — the two facts a receptionist scanning the day
+          // needs to tell two simultaneous visits apart.
+          slotEventOverlap={false}
           // The switch that makes the grid writable at all. *Which* blocks may move
           // is answered per event, by the adapter, from the domain's
           // `isScheduleEditable` — so a cancelled block on Monday does not disable

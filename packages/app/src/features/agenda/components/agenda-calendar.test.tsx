@@ -275,6 +275,14 @@ describe('AgendaCalendar', () => {
     expect(event?.title).toBe('Ana Torres · Dra. Rivera');
   });
 
+  it('draws overlapping appointments side by side so both statuses stay visible', () => {
+    renderCalendar();
+
+    // FullCalendar stacks overlapping blocks by default, so the lower block's time
+    // and status badge are covered by the block above it.
+    expect(latest().slotEventOverlap).toBe(false);
+  });
+
   it('draws the status on each block, in the status tone', async () => {
     renderCalendar();
 

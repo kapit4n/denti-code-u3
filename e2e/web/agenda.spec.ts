@@ -88,6 +88,53 @@ test.describe('Agenda', () => {
     await expect(cancelled.locator('.agenda-status-badge')).toHaveClass(/text-danger-text/);
   });
 
+  test('shows both statuses when appointments overlap in time', async ({ page }) => {
+    const [ana, luis] = agendaEntries.items;
+    if (!ana || !luis) throw new Error('Expected the agenda fixture to hold two appointments');
+
+    await installApi(page, {
+      ...allAgendaFixtures(),
+      '/api/v1/appointments': {
+        body: {
+          ...agendaEntries,
+          items: [ana, { ...luis, startsAt: ana.startsAt, endsAt: ana.endsAt }],
+        },
+      },
+    });
+
+    await page.goto('/agenda');
+
+    const anaBlock = page.locator('.fc-event', { hasText: 'Ana García' });
+    const luisBlock = page.locator('.fc-event', { hasText: 'Luis Fernández' });
+    await expect(anaBlock.locator('.agenda-status-badge')).toHaveText('Confirmed');
+    await expect(luisBlock.locator('.agenda-status-badge')).toHaveText('Scheduled');
+
+    // Both badges must be the topmost element at their own centre and must fit inside
+    // their own block. A stacked overlapping block can still be in the DOM and
+    // technically "visible", while the block drawn over it hides its status from the
+    // receptionist.
+    for (const block of [anaBlock, luisBlock]) {
+      const badge = block.locator('.agenda-status-badge');
+      const badgeBox = await badge.boundingBox();
+      const blockBox = await block.boundingBox();
+      expect(badgeBox).not.toBeNull();
+      expect(blockBox).not.toBeNull();
+      if (!badgeBox || !blockBox) throw new Error('Expected both boxes to be measurable');
+      expect(badgeBox.x).toBeGreaterThanOrEqual(blockBox.x);
+      expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(blockBox.x + blockBox.width + 1);
+
+      const isTopmost = await badge.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const topmost = document.elementFromPoint(
+          rect.left + rect.width / 2,
+          rect.top + rect.height / 2,
+        );
+        return topmost?.closest('.fc-event') === element.closest('.fc-event');
+      });
+      expect(isTopmost).toBe(true);
+    }
+  });
+
   test('names an appointment with no dentist instead of leaving it blank', async ({ page }) => {
     await page.goto('/agenda');
 
