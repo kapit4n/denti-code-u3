@@ -4463,3 +4463,42 @@ the two existing React Compiler warnings; boundary guard passed with its existin
 false positive. Web production build passed. PostgreSQL integration tests for finish/supply
 were added but could not run here: no PostgreSQL is listening on `127.0.0.1:5433`. Root
 `format:check` still names two untouched generated migration metadata snapshots. No commit.
+
+---
+
+Session 84: overlapping agenda visits now keep both statuses visible.
+
+FullCalendar stacks overlapping appointments on top of one another by default. Two visits
+booked at the same instant therefore drew in the same column, and the upper block covered the
+lower block's time and status badge — the status was missing, not absent from the data. The
+grid now sets `slotEventOverlap={false}`, so simultaneous visits are laid side by side and each
+block keeps its own time and status. The change is presentation only: no scheduling,
+permission, API, domain, validation, database or migration behaviour changed.
+
+**Tests.** Agenda calendar **23/23**; the agenda browser spec **18/18**, including a new
+regression that puts two appointments at the same instant and asserts each status badge is the
+topmost element at its own centre and fits inside its block. Full e2e **180/180**. App and e2e
+typecheck passed; app and e2e lint passed with the two existing React Compiler warnings; the
+changed files are Prettier-clean; web production build passed. No commit.
+
+---
+
+Session 85: planned treatments now continue across visits.
+
+`TreatmentPlanItemSummary` gained mandatory `sessions`, read oldest first from the visit
+treatment executions linked to each line. Both repositories join the executions through
+`visits` and scope by clinic and patient; no table, column or migration was added. ADR 0036
+records the decision that the plan item is the cross-visit unit and completion stays explicit.
+
+The visit treatments section lists open planned lines with their session history and derived
+**In progress** / **Not started** state. Start/continue pre-fills the treatment form; mark done
+calls the existing completion endpoint. Linked records name their plan line, and creating or
+finishing one invalidates the patient's plan read. English and Spanish copy was added, and all
+domain, component and e2e plan fixtures now carry `sessions`.
+
+**Tests.** Domain **413/413**; visit-workspace component **39/39**; full app **419/420**,
+with only the pre-existing `zoned-wall-clock.test.ts` repeated-hour failure; API SQLite smoke **34/34**; full e2e
+**180/180**. Full typecheck and lint passed with the two existing React Compiler warnings;
+boundary guard kept its existing scanner false positive; changed files are Prettier-clean; web
+production build passed. PostgreSQL-only API tests skipped (no server on `127.0.0.1:5433`). No
+commit.

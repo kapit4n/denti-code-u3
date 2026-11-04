@@ -130,7 +130,7 @@ export async function createTreatmentPlan(
     };
 
     writeItems.push({ id: itemId, ...shared });
-    summaryItems.push({ id: itemId, treatmentCode, treatmentName, ...shared });
+    summaryItems.push({ id: itemId, treatmentCode, treatmentName, sessions: [], ...shared });
   }
 
   const title = input.title?.trim() || null;

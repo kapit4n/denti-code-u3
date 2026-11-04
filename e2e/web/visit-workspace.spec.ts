@@ -698,14 +698,18 @@ test.describe('Visit workspace', () => {
       treatmentPlanItemId: '11111111-bbbb-4a11-9ccc-000000000012',
     });
 
-    // Linking is provenance, so the plan's own read is asked for once — when the
-    // section opened — and never again: nothing about the plan could have changed.
-    const planReads = api.recorded.filter(
-      (entry) =>
-        entry.method === 'GET' &&
-        new URL(entry.url).pathname === `/api/v1/patients/${ANA_ID}/treatment-plans`,
-    );
-    expect(planReads).toHaveLength(1);
+    // The plan is read once when the section opens, then again because this record
+    // is now one of the line's sessions.
+    await expect
+      .poll(
+        () =>
+          api.recorded.filter(
+            (entry) =>
+              entry.method === 'GET' &&
+              new URL(entry.url).pathname === `/api/v1/patients/${ANA_ID}/treatment-plans`,
+          ).length,
+      )
+      .toBe(2);
 
     expect(errors).toEqual([]);
   });

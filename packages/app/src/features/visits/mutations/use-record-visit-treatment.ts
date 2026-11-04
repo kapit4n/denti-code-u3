@@ -10,9 +10,15 @@
  * the row in the list: a record shown before the server accepted it is a clinical
  * claim the record does not contain.
  *
- * The catalogue is not invalidated either: writing a record changes no treatment's
- * facts, so a refetch of the picker's options would throw away a minute of staleness
- * for items that did not move.
+ * **A linked record also moves the plan line's session history.** The plan read
+ * carries those sessions so the next visit can see what was already attempted, so
+ * the plan key is refetched too — but only when the record named a line. An
+ * unlinked record changes no plan, and a refetch of the plans for pixels that
+ * cannot differ is the request this project keeps refusing to make.
+ *
+ * The catalogue is not invalidated: writing a record changes no treatment's facts,
+ * so a refetch of the picker's options would throw away a minute of staleness for
+ * items that did not move.
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -22,14 +28,16 @@ import { useApiClient } from '../../../query/api-client-provider.js';
 
 export interface RecordVisitTreatmentVariables {
   readonly visitId: string;
+  /** Whose plan read must refetch when the record names a planned line. */
+  readonly patientId: string;
   readonly treatmentId: string;
   readonly tooth?: string | null;
   readonly notes?: string | null;
   /**
-   * The planned item this record fulfils, when the clinician picked one.
+   * The planned item this record continues, when the clinician picked one.
    *
-   * Provenance only: the server checks the item is on the patient's plan for the same
-   * treatment, and never completes the line — the plan screen's own action does that.
+   * The server checks the item is on the patient's plan for the same treatment and
+   * never completes the line — the plan screen's own action does that.
    */
   readonly treatmentPlanItemId?: string | null;
 }
@@ -59,10 +67,13 @@ export function useRecordVisitTreatment() {
         notes: notes?.trim() || undefined,
         treatmentPlanItemId: treatmentPlanItemId || undefined,
       }),
-    // The plan's own read is deliberately not invalidated: linking is provenance, so it
-    // completes nothing and the plan screen has no progress that could have moved.
-    onSuccess: async (_record, { visitId }) => {
+    onSuccess: async (_record, { visitId, patientId, treatmentPlanItemId }) => {
       await queryClient.invalidateQueries({ queryKey: ['visits', 'treatments', visitId] });
+      if (treatmentPlanItemId) {
+        await queryClient.invalidateQueries({
+          queryKey: ['patients', 'treatment-plans', patientId],
+        });
+      }
     },
   });
 }

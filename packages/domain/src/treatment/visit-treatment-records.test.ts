@@ -117,6 +117,7 @@ function aPlanItem(overrides: Partial<TreatmentPlanItemSummary> = {}): Treatment
     isCompleted: false,
     completedAt: null,
     notes: null,
+    sessions: [],
     ...overrides,
   };
 }

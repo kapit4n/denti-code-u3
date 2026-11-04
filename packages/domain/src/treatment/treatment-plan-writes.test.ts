@@ -201,6 +201,7 @@ describe('createTreatmentPlan', () => {
         isCompleted: false,
         completedAt: null,
         notes: null,
+        sessions: [],
       },
     ]);
     expect(plan.progress).toMatchObject({ total: 1, completed: 0, pending: 1, percentComplete: 0 });

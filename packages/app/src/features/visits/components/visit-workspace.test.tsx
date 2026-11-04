@@ -22,7 +22,7 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -532,6 +532,13 @@ function renderWorkspace({
     // most tests are not about linking, and an empty list is the honest answer.
     if (method === 'GET' && path === `/api/v1/patients/${PATIENT_ID}/treatment-plans`) {
       return jsonResponse({ items: state.patientPlans });
+    }
+    if (
+      method === 'POST' &&
+      path.startsWith(`/api/v1/patients/${PATIENT_ID}/treatment-plans/`) &&
+      path.endsWith('/complete')
+    ) {
+      return new Response(null, { status: 204 });
     }
     if (method === 'GET' && path === '/api/v1/clinic') {
       return jsonResponse(CLINIC);
@@ -1162,6 +1169,51 @@ describe('VisitWorkspace', () => {
     expect(screen.queryByTestId('finish-treatment')).toBeNull();
   });
 
+  it('refetches the plan when a treatment linked to one of its lines finishes', async () => {
+    const { fetchImplementation } = renderWorkspace({
+      patientPlans: [
+        {
+          id: 'plan-1',
+          title: 'Full mouth rehab',
+          status: 'ACCEPTED',
+          items: [
+            {
+              id: 'item-open',
+              treatmentId: 'treatment-1',
+              treatmentName: 'Composite filling',
+              tooth: '16',
+              isCompleted: false,
+              sessions: [],
+            },
+          ],
+        },
+      ],
+      visitTreatments: [
+        {
+          id: 'treatment-record-1',
+          visitId: VISIT_ID,
+          treatmentId: 'treatment-1',
+          tooth: '16',
+          notes: null,
+          performedAt: '2026-10-05T14:00:00.000Z',
+          endedAt: null,
+          treatmentPlanItemId: 'item-open',
+        },
+      ],
+    });
+
+    await user.click(await screen.findByTestId('visit-section-treatments'));
+    await user.click(await screen.findByTestId('finish-treatment'));
+
+    const planReads = () =>
+      fetchImplementation.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith(`/patients/${PATIENT_ID}/treatment-plans`) &&
+          (init?.method ?? 'GET').toUpperCase() === 'GET',
+      );
+    await waitFor(() => expect(planReads()).toHaveLength(2));
+  });
+
   it('records a supply against a treatment and shows it once the server has answered', async () => {
     const { fetchImplementation } = renderWorkspace({
       visitTreatments: [
@@ -1206,12 +1258,30 @@ describe('VisitWorkspace', () => {
           title: 'Full mouth rehab',
           status: 'ACCEPTED',
           items: [
-            { id: 'item-open', treatmentId: 'treatment-1', tooth: '16', isCompleted: false },
+            {
+              id: 'item-open',
+              treatmentId: 'treatment-1',
+              tooth: '16',
+              isCompleted: false,
+              sessions: [],
+            },
             // Already done: not offered again, because linking records provenance for
             // work that is still planned.
-            { id: 'item-done', treatmentId: 'treatment-1', tooth: '26', isCompleted: true },
+            {
+              id: 'item-done',
+              treatmentId: 'treatment-1',
+              tooth: '26',
+              isCompleted: true,
+              sessions: [],
+            },
             // A different treatment's line: not this record's to claim.
-            { id: 'item-other', treatmentId: 'treatment-2', tooth: '36', isCompleted: false },
+            {
+              id: 'item-other',
+              treatmentId: 'treatment-2',
+              tooth: '36',
+              isCompleted: false,
+              sessions: [],
+            },
           ],
         },
       ],
@@ -1244,14 +1314,81 @@ describe('VisitWorkspace', () => {
       treatmentPlanItemId: 'item-open',
     });
     expect(await screen.findByTestId('treatment-record')).toBeTruthy();
-    // The plan's own read is not refetched: linking is provenance, so nothing about
-    // the plan could have changed.
-    const planReads = fetchImplementation.mock.calls.filter(
-      ([url, init]) =>
-        String(url).endsWith(`/patients/${PATIENT_ID}/treatment-plans`) &&
-        (init?.method ?? 'GET').toUpperCase() === 'GET',
+    expect(await screen.findByTestId('treatment-plan-link')).toHaveTextContent(
+      'Full mouth rehab: Planned line — tooth 16',
     );
-    expect(planReads).toHaveLength(1);
+    // The plan read refetches because this record is now one of the line's sessions,
+    // which is the history the visit screen continues from.
+    const planReads = () =>
+      fetchImplementation.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith(`/patients/${PATIENT_ID}/treatment-plans`) &&
+          (init?.method ?? 'GET').toUpperCase() === 'GET',
+      );
+    await waitFor(() => expect(planReads()).toHaveLength(2));
+  });
+
+  it('shows a planned line’s previous sessions, continues it, and completes it only on request', async () => {
+    const { fetchImplementation } = renderWorkspace({
+      patientPlans: [
+        {
+          id: 'plan-1',
+          title: 'Full mouth rehab',
+          status: 'ACCEPTED',
+          items: [
+            {
+              id: 'item-open',
+              treatmentId: 'treatment-1',
+              treatmentName: 'Composite filling',
+              treatmentCode: 'COMPO',
+              tooth: '16',
+              isCompleted: false,
+              sessions: [
+                {
+                  id: 'session-old',
+                  visitId: 'visit-old',
+                  tooth: '16',
+                  notes: null,
+                  performedAt: '2026-10-01T14:00:00.000Z',
+                  endedAt: null,
+                },
+              ],
+            },
+            {
+              id: 'item-done',
+              treatmentId: 'treatment-1',
+              treatmentName: 'Composite filling',
+              treatmentCode: 'COMPO',
+              tooth: '26',
+              isCompleted: true,
+              sessions: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    await user.click(await screen.findByTestId('visit-section-treatments'));
+    const panel = await screen.findByTestId('visit-treatment-plan');
+    expect(panel).toHaveTextContent('In progress');
+    expect(panel).toHaveTextContent('Tooth 16 · Composite filling');
+    expect(panel).not.toHaveTextContent('Tooth 26');
+
+    const session = within(panel).getByTestId('planned-treatment-session');
+    expect(session).not.toHaveTextContent('this visit');
+    expect(session).toHaveTextContent('in progress');
+
+    await user.click(within(panel).getByTestId('planned-treatment-start'));
+    expect(screen.getByTestId('treatment-catalogue')).toHaveTextContent('Composite filling');
+    expect(screen.getByTestId('treatment-tooth')).toHaveValue('16');
+
+    await user.click(within(panel).getByTestId('planned-treatment-complete'));
+    await waitFor(() =>
+      expect(fetchImplementation).toHaveBeenCalledWith(
+        expect.stringContaining('/treatment-plans/plan-1/items/item-open/complete'),
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    );
   });
 
   it('keeps the form the clinician filled and says why when the treatment is refused', async () => {
@@ -1536,6 +1673,7 @@ describe('VisitWorkspace', () => {
               treatmentName: 'Composite filling',
               tooth: '16',
               isCompleted: false,
+              sessions: [],
             },
             // Already done: not offered again, because billing records provenance for
             // work that is still planned.
@@ -1545,6 +1683,7 @@ describe('VisitWorkspace', () => {
               treatmentName: 'Composite filling',
               tooth: '26',
               isCompleted: true,
+              sessions: [],
             },
             {
               id: 'item-other',
@@ -1552,6 +1691,7 @@ describe('VisitWorkspace', () => {
               treatmentName: 'Extraction',
               tooth: '36',
               isCompleted: false,
+              sessions: [],
             },
           ],
         },

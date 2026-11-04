@@ -896,6 +896,7 @@ export const anaTreatmentPlans = {
           isCompleted: true,
           completedAt: '2026-10-05T13:30:00.000Z',
           notes: null,
+          sessions: [],
         },
         {
           id: '11111111-bbbb-4a11-9ccc-000000000012',
@@ -909,6 +910,7 @@ export const anaTreatmentPlans = {
           isCompleted: false,
           completedAt: null,
           notes: null,
+          sessions: [],
         },
       ],
       progress: { total: 2, completed: 1, inProgress: 0, pending: 1, percentComplete: 50 },
@@ -1146,6 +1148,7 @@ export const createdTreatmentPlan = {
         isCompleted: false,
         completedAt: null,
         notes: null,
+        sessions: [],
       },
     ],
     progress: { total: 1, completed: 0, inProgress: 0, pending: 1, percentComplete: 0 },

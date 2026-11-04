@@ -85,6 +85,7 @@ function aPlan(overrides: { treatmentId?: TreatmentId | null } = {}): TreatmentP
         isCompleted: false,
         completedAt: null,
         notes: null,
+        sessions: [],
       },
     ],
     progress: { total: 1, completed: 0, inProgress: 0, pending: 1, percentComplete: 0 },

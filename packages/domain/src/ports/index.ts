@@ -757,6 +757,25 @@ export interface TreatmentRepository {
 }
 
 /**
+ * One visit's attempt at a planned line.
+ *
+ * The record is the same `visit_treatment_executions` row the visit workspace
+ * writes. A plan item can be attempted more than once — work that did not finish
+ * in one visit is continued in the next — so the plan read carries every session,
+ * oldest first, instead of pretending one record finishes a line.
+ */
+export interface TreatmentPlanItemSession {
+  readonly id: VisitTreatmentExecutionId;
+  readonly visitId: VisitId;
+  /** FDI tooth as the record captured it, when it was tooth-specific. */
+  readonly tooth: string | null;
+  readonly notes: string | null;
+  readonly performedAt: IsoDateTime;
+  /** Null while the session is still open. */
+  readonly endedAt: IsoDateTime | null;
+}
+
+/**
  * One line of a treatment plan, as the read joins it.
  *
  * The treatment's code and name are folded in so a reader never has to join the
@@ -764,6 +783,11 @@ export interface TreatmentRepository {
  * per item in the UI is how a section ends up N+1 requests deep. `treatmentId` is
  * nullable because the column is (`on delete set null`); so are the joined name
  * and code. `surfaces` is never a string that looks like one.
+ *
+ * `sessions` is the continuity the plan line has across visits: a completed line
+ * may have one or many, and an open line with a session is the one a clinician is
+ * meant to continue. Completion stays a separate act — a session does not mark the
+ * line done.
  */
 export interface TreatmentPlanItemSummary {
   readonly id: string;
@@ -779,6 +803,7 @@ export interface TreatmentPlanItemSummary {
   readonly isCompleted: boolean;
   readonly completedAt: IsoDateTime | null;
   readonly notes: string | null;
+  readonly sessions: readonly TreatmentPlanItemSession[];
 }
 
 /**

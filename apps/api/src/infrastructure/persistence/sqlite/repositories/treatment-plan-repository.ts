@@ -11,11 +11,16 @@
  *
  * Ordering is the twin's too: plans newest first, items by id — the deterministic
  * order the seeds laid the plan out in, since `treatment_plan_items` has no
- * sequence column.
+ * sequence column — and each line's sessions oldest first by performed time.
+ *
+ * The sessions are the visit treatment records that name each line, read alongside
+ * the plan so the visit screen can continue a multi-visit treatment without a
+ * second endpoint (ADR 0036).
  */
 import {
   DomainError,
   describeTreatmentPlanProgress,
+  type TreatmentPlanItemSession,
   type TreatmentPlanItemSummary,
   type TreatmentPlanItemWriteModel,
   type TreatmentPlanRepository,
@@ -26,7 +31,10 @@ import {
   asDentistId,
   asTreatmentId,
   asTreatmentPlanId,
+  asVisitId,
+  asVisitTreatmentExecutionId,
   type ClinicId,
+  type IsoDateTime,
   type PatientId,
   type TreatmentPlanId,
 } from '@denti-code-u3/types';
@@ -37,6 +45,8 @@ import {
   treatmentPlanItems,
   treatmentPlans,
   treatments,
+  visitTreatmentExecutions,
+  visits,
 } from '@denti-code-u3/database/schema/sqlite';
 
 import type { SqliteDatabase } from '../connection.js';
@@ -107,10 +117,53 @@ export class SQLiteTreatmentPlanRepository implements TreatmentPlanRepository {
             .orderBy(asc(treatmentPlanItems.id))
             .all();
 
+    const planItemIds = itemRows.map((item) => item.id);
+    const sessionRows =
+      planItemIds.length === 0
+        ? []
+        : this.db
+            .select({
+              id: visitTreatmentExecutions.id,
+              visitId: visitTreatmentExecutions.visitId,
+              treatmentPlanItemId: visitTreatmentExecutions.treatmentPlanItemId,
+              tooth: visitTreatmentExecutions.tooth,
+              notes: visitTreatmentExecutions.notes,
+              performedAt: visitTreatmentExecutions.performedAt,
+              endedAt: visitTreatmentExecutions.endedAt,
+            })
+            .from(visitTreatmentExecutions)
+            .innerJoin(visits, eq(visitTreatmentExecutions.visitId, visits.id))
+            .where(
+              and(
+                eq(visits.clinicId, clinicId),
+                eq(visits.patientId, patientId),
+                inArray(visitTreatmentExecutions.treatmentPlanItemId, planItemIds),
+              ),
+            )
+            .orderBy(asc(visitTreatmentExecutions.performedAt), asc(visitTreatmentExecutions.id))
+            .all();
+
+    const sessionsByItem = new Map<string, TreatmentPlanItemSession[]>();
+    for (const row of sessionRows) {
+      if (row.treatmentPlanItemId === null) {
+        continue;
+      }
+      const sessions = sessionsByItem.get(row.treatmentPlanItemId) ?? [];
+      sessions.push({
+        id: asVisitTreatmentExecutionId(row.id),
+        visitId: asVisitId(row.visitId),
+        tooth: row.tooth,
+        notes: row.notes,
+        performedAt: row.performedAt.toISOString() as IsoDateTime,
+        endedAt: row.endedAt ? (row.endedAt.toISOString() as IsoDateTime) : null,
+      });
+      sessionsByItem.set(row.treatmentPlanItemId, sessions);
+    }
+
     const itemsByPlan = new Map<string, TreatmentPlanItemSummary[]>();
     for (const row of itemRows) {
       const items = itemsByPlan.get(row.treatmentPlanId) ?? [];
-      items.push(toItemSummary(row));
+      items.push(toItemSummary(row, sessionsByItem.get(row.id) ?? []));
       itemsByPlan.set(row.treatmentPlanId, items);
     }
 
@@ -294,19 +347,22 @@ function toWriteItem(row: {
   };
 }
 
-function toItemSummary(row: {
-  id: string;
-  treatmentId: string | null;
-  treatmentCode: string | null;
-  treatmentName: string | null;
-  tooth: string | null;
-  surfaces: string[];
-  quantity: number;
-  estimatedPriceMinor: number;
-  isCompleted: boolean;
-  completedAt: Date | null;
-  notes: string | null;
-}): TreatmentPlanItemSummary {
+function toItemSummary(
+  row: {
+    id: string;
+    treatmentId: string | null;
+    treatmentCode: string | null;
+    treatmentName: string | null;
+    tooth: string | null;
+    surfaces: string[];
+    quantity: number;
+    estimatedPriceMinor: number;
+    isCompleted: boolean;
+    completedAt: Date | null;
+    notes: string | null;
+  },
+  sessions: readonly TreatmentPlanItemSession[],
+): TreatmentPlanItemSummary {
   return {
     id: row.id,
     treatmentId: row.treatmentId === null ? null : asTreatmentId(row.treatmentId),
@@ -319,5 +375,6 @@ function toItemSummary(row: {
     isCompleted: row.isCompleted,
     completedAt: row.completedAt === null ? null : row.completedAt.toISOString(),
     notes: row.notes,
+    sessions,
   };
 }

@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 83 (visit treatments finish and consume supplies)
+> Last updated: session 85 (planned treatments continue across visits)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -218,6 +218,15 @@ compuesta` and descriptions read as aesthetic fillings. Remaining seeded composi
 > Completing a visit still does not reject unfinished treatments; the UI warns and disables
 > the action, and that product rule remains open. Supply rows are append-only; there is no
 > edit or delete yet. No commit.
+
+> **Session 84** fixed overlapping agenda visits hiding one status badge. FullCalendar's
+> `slotEventOverlap` default stacks simultaneous blocks on top of each other, so the
+> lower block's time and status were covered by the block above. The calendar now sets
+> `slotEventOverlap={false}`, laying overlapping visits side by side; both status badges
+> remain visible and inside their own block. A unit test pins the option and a browser
+> regression books two appointments at the same instant, then asserts each badge is the
+> topmost element at its centre and fits within its block. No API, domain, validation,
+> database or migration change. No commit.
 
 ## Phase
 
@@ -4019,3 +4028,51 @@ the two existing React Compiler warnings; boundary guard passed with its existin
 false positive. Web production build passed. PostgreSQL integration tests for finish/supply
 were added but could not run here: no PostgreSQL is listening on `127.0.0.1:5433`. Root
 `format:check` still names two untouched generated migration metadata snapshots. No commit.
+
+---
+
+Session 84: overlapping agenda visits now keep both statuses visible.
+
+FullCalendar stacks overlapping appointments on top of one another by default. Two visits
+booked at the same instant therefore drew in the same column, and the upper block covered the
+lower block's time and status badge — the status was missing, not absent from the data. The
+grid now sets `slotEventOverlap={false}`, so simultaneous visits are laid side by side and each
+block keeps its own time and status. The change is presentation only: no scheduling,
+permission, API, domain, validation, database or migration behaviour changed.
+
+**Tests.** Agenda calendar **23/23**; the agenda browser spec **18/18**, including a new
+regression that puts two appointments at the same instant and asserts each status badge is the
+topmost element at its own centre and fits inside its block. Full e2e **180/180**. App and e2e
+typecheck passed; app and e2e lint passed with the two existing React Compiler warnings; the
+changed files are Prettier-clean; web production build passed. No commit.
+
+---
+
+Session 85: planned treatments now continue across visits.
+
+A treatment-plan item is the cross-visit unit (ADR 0036). Every visit treatment record that
+names it is one session, and a line may have many sessions or none. The plan read
+`GET /api/v1/patients/:patientId/treatment-plans` now answers each item with its sessions,
+oldest first by performed time, scoped by clinic and patient. No endpoint, table, column or
+migration was added: the association was already the execution row's optional
+`treatmentPlanItemId`.
+
+The visit treatments section now lists the patient's open planned lines above the visit's own
+records. A line with sessions reads **In progress**, one without reads **Not started**, and
+each line shows its session history with visit, start and end time. **Start in this visit** /
+**Continue in this visit** pre-fills the treatment, tooth and plan item. **Mark done** is a
+separate call to the existing item-completion endpoint; a session never completes the line
+automatically. A record linked to a line names that line under its treatment. Creating or
+finishing a linked record invalidates the plan read, because the same record is now part of
+the line's history. English and Spanish copy was added.
+
+The domain contract makes `sessions` mandatory on `TreatmentPlanItemSummary`; domain fixtures,
+the visit component harness and the e2e plan fixtures were updated. The SQLite smoke test now
+asserts that the linked record appears as a session on the plan read.
+
+**Tests.** Domain **413/413**; visit-workspace component **39/39**; full app **419/420**,
+with only the pre-existing `zoned-wall-clock.test.ts` repeated-hour failure; API SQLite smoke **34/34**; full e2e
+**180/180**. Full typecheck and lint passed with the two existing React Compiler warnings; the
+boundary guard kept its existing scanner false positive; changed files are Prettier-clean; web
+production build passed. The API suite's PostgreSQL-only tests remain skipped because no
+PostgreSQL is listening on `127.0.0.1:5433`. No commit.

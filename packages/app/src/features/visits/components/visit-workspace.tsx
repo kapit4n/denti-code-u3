@@ -76,9 +76,11 @@ import {
 } from '@denti-code-u3/ui';
 
 import { useTranslation, type Translate, type TranslationKey } from '../../../i18n/index.js';
-import { formatClinicDayTime } from '../../clinic/format-clinic-time.js';
+import { formatClinicDayTime, formatClinicTime } from '../../clinic/format-clinic-time.js';
 import { useClinicSettings } from '../../clinic/queries/clinic-settings-query.js';
+import { describePlanItemFailure } from '../../patients/describe-plan-item-failure.js';
 import { usePatient, usePatientTreatmentPlans } from '../../patients/hooks/use-patients.js';
+import { useCompleteTreatmentPlanItem } from '../../patients/mutations/use-complete-treatment-plan-item.js';
 import { AppointmentProgressTimeline } from '../../agenda/components/appointment-progress-timeline.js';
 import { useChairs, useDentists } from '../../agenda/queries/bookable-resources-query.js';
 import { useInventory } from '../../inventory/queries/inventory-query.js';
@@ -836,11 +838,10 @@ function describePlannedItem(
 }
 
 /**
- * A planned line as the charge picker spells it: the treatment it is for, under its
- * plan and on its tooth. A charge has no treatment select of its own, so the line's
- * own treatment name is what tells one open item from another.
+ * A planned line as the plan picker and the record's provenance spell it: the
+ * treatment it is for, under its plan and on its tooth.
  */
-function describeBilledItem(
+function describePlanLine(
   t: Translate,
   plan: TreatmentPlanSummary,
   item: TreatmentPlanItemSummary,
@@ -874,6 +875,7 @@ function VisitTreatmentsSection({
   const record = useRecordVisitTreatment();
   const finishTreatment = useFinishVisitTreatment();
   const recordSupply = useRecordTreatmentSupply();
+  const completeItem = useCompleteTreatmentPlanItem();
   const [treatmentId, setTreatmentId] = useState('');
   const [planItemId, setPlanItemId] = useState('');
   const [tooth, setTooth] = useState('');
@@ -899,21 +901,40 @@ function VisitTreatmentsSection({
       network: t('visits.failure.treatmentNetwork'),
     },
   );
+  const completeFailure = describePlanItemFailure(
+    completeItem.error,
+    t('visits.treatments.completeError'),
+    {
+      notFound: t('patients.plans.failure.notFound'),
+      network: t('patients.plans.failure.network'),
+    },
+  );
   const ready = treatmentId.length > 0;
   const catalogue = catalogueQuery.data?.items ?? [];
   const supplies = suppliesQuery.data?.supplies ?? [];
   const inventory = inventoryQuery.data?.items ?? [];
   const supplyableItems = inventory.filter((item) => item.isActive);
 
+  // The line a recorded session names, when the plan read can still find it. A
+  // retired treatment item stays in the plan, and the record keeps its provenance
+  // even after the line is completed.
+  const planLinesById = new Map(
+    plansQuery.data?.items.flatMap((plan) =>
+      plan.items.map((item) => [item.id, { plan, item }] as const),
+    ) ?? [],
+  );
+
+  // Open planned work is the workflow this section continues: none of these is
+  // done, and the sessions on each say whether the patient has already started it.
+  const openPlanLines =
+    plansQuery.data?.items.flatMap((plan) =>
+      plan.items.filter((item) => !item.isCompleted).map((item) => ({ plan, item })),
+    ) ?? [];
+
   // The planned, still-open lines for the treatment just chosen: linking is only
   // meaningful against work this patient's plan has not yet had done. A plan whose
   // item is already complete is not offered again.
-  const plannedItems =
-    plansQuery.data?.items.flatMap((plan) =>
-      plan.items
-        .filter((item) => item.treatmentId === treatmentId && !item.isCompleted)
-        .map((item) => ({ plan, item })),
-    ) ?? [];
+  const plannedItems = openPlanLines.filter(({ item }) => item.treatmentId === treatmentId);
 
   return (
     <Card data-testid="visit-treatments">
@@ -922,6 +943,124 @@ function VisitTreatmentsSection({
         <CardDescription>{t('visits.treatments.description')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="space-y-2 rounded-md border p-3" data-testid="visit-treatment-plan">
+          <p className="text-sm font-medium">{t('visits.treatments.planTitle')}</p>
+          {plansQuery.isPending ? (
+            <p className="text-xs text-muted-foreground">{t('visits.treatments.planLoading')}</p>
+          ) : plansQuery.error ? (
+            <p className="text-xs text-destructive" role="alert">
+              {t('visits.treatments.planLoadError')}
+            </p>
+          ) : openPlanLines.length === 0 ? (
+            <p className="text-xs text-muted-foreground">{t('visits.treatments.planEmpty')}</p>
+          ) : (
+            <ul className="space-y-2">
+              {openPlanLines.map(({ plan, item }) => {
+                const hasSessions = item.sessions.length > 0;
+                const isCompleting =
+                  completeItem.isPending && completeItem.variables?.itemId === item.id;
+
+                return (
+                  <li
+                    key={item.id}
+                    data-testid="planned-treatment"
+                    className="rounded-md bg-muted/40 p-2 text-sm"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium">
+                          {item.tooth ? t('visits.treatments.tooth', { tooth: item.tooth }) : ''}
+                          {item.tooth ? ' · ' : ''}
+                          {item.treatmentName?.trim() ||
+                            item.treatmentCode ||
+                            t('visits.treatments.plannedLineFallback')}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {plan.title?.trim() || t('visits.treatments.planFallback')}
+                        </p>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {hasSessions
+                          ? t('visits.treatments.planInProgress')
+                          : t('visits.treatments.planPending')}
+                      </span>
+                    </div>
+
+                    {hasSessions ? (
+                      <ul className="mt-2 space-y-1" data-testid="planned-treatment-sessions">
+                        {item.sessions.map((session) => (
+                          <li
+                            key={session.id}
+                            data-testid="planned-treatment-session"
+                            className="text-xs text-muted-foreground"
+                          >
+                            {clinicTimeZone
+                              ? formatClinicDayTime(session.performedAt, clinicTimeZone)
+                              : t('common.readingClinicClock')}
+                            {session.visitId === visitId
+                              ? ` · ${t('visits.treatments.planThisVisit')}`
+                              : ''}
+                            {' · '}
+                            {session.endedAt
+                              ? clinicTimeZone
+                                ? t('visits.treatments.planSessionFinished', {
+                                    time: formatClinicTime(session.endedAt, clinicTimeZone),
+                                  })
+                                : t('common.readingClinicClock')
+                              : t('visits.treatments.planSessionOpen')}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {t('visits.treatments.planNotStarted')}
+                      </p>
+                    )}
+
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        data-testid="planned-treatment-start"
+                        disabled={
+                          item.treatmentId === null || record.isPending || completeItem.isPending
+                        }
+                        onClick={() => {
+                          if (!item.treatmentId) {
+                            return;
+                          }
+                          setTreatmentId(item.treatmentId);
+                          setPlanItemId(item.id);
+                          setTooth(item.tooth ?? '');
+                        }}
+                      >
+                        {hasSessions
+                          ? t('visits.treatments.planContinue')
+                          : t('visits.treatments.planStart')}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        data-testid="planned-treatment-complete"
+                        disabled={completeItem.isPending}
+                        onClick={() =>
+                          completeItem.mutate({ patientId, planId: plan.id, itemId: item.id })
+                        }
+                      >
+                        {isCompleting
+                          ? t('visits.treatments.planMarkingDone')
+                          : t('visits.treatments.planMarkDone')}
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
         {recordsQuery.isPending ? (
           <p className="text-sm text-muted-foreground">{t('visits.treatments.loading')}</p>
         ) : recordsQuery.error ? (
@@ -932,113 +1071,131 @@ function VisitTreatmentsSection({
           <p className="text-sm text-muted-foreground">{t('visits.treatments.empty')}</p>
         ) : (
           <ul className="space-y-3">
-            {recordsQuery.data?.treatments.map((performed) => (
-              <li
-                key={performed.id}
-                className="rounded-md border p-3 text-sm"
-                data-testid="treatment-record"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <p className="text-xs text-muted-foreground">
-                    {t('visits.treatments.startedAt', {
-                      time: clinicTimeZone
-                        ? formatClinicDayTime(performed.performedAt, clinicTimeZone)
-                        : t('common.readingClinicClock'),
-                    })}
-                  </p>
-                  {performed.endedAt ? (
-                    <p className="text-xs text-muted-foreground" data-testid="treatment-ended">
-                      {t('visits.treatments.finishedAt', {
+            {recordsQuery.data?.treatments.map((performed) => {
+              const linkedPlanLine = performed.treatmentPlanItemId
+                ? planLinesById.get(performed.treatmentPlanItemId)
+                : undefined;
+
+              return (
+                <li
+                  key={performed.id}
+                  className="rounded-md border p-3 text-sm"
+                  data-testid="treatment-record"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      {t('visits.treatments.startedAt', {
                         time: clinicTimeZone
-                          ? formatClinicDayTime(performed.endedAt, clinicTimeZone)
+                          ? formatClinicDayTime(performed.performedAt, clinicTimeZone)
                           : t('common.readingClinicClock'),
                       })}
                     </p>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      data-testid="finish-treatment"
-                      disabled={
-                        finishTreatment.isPending &&
-                        finishTreatment.variables?.treatmentRecordId === performed.id
-                      }
-                      onClick={() =>
-                        finishTreatment.mutate({ visitId, treatmentRecordId: performed.id })
-                      }
-                    >
-                      {finishTreatment.isPending &&
-                      finishTreatment.variables?.treatmentRecordId === performed.id
-                        ? t('visits.treatments.finishing')
-                        : t('visits.treatments.finish')}
-                    </Button>
-                  )}
-                </div>
-
-                <p className="mt-1 font-medium">
-                  {resolveTreatmentName(performed, catalogueQuery, t)}
-                </p>
-                {performed.tooth ? (
-                  <p>{t('visits.treatments.tooth', { tooth: performed.tooth })}</p>
-                ) : null}
-                {/* Whitespace is preserved because the textarea offers it, the same
-                    rule as a note. */}
-                {performed.notes ? (
-                  <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
-                    {performed.notes}
-                  </p>
-                ) : null}
-
-                <div className="mt-3 space-y-2 border-t pt-3" data-testid="treatment-supplies">
-                  <p className="text-xs font-medium">{t('visits.treatments.suppliesTitle')}</p>
-                  {suppliesQuery.isPending ? (
-                    <p className="text-xs text-muted-foreground">
-                      {t('visits.treatments.suppliesLoading')}
-                    </p>
-                  ) : suppliesQuery.error ? (
-                    <p className="text-xs text-destructive" role="alert">
-                      {t('visits.treatments.suppliesLoadError')}
-                    </p>
-                  ) : (
-                    <TreatmentSupplyList
-                      supplies={supplies.filter(
-                        (supply) => supply.treatmentRecordId === performed.id,
-                      )}
-                      inventory={inventory}
-                      clinicTimeZone={clinicTimeZone}
-                    />
-                  )}
-
-                  {inventoryQuery.isPending ? (
-                    <p className="text-xs text-muted-foreground">
-                      {t('visits.treatments.inventoryLoading')}
-                    </p>
-                  ) : supplyableItems.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      {t('visits.treatments.noInventory')}
-                    </p>
-                  ) : (
-                    <TreatmentSupplyForm
-                      id={performed.id}
-                      items={supplyableItems}
-                      isPending={recordSupply.isPending}
-                      onRecord={(itemId, quantity, done) =>
-                        recordSupply.mutate(
-                          {
+                    {performed.endedAt ? (
+                      <p className="text-xs text-muted-foreground" data-testid="treatment-ended">
+                        {t('visits.treatments.finishedAt', {
+                          time: clinicTimeZone
+                            ? formatClinicDayTime(performed.endedAt, clinicTimeZone)
+                            : t('common.readingClinicClock'),
+                        })}
+                      </p>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        data-testid="finish-treatment"
+                        disabled={
+                          finishTreatment.isPending &&
+                          finishTreatment.variables?.treatmentRecordId === performed.id
+                        }
+                        onClick={() =>
+                          finishTreatment.mutate({
                             visitId,
+                            patientId,
                             treatmentRecordId: performed.id,
-                            itemId,
-                            quantity,
-                          },
-                          { onSuccess: done },
-                        )
-                      }
-                    />
-                  )}
-                </div>
-              </li>
-            ))}
+                            treatmentPlanItemId: performed.treatmentPlanItemId,
+                          })
+                        }
+                      >
+                        {finishTreatment.isPending &&
+                        finishTreatment.variables?.treatmentRecordId === performed.id
+                          ? t('visits.treatments.finishing')
+                          : t('visits.treatments.finish')}
+                      </Button>
+                    )}
+                  </div>
+
+                  <p className="mt-1 font-medium">
+                    {resolveTreatmentName(performed, catalogueQuery, t)}
+                  </p>
+                  {performed.tooth ? (
+                    <p>{t('visits.treatments.tooth', { tooth: performed.tooth })}</p>
+                  ) : null}
+                  {linkedPlanLine ? (
+                    <p className="text-xs text-muted-foreground" data-testid="treatment-plan-link">
+                      {t('visits.treatments.planLine', {
+                        line: describePlanLine(t, linkedPlanLine.plan, linkedPlanLine.item),
+                      })}
+                    </p>
+                  ) : null}
+                  {/* Whitespace is preserved because the textarea offers it, the same
+                    rule as a note. */}
+                  {performed.notes ? (
+                    <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
+                      {performed.notes}
+                    </p>
+                  ) : null}
+
+                  <div className="mt-3 space-y-2 border-t pt-3" data-testid="treatment-supplies">
+                    <p className="text-xs font-medium">{t('visits.treatments.suppliesTitle')}</p>
+                    {suppliesQuery.isPending ? (
+                      <p className="text-xs text-muted-foreground">
+                        {t('visits.treatments.suppliesLoading')}
+                      </p>
+                    ) : suppliesQuery.error ? (
+                      <p className="text-xs text-destructive" role="alert">
+                        {t('visits.treatments.suppliesLoadError')}
+                      </p>
+                    ) : (
+                      <TreatmentSupplyList
+                        supplies={supplies.filter(
+                          (supply) => supply.treatmentRecordId === performed.id,
+                        )}
+                        inventory={inventory}
+                        clinicTimeZone={clinicTimeZone}
+                      />
+                    )}
+
+                    {inventoryQuery.isPending ? (
+                      <p className="text-xs text-muted-foreground">
+                        {t('visits.treatments.inventoryLoading')}
+                      </p>
+                    ) : supplyableItems.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        {t('visits.treatments.noInventory')}
+                      </p>
+                    ) : (
+                      <TreatmentSupplyForm
+                        id={performed.id}
+                        items={supplyableItems}
+                        isPending={recordSupply.isPending}
+                        onRecord={(itemId, quantity, done) =>
+                          recordSupply.mutate(
+                            {
+                              visitId,
+                              treatmentRecordId: performed.id,
+                              itemId,
+                              quantity,
+                            },
+                            { onSuccess: done },
+                          )
+                        }
+                      />
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
 
@@ -1052,7 +1209,14 @@ function VisitTreatmentsSection({
                 return;
               }
               record.mutate(
-                { visitId, treatmentId, tooth, notes: draft, treatmentPlanItemId: planItemId },
+                {
+                  visitId,
+                  patientId,
+                  treatmentId,
+                  tooth,
+                  notes: draft,
+                  treatmentPlanItemId: planItemId,
+                },
                 {
                   onSuccess: () => {
                     setTreatmentId('');
@@ -1180,6 +1344,7 @@ function VisitTreatmentsSection({
         {failure ? <TreatmentFailureAlert message={failure} /> : null}
         {finishFailure ? <TreatmentFailureAlert message={finishFailure} /> : null}
         {supplyFailure ? <TreatmentFailureAlert message={supplyFailure} /> : null}
+        {completeFailure ? <TreatmentFailureAlert message={completeFailure} /> : null}
       </CardContent>
     </Card>
   );
@@ -1754,7 +1919,7 @@ function VisitChargesSection({ visitId, patientId, clinicTimeZone }: VisitCharge
                   <SelectItem value={NOT_LINKED}>{t('visits.charges.notLinked')}</SelectItem>
                   {plannedItems.map(({ plan, item }) => (
                     <SelectItem key={item.id} value={item.id}>
-                      {describeBilledItem(t, plan, item)}
+                      {describePlanLine(t, plan, item)}
                     </SelectItem>
                   ))}
                 </SelectContent>

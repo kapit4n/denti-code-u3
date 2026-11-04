@@ -696,6 +696,14 @@ describe('API on SQLite', () => {
     const after = plans.json().items.find((entry: { id: string }) => entry.id === plan.id);
     expect(after.progress).toMatchObject({ total: 1, completed: 0 });
     expect(after.items[0].isCompleted).toBe(false);
+    // The plan read carries the visit session that continues this line, so the visit
+    // screen can show where the work stands without a second endpoint.
+    expect(after.items[0].sessions).toHaveLength(1);
+    expect(after.items[0].sessions[0]).toMatchObject({
+      id: recorded.json().id,
+      visitId,
+      endedAt: null,
+    });
 
     // An item that is not on the patient's plan is refused, folded to 422 by the wire,
     // and nothing is written against the visit.
