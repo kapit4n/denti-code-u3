@@ -20,12 +20,22 @@ import { AgendaCalendar } from '../features/agenda/components/agenda-calendar.js
 import { useClinicSettings } from '../features/clinic/queries/clinic-settings-query.js';
 import { useTranslation } from '../i18n/index.js';
 
+export interface AgendaSearch {
+  readonly appointmentId?: string;
+  readonly date?: string;
+}
+
 export const Route = createFileRoute('/agenda')({
+  validateSearch: (search: Record<string, unknown>): AgendaSearch => ({
+    appointmentId: typeof search.appointmentId === 'string' ? search.appointmentId : undefined,
+    date: typeof search.date === 'string' ? search.date : undefined,
+  }),
   component: Agenda,
 });
 
 function Agenda() {
   const { t } = useTranslation();
+  const { appointmentId, date } = Route.useSearch();
   const { data: clinic, isPending, error } = useClinicSettings();
 
   return (
@@ -51,7 +61,9 @@ function Agenda() {
         </p>
       )}
 
-      {clinic && <AgendaCalendar clinic={clinic} />}
+      {clinic && (
+        <AgendaCalendar clinic={clinic} focusedAppointmentId={appointmentId} initialDate={date} />
+      )}
     </div>
   );
 }

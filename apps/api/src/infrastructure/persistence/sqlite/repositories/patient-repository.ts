@@ -49,7 +49,7 @@ import {
   type IsoDateTime,
   type PatientId,
 } from '@denti-code-u3/types';
-import { and, asc, count, desc, eq, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import {
   appointments,
   charges,
@@ -302,73 +302,101 @@ export class SQLitePatientRepository implements PatientRepository {
 
     const now = new Date();
 
-    const [[upcomingAppointment], recentVisits, outstandingTreatmentItems, [balance]] =
-      await Promise.all([
-        this.db
-          .select({
-            id: appointments.id,
-            startsAt: appointments.startsAt,
-            durationMinutes: appointments.durationMinutes,
-            status: appointments.status,
-            dentistId: appointments.dentistId,
-          })
-          .from(appointments)
-          .where(
-            and(
-              eq(appointments.clinicId, clinicId),
-              eq(appointments.patientId, patientId),
-              gte(appointments.startsAt, now),
-              ne(appointments.status, 'CANCELLED'),
-            ),
-          )
-          .orderBy(asc(appointments.startsAt))
-          .limit(1),
-        this.db
-          .select({
-            id: visits.id,
-            status: visits.status,
-            startedAt: visits.startedAt,
-            endedAt: visits.endedAt,
-            reason: visits.reason,
-            summary: visits.summary,
-            createdAt: visits.createdAt,
-          })
-          .from(visits)
-          .where(and(eq(visits.clinicId, clinicId), eq(visits.patientId, patientId)))
-          .orderBy(desc(sql`coalesce(${visits.startedAt}, ${visits.createdAt})`))
-          .limit(10),
-        this.db
-          .select({
-            id: treatmentPlanItems.id,
-            planId: treatmentPlans.id,
-            planStatus: treatmentPlans.status,
-            title: treatmentPlans.title,
-            tooth: treatmentPlanItems.tooth,
-            quantity: treatmentPlanItems.quantity,
-            estimatedPriceMinor: treatmentPlanItems.estimatedPriceMinor,
-          })
-          .from(treatmentPlanItems)
-          .innerJoin(treatmentPlans, eq(treatmentPlans.id, treatmentPlanItems.treatmentPlanId))
-          .where(
-            and(
-              eq(treatmentPlans.clinicId, clinicId),
-              eq(treatmentPlans.patientId, patientId),
-              eq(treatmentPlanItems.isCompleted, false),
-              inArray(treatmentPlans.status, ['PROPOSED', 'ACCEPTED', 'IN_PROGRESS']),
-            ),
-          )
-          .orderBy(asc(treatmentPlans.createdAt))
-          .limit(25),
-        this.db
-          .select({
-            /**
-             * Billed minus paid, in minor units. The expression is integer
-             * arithmetic like the PostgreSQL one, but without its `::int` casts:
-             * SQLite already returns a number for `sum()` of integers, where
-             * PostgreSQL needs the cast because its `bigint` sum arrives as a
-             * string. Never a float on either engine.
-             */
-            outstandingMinor: sql<number>`(
+    const [
+      openVisits,
+      overdueAppointments,
+      upcomingAppointments,
+      outstandingTreatmentItems,
+      [balance],
+    ] = await Promise.all([
+      this.db
+        .select({
+          id: visits.id,
+          status: visits.status,
+          startedAt: visits.startedAt,
+          endedAt: visits.endedAt,
+          reason: visits.reason,
+          summary: visits.summary,
+          createdAt: visits.createdAt,
+        })
+        .from(visits)
+        .where(
+          and(
+            eq(visits.clinicId, clinicId),
+            eq(visits.patientId, patientId),
+            eq(visits.status, 'OPEN'),
+          ),
+        )
+        .orderBy(desc(sql`coalesce(${visits.startedAt}, ${visits.createdAt})`)),
+      this.db
+        .select({
+          id: appointments.id,
+          startsAt: appointments.startsAt,
+          durationMinutes: appointments.durationMinutes,
+          status: appointments.status,
+          dentistId: appointments.dentistId,
+        })
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.clinicId, clinicId),
+            eq(appointments.patientId, patientId),
+            lt(appointments.startsAt, now),
+            inArray(appointments.status, ['SCHEDULED', 'CONFIRMED', 'ARRIVED']),
+          ),
+        )
+        .orderBy(desc(appointments.startsAt)),
+      this.db
+        .select({
+          id: appointments.id,
+          startsAt: appointments.startsAt,
+          durationMinutes: appointments.durationMinutes,
+          status: appointments.status,
+          dentistId: appointments.dentistId,
+        })
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.clinicId, clinicId),
+            eq(appointments.patientId, patientId),
+            gte(appointments.startsAt, now),
+            ne(appointments.status, 'CANCELLED'),
+          ),
+        )
+        .orderBy(asc(appointments.startsAt))
+        .limit(3),
+      this.db
+        .select({
+          id: treatmentPlanItems.id,
+          planId: treatmentPlans.id,
+          planStatus: treatmentPlans.status,
+          title: treatmentPlans.title,
+          tooth: treatmentPlanItems.tooth,
+          quantity: treatmentPlanItems.quantity,
+          estimatedPriceMinor: treatmentPlanItems.estimatedPriceMinor,
+        })
+        .from(treatmentPlanItems)
+        .innerJoin(treatmentPlans, eq(treatmentPlans.id, treatmentPlanItems.treatmentPlanId))
+        .where(
+          and(
+            eq(treatmentPlans.clinicId, clinicId),
+            eq(treatmentPlans.patientId, patientId),
+            eq(treatmentPlanItems.isCompleted, false),
+            inArray(treatmentPlans.status, ['PROPOSED', 'ACCEPTED', 'IN_PROGRESS']),
+          ),
+        )
+        .orderBy(asc(treatmentPlans.createdAt))
+        .limit(25),
+      this.db
+        .select({
+          /**
+           * Billed minus paid, in minor units. The expression is integer
+           * arithmetic like the PostgreSQL one, but without its `::int` casts:
+           * SQLite already returns a number for `sum()` of integers, where
+           * PostgreSQL needs the cast because its `bigint` sum arrives as a
+           * string. Never a float on either engine.
+           */
+          outstandingMinor: sql<number>`(
               coalesce((
                 select sum(${charges.unitPriceMinor} * ${charges.quantity} - ${charges.discountMinor})
                 from ${charges}
@@ -381,17 +409,17 @@ export class SQLitePatientRepository implements PatientRepository {
                   and ${payments.patientId} = ${patientId}
               ), 0)
             )`,
-            chargeCount: sql<number>`(
+          chargeCount: sql<number>`(
               select count(*) from ${charges}
               where ${charges.clinicId} = ${clinicId}
                 and ${charges.patientId} = ${patientId}
             )`,
-            currencyCode: clinics.currencyCode,
-          })
-          .from(clinics)
-          .where(eq(clinics.id, clinicId))
-          .limit(1),
-      ]);
+          currencyCode: clinics.currencyCode,
+        })
+        .from(clinics)
+        .where(eq(clinics.id, clinicId))
+        .limit(1),
+    ]);
 
     return {
       id: asPatientId(patient.id),
@@ -410,20 +438,21 @@ export class SQLitePatientRepository implements PatientRepository {
       isActive: patient.isActive,
       createdAt: isoTimestamp(patient.createdAt),
       updatedAt: isoTimestamp(patient.updatedAt),
-      upcomingAppointment:
-        upcomingAppointment === undefined
-          ? null
-          : {
-              id: asAppointmentId(upcomingAppointment.id),
-              startsAt: isoTimestamp(upcomingAppointment.startsAt),
-              durationMinutes: upcomingAppointment.durationMinutes,
-              status: upcomingAppointment.status,
-              dentistId:
-                upcomingAppointment.dentistId === null
-                  ? null
-                  : asDentistId(upcomingAppointment.dentistId),
-            },
-      recentVisits: recentVisits.map((visit) => ({
+      upcomingAppointments: upcomingAppointments.map((appointment) => ({
+        id: asAppointmentId(appointment.id),
+        startsAt: isoTimestamp(appointment.startsAt),
+        durationMinutes: appointment.durationMinutes,
+        status: appointment.status,
+        dentistId: appointment.dentistId === null ? null : asDentistId(appointment.dentistId),
+      })),
+      overdueAppointments: overdueAppointments.map((appointment) => ({
+        id: asAppointmentId(appointment.id),
+        startsAt: isoTimestamp(appointment.startsAt),
+        durationMinutes: appointment.durationMinutes,
+        status: appointment.status,
+        dentistId: appointment.dentistId === null ? null : asDentistId(appointment.dentistId),
+      })),
+      openVisits: openVisits.map((visit) => ({
         id: asVisitId(visit.id),
         status: visit.status,
         startedAt: visit.startedAt === null ? null : isoTimestamp(visit.startedAt),

@@ -23,6 +23,9 @@ import {
   anaOdontogram,
   anaProfile,
   anaTreatmentPlans,
+  agendaEntries,
+  allAgendaFixtures,
+  anaVisitHistory,
   clinicFixture,
   luisOdontogram,
   luisProfile,
@@ -34,6 +37,7 @@ import { watchForConsoleErrors } from './fixtures/console-errors.js';
 import { installApi, installApiFailure, notFound } from './fixtures/mock-api.js';
 
 const LIST_PATH = '/api/v1/patients';
+const OVERDUE_APPOINTMENT_ID = '11111111-4444-4555-8666-000000000010';
 
 test.describe('Patient list', () => {
   test('renders a row per patient, with the inactive one marked', async ({ page }) => {
@@ -147,6 +151,8 @@ test.describe('Patient profile', () => {
     await expect(page.getByText('Penicillin')).toBeVisible();
     await expect(page.getByTestId('patient-balance-value')).toHaveText('230.00 Bs');
     await expect(page.getByText('Sensitivity in the upper right quadrant')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Overdue' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Upcoming' })).toBeVisible();
     // Scoped to the outstanding-treatment row rather than to any "Restorative
     // plan" on the page: the plans card now draws the plan's own title too, and
     // a bare /Restorative plan/ would match both.
@@ -170,11 +176,53 @@ test.describe('Patient profile', () => {
     await page.goto(`/patients/${LUIS_ID}`);
 
     // The defect this pins down: an empty result was destructured into
-    // `undefined`, so `recentVisits.length` threw and React unmounted the whole
-    // route. Empty arrays must render as text, not as a crash.
-    await expect(page.getByText('No visits recorded.')).toBeVisible();
+    // `undefined`, so the old `recentVisits.length` threw and React unmounted the
+    // whole route. Empty arrays must render as text, not as a crash.
+    await expect(page.getByText('No unfinished visits.')).toBeVisible();
     await expect(page.getByText('Nothing booked.')).toBeVisible();
     await expect(page.getByRole('heading', { name: /Luis Fernández/ })).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
+  test('opens an appointment on the agenda where it can be managed', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    const overdueEntry = {
+      ...agendaEntries.items[0],
+      id: OVERDUE_APPOINTMENT_ID,
+      startsAt: '2026-10-01T14:00:00.000Z',
+      endsAt: '2026-10-01T14:30:00.000Z',
+      durationMinutes: 30,
+      chairId: null,
+      chairName: null,
+      notes: null,
+    };
+    await installApi(page, {
+      ...allAgendaFixtures(),
+      // The profile links to the appointment as data, not to a generic agenda. The
+      // grid must therefore open on the appointment's day and select it once that
+      // day's answer arrives.
+      '/api/v1/appointments': {
+        body: {
+          items: [overdueEntry],
+          window: { from: '2026-10-01T00:00:00.000Z', to: '2026-10-02T00:00:00.000Z' },
+        },
+      },
+      [`/api/v1/appointments/${OVERDUE_APPOINTMENT_ID}/progress`]: { body: { items: [] } },
+      [`${LIST_PATH}/${ANA_ID}`]: { body: anaProfile },
+      [`${LIST_PATH}/${ANA_ID}/odontogram`]: { body: anaOdontogram },
+      [`${LIST_PATH}/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
+      [`${LIST_PATH}/${ANA_ID}/invoices`]: { body: noInvoices },
+      [`${LIST_PATH}/${ANA_ID}/balance`]: { body: anaBalance },
+    });
+
+    await page.goto(`/patients/${ANA_ID}`);
+    await page.getByTestId(`profile-appointment-${OVERDUE_APPOINTMENT_ID}`).click();
+
+    await expect(page).toHaveURL(/\/agenda\?appointmentId=/);
+    await expect(page.locator('.fc-toolbar-title')).toContainText('October 1, 2026');
+    const panel = page.getByTestId('appointment-quick-panel');
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText('Ana García');
     expect(errors).toEqual([]);
   });
 
@@ -184,6 +232,31 @@ test.describe('Patient profile', () => {
     await page.goto(`/patients/${ANA_ID}`);
 
     await expect(page.getByRole('alert')).toBeVisible();
+  });
+});
+
+test.describe('Patient visit history', () => {
+  test('lists every visit, not only the open ones on the profile', async ({ page }) => {
+    const errors = watchForConsoleErrors(page);
+    await installApi(page, {
+      ...clinicFixture(),
+      [`${LIST_PATH}/${ANA_ID}`]: { body: anaProfile },
+      [`${LIST_PATH}/${ANA_ID}/visits`]: { body: anaVisitHistory },
+    });
+
+    await page.goto(`/patients/${ANA_ID}/visits`);
+
+    await expect(page.getByRole('heading', { name: 'Visit history' })).toBeVisible();
+    await expect(page.getByText('2 visits')).toBeVisible();
+    await expect(page.getByText('Composite restoration on tooth 16.')).toBeVisible();
+
+    // The completed row is the one that must not appear on the profile: the
+    // history page is the only place the whole timeline lives.
+    const completedRow = page.getByRole('row', { name: /Composite restoration on tooth 16/ });
+    await completedRow.getByRole('link', { name: 'Open visit' }).click();
+
+    await expect(page).toHaveURL(/\/visits\/11111111-7777-4888-8999-000000000042$/);
+    expect(errors).toEqual([]);
   });
 });
 

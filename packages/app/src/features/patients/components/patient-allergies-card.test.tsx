@@ -29,8 +29,9 @@ const patient: PatientProfile = {
   additionalData: {},
   createdAt: '2024-01-15T09:30:00.000Z',
   updatedAt: '2024-01-15T09:30:00.000Z',
-  upcomingAppointment: null,
-  recentVisits: [],
+  upcomingAppointments: [],
+  overdueAppointments: [],
+  openVisits: [],
   outstandingTreatments: [],
   financialBalance: { outstandingMinor: 0, chargeCount: 0, currencyCode: null },
 };

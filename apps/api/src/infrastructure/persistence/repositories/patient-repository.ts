@@ -41,7 +41,7 @@ import {
   type IsoDateTime,
   type PatientId,
 } from '@denti-code-u3/types';
-import { and, asc, count, desc, eq, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import {
   appointments,
   charges,
@@ -346,7 +346,7 @@ export class DrizzlePatientRepository implements PatientRepository {
    * do four queries' work for a 404.
    *
    * Only single-row results are destructured as `[row]`. Bound the same way, a
-   * collection query yields its *first row*, so `recentVisits` would arrive as one
+   * collection query yields its *first row*, so `openVisits` would arrive as one
    * visit object instead of a list — a bug that typechecks, because the empty
    * array fallback is the same shape as a one-element array's element at the call
    * site only if you never look.
@@ -372,77 +372,105 @@ export class DrizzlePatientRepository implements PatientRepository {
 
     const now = new Date();
 
-    const [[upcomingAppointment], recentVisits, outstandingTreatmentItems, [balance]] =
-      await Promise.all([
-        this.db
-          .select({
-            id: appointments.id,
-            startsAt: appointments.startsAt,
-            durationMinutes: appointments.durationMinutes,
-            status: appointments.status,
-            dentistId: appointments.dentistId,
-          })
-          .from(appointments)
-          .where(
-            and(
-              eq(appointments.clinicId, clinicId),
-              eq(appointments.patientId, patientId),
-              gte(appointments.startsAt, now),
-              ne(appointments.status, 'CANCELLED'),
-            ),
-          )
-          .orderBy(asc(appointments.startsAt))
-          .limit(1),
-        this.db
-          .select({
-            id: visits.id,
-            status: visits.status,
-            startedAt: visits.startedAt,
-            endedAt: visits.endedAt,
-            reason: visits.reason,
-            summary: visits.summary,
-            createdAt: visits.createdAt,
-          })
-          .from(visits)
-          .where(and(eq(visits.clinicId, clinicId), eq(visits.patientId, patientId)))
-          .orderBy(desc(sql`coalesce(${visits.startedAt}, ${visits.createdAt})`))
-          .limit(10),
-        this.db
-          .select({
-            id: treatmentPlanItems.id,
-            planId: treatmentPlans.id,
-            planStatus: treatmentPlans.status,
-            title: treatmentPlans.title,
-            tooth: treatmentPlanItems.tooth,
-            quantity: treatmentPlanItems.quantity,
-            estimatedPriceMinor: treatmentPlanItems.estimatedPriceMinor,
-          })
-          .from(treatmentPlanItems)
-          .innerJoin(treatmentPlans, eq(treatmentPlans.id, treatmentPlanItems.treatmentPlanId))
-          .where(
-            and(
-              eq(treatmentPlans.clinicId, clinicId),
-              // The plan carries the patient, so this filter is what stops the
-              // profile from showing the whole clinic's outstanding work.
-              eq(treatmentPlans.patientId, patientId),
-              eq(treatmentPlanItems.isCompleted, false),
-              inArray(treatmentPlans.status, ['PROPOSED', 'ACCEPTED', 'IN_PROGRESS']),
-            ),
-          )
-          .orderBy(asc(treatmentPlans.createdAt))
-          .limit(25),
-        this.db
-          .select({
-            /**
-             * Billed minus paid, in minor units (see
-             * `packages/domain/src/billing/money.ts`). Discounts are already
-             * stored as absolute minor amounts on each charge, so the net is
-             * plain arithmetic; tax is left out because whether a clinic adds
-             * it at charge time or invoice time is an open product question
-             * (`docs/open-questions.md`) and guessing here would invent a
-             * total. Never a float: the whole expression is integer.
-             */
-            outstandingMinor: sql<number>`(
+    const [
+      openVisits,
+      overdueAppointments,
+      upcomingAppointments,
+      outstandingTreatmentItems,
+      [balance],
+    ] = await Promise.all([
+      this.db
+        .select({
+          id: visits.id,
+          status: visits.status,
+          startedAt: visits.startedAt,
+          endedAt: visits.endedAt,
+          reason: visits.reason,
+          summary: visits.summary,
+          createdAt: visits.createdAt,
+        })
+        .from(visits)
+        .where(
+          and(
+            eq(visits.clinicId, clinicId),
+            eq(visits.patientId, patientId),
+            eq(visits.status, 'OPEN'),
+          ),
+        )
+        .orderBy(desc(sql`coalesce(${visits.startedAt}, ${visits.createdAt})`)),
+      this.db
+        .select({
+          id: appointments.id,
+          startsAt: appointments.startsAt,
+          durationMinutes: appointments.durationMinutes,
+          status: appointments.status,
+          dentistId: appointments.dentistId,
+        })
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.clinicId, clinicId),
+            eq(appointments.patientId, patientId),
+            lt(appointments.startsAt, now),
+            inArray(appointments.status, ['SCHEDULED', 'CONFIRMED', 'ARRIVED']),
+          ),
+        )
+        .orderBy(desc(appointments.startsAt)),
+      this.db
+        .select({
+          id: appointments.id,
+          startsAt: appointments.startsAt,
+          durationMinutes: appointments.durationMinutes,
+          status: appointments.status,
+          dentistId: appointments.dentistId,
+        })
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.clinicId, clinicId),
+            eq(appointments.patientId, patientId),
+            gte(appointments.startsAt, now),
+            ne(appointments.status, 'CANCELLED'),
+          ),
+        )
+        .orderBy(asc(appointments.startsAt))
+        .limit(3),
+      this.db
+        .select({
+          id: treatmentPlanItems.id,
+          planId: treatmentPlans.id,
+          planStatus: treatmentPlans.status,
+          title: treatmentPlans.title,
+          tooth: treatmentPlanItems.tooth,
+          quantity: treatmentPlanItems.quantity,
+          estimatedPriceMinor: treatmentPlanItems.estimatedPriceMinor,
+        })
+        .from(treatmentPlanItems)
+        .innerJoin(treatmentPlans, eq(treatmentPlans.id, treatmentPlanItems.treatmentPlanId))
+        .where(
+          and(
+            eq(treatmentPlans.clinicId, clinicId),
+            // The plan carries the patient, so this filter is what stops the
+            // profile from showing the whole clinic's outstanding work.
+            eq(treatmentPlans.patientId, patientId),
+            eq(treatmentPlanItems.isCompleted, false),
+            inArray(treatmentPlans.status, ['PROPOSED', 'ACCEPTED', 'IN_PROGRESS']),
+          ),
+        )
+        .orderBy(asc(treatmentPlans.createdAt))
+        .limit(25),
+      this.db
+        .select({
+          /**
+           * Billed minus paid, in minor units (see
+           * `packages/domain/src/billing/money.ts`). Discounts are already
+           * stored as absolute minor amounts on each charge, so the net is
+           * plain arithmetic; tax is left out because whether a clinic adds
+           * it at charge time or invoice time is an open product question
+           * (`docs/open-questions.md`) and guessing here would invent a
+           * total. Never a float: the whole expression is integer.
+           */
+          outstandingMinor: sql<number>`(
               coalesce((
                 select sum(${charges.unitPriceMinor} * ${charges.quantity} - ${charges.discountMinor})
                 from ${charges}
@@ -455,17 +483,17 @@ export class DrizzlePatientRepository implements PatientRepository {
                   and ${payments.patientId} = ${patientId}
               ), 0)
             )::int`,
-            chargeCount: sql<number>`(
+          chargeCount: sql<number>`(
               select count(*) from ${charges}
               where ${charges.clinicId} = ${clinicId}
                 and ${charges.patientId} = ${patientId}
             )::int`,
-            currencyCode: clinics.currencyCode,
-          })
-          .from(clinics)
-          .where(eq(clinics.id, clinicId))
-          .limit(1),
-      ]);
+          currencyCode: clinics.currencyCode,
+        })
+        .from(clinics)
+        .where(eq(clinics.id, clinicId))
+        .limit(1),
+    ]);
 
     return {
       id: asPatientId(patient.id),
@@ -484,20 +512,21 @@ export class DrizzlePatientRepository implements PatientRepository {
       isActive: patient.isActive,
       createdAt: isoTimestamp(patient.createdAt),
       updatedAt: isoTimestamp(patient.updatedAt),
-      upcomingAppointment:
-        upcomingAppointment === undefined
-          ? null
-          : {
-              id: asAppointmentId(upcomingAppointment.id),
-              startsAt: isoTimestamp(upcomingAppointment.startsAt),
-              durationMinutes: upcomingAppointment.durationMinutes,
-              status: upcomingAppointment.status,
-              dentistId:
-                upcomingAppointment.dentistId === null
-                  ? null
-                  : asDentistId(upcomingAppointment.dentistId),
-            },
-      recentVisits: recentVisits.map((visit) => ({
+      upcomingAppointments: upcomingAppointments.map((appointment) => ({
+        id: asAppointmentId(appointment.id),
+        startsAt: isoTimestamp(appointment.startsAt),
+        durationMinutes: appointment.durationMinutes,
+        status: appointment.status,
+        dentistId: appointment.dentistId === null ? null : asDentistId(appointment.dentistId),
+      })),
+      overdueAppointments: overdueAppointments.map((appointment) => ({
+        id: asAppointmentId(appointment.id),
+        startsAt: isoTimestamp(appointment.startsAt),
+        durationMinutes: appointment.durationMinutes,
+        status: appointment.status,
+        dentistId: appointment.dentistId === null ? null : asDentistId(appointment.dentistId),
+      })),
+      openVisits: openVisits.map((visit) => ({
         id: asVisitId(visit.id),
         status: visit.status,
         startedAt: visit.startedAt === null ? null : isoTimestamp(visit.startedAt),

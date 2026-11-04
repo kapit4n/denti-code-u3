@@ -55,8 +55,9 @@ const REGISTERED_PROFILE = {
   address: null,
   allergies: null,
   additionalData: {},
-  upcomingAppointment: null,
-  recentVisits: [],
+  upcomingAppointments: [],
+  overdueAppointments: [],
+  openVisits: [],
   outstandingTreatments: [],
   financialBalance: { outstandingMinor: 0, chargeCount: 0, currencyCode: 'BOB' },
 };

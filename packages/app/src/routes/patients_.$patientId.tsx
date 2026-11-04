@@ -7,9 +7,9 @@
  * render an `<Outlet />` and the profile would appear inside it.
  *
  * One request returns the record plus everything a clinician needs on open —
- * allergies, the next appointment, recent visits, outstanding treatments and the
- * balance — because a profile assembled from five requests is a profile that
- * renders half-empty in practice.
+ * allergies, the appointments still ahead, the ones that have gone quiet, the open
+ * visits, outstanding treatments and the balance. The complete timeline is a
+ * separate page: the profile is a working screen, not the history.
  *
  * Every figure is rendered as the API computed it. The balance is formatted with
  * the domain's `formatMinorUnits` (integer arithmetic), never by dividing in the
@@ -33,9 +33,9 @@
 
 import { useState } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { formatMinorUnits } from '@denti-code-u3/domain';
+import { formatMinorUnits, type PatientAppointmentSummary } from '@denti-code-u3/domain';
 import { Card, CardContent, CardHeader, CardTitle, Button } from '@denti-code-u3/ui';
-import { ArrowLeft, CalendarPlus } from 'lucide-react';
+import { ArrowLeft, CalendarPlus, ChevronRight } from 'lucide-react';
 
 import { AppointmentBookingDialog } from '../features/agenda/components/appointment-booking-dialog.js';
 import { formatClinicDay, formatClinicDayTime } from '../features/clinic/format-clinic-time.js';
@@ -164,45 +164,70 @@ function PatientProfile() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('patients.profile.nextAppointment')}</CardTitle>
+          <CardTitle>{t('patients.profile.appointments')}</CardTitle>
         </CardHeader>
-        <CardContent className="text-sm">
-          {patient.upcomingAppointment ? (
-            <p>
-              {/* Says it is waiting rather than showing the wrong hour: a fallback to
-                  the visitor's zone would put "Nothing booked" and "Tonight" in the
-                  same slot, and one of them is a lie. */}
-              {timeZone ? (
-                formatClinicDayTime(patient.upcomingAppointment.startsAt, timeZone)
-              ) : (
-                <span className="text-muted-foreground">{t('patients.profile.readingClock')}</span>
-              )}{' '}
-              ·{' '}
-              {t('patients.profile.duration', {
-                count: patient.upcomingAppointment.durationMinutes,
-              })}{' '}
-              · {enumLabel(t, 'common.status', patient.upcomingAppointment.status)}
-            </p>
-          ) : (
+        <CardContent className="space-y-4 text-sm">
+          {patient.overdueAppointments.length > 0 ? (
+            <section className="space-y-2">
+              <h3 className="font-medium text-destructive">
+                {t('patients.profile.overdueAppointments')}
+              </h3>
+              <ul className="space-y-2">
+                {patient.overdueAppointments.map((appointment) => (
+                  <ProfileAppointmentRow
+                    key={appointment.id}
+                    appointment={appointment}
+                    timeZone={timeZone}
+                    overdue
+                  />
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {patient.upcomingAppointments.length > 0 ? (
+            <section className="space-y-2">
+              <h3 className="font-medium">{t('patients.profile.upcomingAppointments')}</h3>
+              <ul className="space-y-2">
+                {patient.upcomingAppointments.map((appointment) => (
+                  <ProfileAppointmentRow
+                    key={appointment.id}
+                    appointment={appointment}
+                    timeZone={timeZone}
+                  />
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {patient.overdueAppointments.length === 0 && patient.upcomingAppointments.length === 0 ? (
             <p className="text-muted-foreground">{t('patients.profile.nothingBooked')}</p>
-          )}
+          ) : null}
         </CardContent>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader>
-            <CardTitle>{t('patients.profile.recentVisits')}</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <CardTitle>{t('patients.profile.openVisits')}</CardTitle>
+            <Button asChild variant="ghost" size="sm">
+              <Link
+                to="/patients/$patientId/visits"
+                params={{ patientId: patient.id }}
+                data-testid="all-patient-visits"
+              >
+                {t('patients.profile.allVisits')}
+              </Link>
+            </Button>
           </CardHeader>
           <CardContent>
-            {patient.recentVisits.length > 0 ? (
+            {patient.openVisits.length > 0 ? (
               <ul className="space-y-2">
-                {patient.recentVisits.map((visit) => (
+                {patient.openVisits.map((visit) => (
                   <li key={visit.id}>
                     {/*
-                      A link, because a recent visit is the door into its own
-                      workspace: this card was the only place the visit existed on
-                      screen, and a row that could not be opened left the clinical
+                      A link, because an open visit is the door into its own
+                      workspace: a row that cannot be opened leaves the clinical
                       record one click short of its home.
                     */}
                     <Link
@@ -228,7 +253,7 @@ function PatientProfile() {
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">{t('patients.profile.noVisits')}</p>
+              <p className="text-sm text-muted-foreground">{t('patients.profile.noOpenVisits')}</p>
             )}
           </CardContent>
         </Card>
@@ -336,6 +361,61 @@ function PatientProfile() {
         />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * One appointment on the profile, overdue or upcoming. Overdue rows get the
+ * destructive outline rather than a second badge: the section heading already
+ * says what they are, and the row is the thing a receptionist has to act on.
+ */
+function ProfileAppointmentRow({
+  appointment,
+  timeZone,
+  overdue = false,
+}: {
+  readonly appointment: PatientAppointmentSummary;
+  readonly timeZone?: string;
+  readonly overdue?: boolean;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <li>
+      {/*
+        The whole row is the action: it opens the agenda on the appointment's own
+        day and, once that day's answer arrives, the quick panel for this booking.
+        A row that only displayed the time left the receptionist to find the same
+        appointment again by hand.
+      */}
+      <Link
+        to="/agenda"
+        search={{ appointmentId: appointment.id, date: appointment.startsAt }}
+        data-testid={`profile-appointment-${appointment.id}`}
+        className={`flex items-start justify-between gap-3 rounded-lg border p-3 transition-colors hover:bg-accent ${
+          overdue ? 'border-destructive/40' : ''
+        }`}
+      >
+        <span className="min-w-0">
+          <span className="block font-medium">
+            {/* Says it is waiting rather than showing the wrong hour: a fallback to
+                the visitor's zone would put "Nothing booked" and "Tonight" in the same
+                slot, and one of them is a lie. */}
+            {timeZone ? (
+              formatClinicDayTime(appointment.startsAt, timeZone)
+            ) : (
+              <span className="text-muted-foreground">{t('patients.profile.readingClock')}</span>
+            )}{' '}
+            · {t('patients.profile.duration', { count: appointment.durationMinutes })} ·{' '}
+            {enumLabel(t, 'common.status', appointment.status)}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+          {t('patients.profile.openInAgenda')}
+          <ChevronRight aria-hidden className="size-4" />
+        </span>
+      </Link>
+    </li>
   );
 }
 

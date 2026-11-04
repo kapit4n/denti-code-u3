@@ -260,8 +260,9 @@ describeIntegration('PatientRepository reads (PostgreSQL)', () => {
         recordNumber: 'P-100001',
         firstName: 'Anna',
         allergies: null,
-        upcomingAppointment: null,
-        recentVisits: [],
+        upcomingAppointments: [],
+        overdueAppointments: [],
+        openVisits: [],
         outstandingTreatments: [],
       });
       // Nulls, not absent keys: a missing key reads as "the API forgot".

@@ -25,7 +25,7 @@ export const LUIS_ID = '11111111-3333-4444-8555-000000000002';
 export const VISIT_ID = '11111111-7777-4888-8999-000000000041';
 
 /**
- * Ana's closed visit — the one her profile's "Recent visits" card links to.
+ * Ana's closed visit — one row of the history her profile links to.
  *
  * A different id from the open one on purpose: the profile is a *history*, so the
  * visit it names is already finished, and a spec that followed the link into an open
@@ -104,22 +104,33 @@ export const anaProfile = {
   allergies: 'Penicillin',
   additionalData: {},
   updatedAt: '2026-10-03T00:06:36.214Z',
-  upcomingAppointment: {
-    id: '11111111-4444-4555-8666-000000000009',
-    startsAt: '2026-10-06T13:00:00.000Z',
-    durationMinutes: 45,
-    status: 'SCHEDULED',
-    dentistId: '11111111-2222-4333-8444-000000000001',
-  },
-  recentVisits: [
+  upcomingAppointments: [
     {
-      id: COMPLETED_VISIT_ID,
-      status: 'COMPLETED',
-      startedAt: '2026-09-11T20:09:00.000Z',
-      endedAt: '2026-09-11T20:54:00.000Z',
+      id: '11111111-4444-4555-8666-000000000009',
+      startsAt: '2026-10-06T13:00:00.000Z',
+      durationMinutes: 45,
+      status: 'SCHEDULED',
+      dentistId: '11111111-2222-4333-8444-000000000001',
+    },
+  ],
+  overdueAppointments: [
+    {
+      id: '11111111-4444-4555-8666-000000000010',
+      startsAt: '2026-10-01T14:00:00.000Z',
+      durationMinutes: 30,
+      status: 'CONFIRMED',
+      dentistId: '11111111-2222-4333-8444-000000000001',
+    },
+  ],
+  openVisits: [
+    {
+      id: VISIT_ID,
+      status: 'OPEN',
+      startedAt: '2026-10-06T13:05:00.000Z',
+      endedAt: null,
       reason: 'Sensitivity in the upper right quadrant',
-      summary: 'Composite restoration on tooth 16.',
-      createdAt: '2026-09-11T20:09:00.000Z',
+      summary: null,
+      createdAt: '2026-10-06T13:05:00.000Z',
     },
   ],
   outstandingTreatments: [
@@ -154,11 +165,12 @@ export const luisProfile = {
   allergies: null,
   additionalData: {},
   updatedAt: '2026-10-03T00:06:36.214Z',
-  upcomingAppointment: null,
+  upcomingAppointments: [],
+  overdueAppointments: [],
   // Empty collections, not missing keys. This is the shape that crashed the
-  // profile page: an absent `recentVisits` is `undefined`, and `undefined.length`
+  // profile page: an absent `openVisits` is `undefined`, and `undefined.length`
   // throws.
-  recentVisits: [],
+  openVisits: [],
   outstandingTreatments: [],
   financialBalance: {
     outstandingMinor: -8000,
@@ -752,9 +764,9 @@ export const openVisit = {
 } as const;
 
 /**
- * Ana's finished visit — the same row her profile reports under "Recent visits",
- * times and summary included, so a spec that follows the link sees the history it
- * just read rather than a second account of it.
+ * Ana's finished visit — the same row her history page reports, times and summary
+ * included, so a spec that follows the link sees the history it just read rather
+ * than a second account of it.
  */
 export const completedVisit = {
   id: COMPLETED_VISIT_ID,
@@ -767,6 +779,17 @@ export const completedVisit = {
   endedAt: '2026-09-11T20:54:00.000Z',
   status: 'COMPLETED',
   summary: 'Composite restoration on tooth 16.',
+} as const;
+
+/**
+ * Ana's complete visit history, as `GET /api/v1/patients/:id/visits` answers.
+ *
+ * Both rows are here on purpose: the profile only shows the open one, so the history
+ * page has to prove it reaches past the profile's bounded read. The completed row is
+ * last, exactly as the endpoint orders a timeline.
+ */
+export const anaVisitHistory = {
+  visits: [openVisit, completedVisit],
 } as const;
 
 /**

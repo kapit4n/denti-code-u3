@@ -288,6 +288,23 @@ describe('API on SQLite', () => {
     visitId = visit.id;
   });
 
+  it('puts the visit still open on the patient’s profile, not in their history', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const profile = response.json();
+    expect(profile.openVisits).toEqual([
+      expect.objectContaining({ id: visitId, status: 'OPEN', reason: null }),
+    ]);
+    // The bounded profile read is not the history: an open visit belongs here,
+    // and the complete timeline is the other endpoint.
+    expect(profile).toHaveProperty('overdueAppointments');
+    expect(profile).toHaveProperty('upcomingAppointments');
+  });
+
   it('reads the progress the visit bridge recorded', async () => {
     const response = await app.inject({
       method: 'GET',

@@ -4374,3 +4374,50 @@ removal with accessible names intact, persistence across reload and expansion. F
 e2e **175/175**. Production build, typecheck, lint, boundary guard and changed-file Prettier all
 passed (same two pre-existing React Compiler warnings and existing scanner false positive).
 This commit also carries the uncommitted sessions 75–79 work.
+
+---
+
+Session 81: the patient profile shows what needs attention, and all visits moved to their
+own page.
+
+`/patients/:patientId` no longer carries recent visits or a single next appointment. Its
+read model exposes `openVisits` (status `OPEN`, newest first by `coalesce(started_at,
+created_at)`, uncapped), `overdueAppointments` (`startsAt < now`, scheduled/confirmed/
+arrived, newest first, uncapped) and `upcomingAppointments` (`startsAt >= now`, not
+cancelled, oldest first, `limit(3)`). Both engines build all three in the same profile query
+set, and the profile sorts them into an appointments card and an open-visits card linking to
+**All visits**. The new `/patients/:patientId/visits` page uses the existing uncapped visit
+endpoint (ADR 0023), keeps patient-not-found separate from a load failure, and links every
+row to its visit workspace. The route is a sibling of the profile so it needs no `Outlet`;
+the generated route tree was rebuilt. English and Spanish copy was updated, removing the
+obsolete next-appointment/recent-visits keys.
+
+**Tests.** API SQLite smoke **33/33**, including the profile reporting the open visit while
+the bounded arrays stay present. Repository and profile-scope integration fixtures were
+updated for the array fields. Patient browser specs cover the overdue/upcoming sections,
+the empty state and listing/opening a completed visit from the history page; the visit
+workspace spec now reaches a completed visit through that page. Full app **414/415**, with
+only the pre-existing `zoned-wall-clock.test.ts` repeated-hour failure; full e2e **176/176**.
+
+**Verification.** Full typecheck and lint passed · production web build passed (and
+regenerated `routeTree.gen.ts`) · changed files are Prettier-clean · root `format:check`
+still names four untouched generated migration metadata files · boundary guard keeps its
+existing scanner false positive. No commit.
+
+---
+
+Session 82: the appointments on a patient's profile now open their agenda quick panel.
+
+Every overdue and upcoming row on `/patients/:patientId` is a link to `/agenda` carrying the
+appointment id and its instant. The agenda validates those search parameters, opens the grid
+on the appointment's own clinic day via `initialDate`, and derives the quick panel from the
+day's fetched `AgendaEntry` rather than copying fields out of the URL. Deriving it during
+render avoids a state-writing effect; dismissing the panel remembers that id once so a
+refetch does not reopen it, while a different deep link still does. The row carries an **Open
+in agenda** affordance. The agenda's existing transitions, reschedules and progress timeline
+are unchanged.
+
+**Tests.** Agenda and calendar suites **144/144**; the patient browser spec **12/12**,
+including the profile-to-agenda path asserting the October 1 grid and the panel for Ana's
+overdue appointment; full e2e **177/177**. Full typecheck, lint, boundary guard and changed-
+file Prettier passed. Web production build passed. No commit.

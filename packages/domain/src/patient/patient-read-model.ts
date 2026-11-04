@@ -10,9 +10,10 @@
  *
  * A read model is deliberately *not* the `Patient` entity. The entity is what a
  * write accepts and what the domain reasons about; a profile additionally carries
- * the next appointment, recent visits, outstanding work and a balance, which no
- * single row holds. Conflating them would either make the entity unusable for
- * writes or make the profile unable to describe an aggregate.
+ * the appointments still ahead, the appointments that have gone quiet, the open
+ * visits, outstanding work and a balance, which no single row holds. Conflating
+ * them would either make the entity unusable for writes or make the profile unable
+ * to describe an aggregate.
  *
  * Two conventions throughout:
  *
@@ -92,15 +93,28 @@ export interface PatientProfile extends PatientListEntry {
   /** Clinic-specific extras the domain does not model. Never interpreted here. */
   readonly additionalData: Record<string, unknown>;
   readonly updatedAt: IsoDateTime;
-  /** The next scheduled appointment, or null when none is booked. */
-  readonly upcomingAppointment: PatientUpcomingAppointment | null;
-  /** Most recent first. A bounded window, not the patient's whole history. */
-  readonly recentVisits: readonly PatientVisitSummary[];
+  /**
+   * At most three appointments still ahead, earliest first.
+   *
+   * The profile is a working screen, not the agenda: a patient with a long book
+   * needs the next few reasons to walk in, and the full list belongs on the agenda.
+   */
+  readonly upcomingAppointments: readonly PatientAppointmentSummary[];
+  /**
+   * Appointments whose start has passed while they were still waiting for the
+   * patient — `SCHEDULED`, `CONFIRMED` or `ARRIVED`.
+   *
+   * They are not history yet: nobody completed, cancelled or marked them as a
+   * no-show, so the front desk still has a decision to make about each one.
+   */
+  readonly overdueAppointments: readonly PatientAppointmentSummary[];
+  /** Visits still open. A visit left open is unfinished clinical work. */
+  readonly openVisits: readonly PatientVisitSummary[];
   readonly outstandingTreatments: readonly PatientOutstandingTreatment[];
   readonly financialBalance: PatientFinancialBalance;
 }
 
-export interface PatientUpcomingAppointment {
+export interface PatientAppointmentSummary {
   readonly id: AppointmentId;
   readonly startsAt: IsoDateTime;
   readonly durationMinutes: number;

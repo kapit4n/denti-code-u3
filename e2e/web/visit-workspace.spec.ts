@@ -18,9 +18,9 @@
  *  3. **A refusal reaches the screen** — the dialog checks nothing itself, so a
  *     domain answer is the only thing that will ever tell a clinician the move was
  *     refused.
- *  4. **The record is the door.** The patient profile's "Recent visits" card links
- *     into the workspace; a visit with no way to reach it is a page only a person
- *     who knows the id could open.
+ *  4. **The record is the door.** The patient profile links to the complete visit
+ *     history, which links into the workspace; a visit with no way to reach it is a
+ *     page only a person who knows the id could open.
  *  5. **Notes are asked for when their section opens, and a filed note arrives by
  *     refetch.** The list shows the server's `id` and `createdAt` — values no browser
  *     could invent — which is what makes "not optimistic" observable rather than
@@ -55,6 +55,7 @@ import {
   PROPHYLAXIS_TREATMENT_ID,
   VISIT_ID,
   anaProfile,
+  anaVisitHistory,
   existingVisitTreatment,
   filedNote,
   linkedTreatment,
@@ -302,13 +303,17 @@ test.describe('Visit workspace', () => {
     await installApi(page, {
       ...visitWorkspaceFixtures(),
       [`/api/v1/patients/${ANA_ID}`]: { body: anaProfile },
+      [`/api/v1/patients/${ANA_ID}/visits`]: { body: anaVisitHistory },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
 
-    // The reason the card gives, because it is the text a person would recognise —
-    // the date above it is formatted and therefore not the thing to key on.
-    await page.getByRole('link', { name: /Sensitivity in the upper right quadrant/ }).click();
+    // The profile only links an unfinished visit. The finished one is one click
+    // further, in the complete history, which is exactly the split being tested.
+    await page.getByTestId('all-patient-visits').click();
+
+    const completedRow = page.getByRole('row', { name: /Composite restoration on tooth 16/ });
+    await completedRow.getByRole('link', { name: 'Open visit' }).click();
 
     await expect(page).toHaveURL(new RegExp(`/visits/${COMPLETED_VISIT_ID}$`));
     await expect(page.getByRole('heading', { name: 'Ana García' })).toBeVisible();

@@ -78,9 +78,13 @@ import { useTranslation } from '../../../i18n/index.js';
 
 export interface AgendaCalendarProps {
   readonly clinic: Clinic;
+  /** An appointment linked from elsewhere, to open once its day is loaded. */
+  readonly focusedAppointmentId?: string;
+  /** The clinic-local day the grid opens on, as an ISO instant. */
+  readonly initialDate?: string;
 }
 
-export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
+export function AgendaCalendar({ clinic, focusedAppointmentId, initialDate }: AgendaCalendarProps) {
   const { locale, t } = useTranslation();
 
   /**
@@ -113,6 +117,15 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
   const [selected, setSelected] = useState<AgendaEntry | undefined>(undefined);
 
   /**
+   * The deep-linked appointment the user has already closed.
+   *
+   * Opening is derived from the fetched day rather than copied into state, but the
+   * link stays in the URL. Remembering the dismissed id keeps that link from
+   * reopening the panel on every refetch, while a different link still opens.
+   */
+  const [dismissedFocusId, setDismissedFocusId] = useState<string | undefined>(undefined);
+
+  /**
    * The slot a booking is being made against, or none.
    *
    * The instant the user clicked, and nothing else. The grid is the time picker, so
@@ -130,6 +143,31 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
   const [writeFailure, setWriteFailure] = useState<string | undefined>(undefined);
 
   const { data, isPending, error } = useAgendaRange(range, filters);
+
+  /**
+   * The appointment a profile linked to, read from the fetched day.
+   *
+   * Waiting for the visible range's answer rather than constructing an entry from
+   * the URL matters: the quick panel needs the server's status, dentist and chair,
+   * and a partial copy would offer actions the API might refuse. The range opens on
+   * the appointment's own day, so the first answer contains it.
+   */
+  const focusedEntry = useMemo(
+    () =>
+      focusedAppointmentId && focusedAppointmentId !== dismissedFocusId
+        ? data?.items.find((item) => item.id === focusedAppointmentId)
+        : undefined,
+    [data, dismissedFocusId, focusedAppointmentId],
+  );
+  const panelEntry = selected ?? focusedEntry;
+
+  const closePanel = useCallback(() => {
+    setSelected(undefined);
+    if (focusedAppointmentId) {
+      setDismissedFocusId(focusedAppointmentId);
+    }
+  }, [focusedAppointmentId]);
+
   const reschedule = useRescheduleAppointment();
   const events = useMemo(
     () => toCalendarEvents(data?.items ?? [], t('agenda.unassigned')),
@@ -269,6 +307,7 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
         <FullCalendar
           plugins={[dayGridPlugin, timeGridPlugin, luxonPlugin, interactionPlugin]}
           initialView="timeGridDay"
+          initialDate={initialDate}
           locale={locale === 'es' ? esLocale : 'en'}
           views={{
             timeGridDay: { type: 'timeGridDay', buttonText: t('agenda.calendar.day') },
@@ -373,12 +412,8 @@ export function AgendaCalendar({ clinic }: AgendaCalendarProps) {
         from showing a status the API has already superseded, since the refetch that
         follows the write never reaches a component that is no longer mounted.
       */}
-      {selected ? (
-        <AppointmentQuickPanel
-          entry={selected}
-          clinic={clinic}
-          onClose={() => setSelected(undefined)}
-        />
+      {panelEntry ? (
+        <AppointmentQuickPanel entry={panelEntry} clinic={clinic} onClose={closePanel} />
       ) : null}
 
       {/*

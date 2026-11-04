@@ -128,7 +128,7 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
         ${visitId},
         ${clinicId},
         ${patientWithHistory},
-        'COMPLETED',
+        'OPEN',
       now() - interval '3 days',
       'Private history of one patient'
       )
@@ -181,8 +181,8 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.recentVisits).toHaveLength(1);
-    expect(body.recentVisits[0].reason).toBe('Private history of one patient');
+    expect(body.openVisits).toHaveLength(1);
+    expect(body.openVisits[0].reason).toBe('Private history of one patient');
   });
 
   it('returns empty collections, not absent keys, for a patient with no history', async () => {
@@ -191,9 +191,13 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
     const response = await getProfile(patientWithoutHistory);
 
     const body = response.json();
-    expect(body).toHaveProperty('recentVisits');
+    expect(body).toHaveProperty('openVisits');
+    expect(body).toHaveProperty('overdueAppointments');
+    expect(body).toHaveProperty('upcomingAppointments');
     expect(body).toHaveProperty('outstandingTreatments');
-    expect(body.recentVisits).toEqual([]);
+    expect(body.openVisits).toEqual([]);
+    expect(body.overdueAppointments).toEqual([]);
+    expect(body.upcomingAppointments).toEqual([]);
     expect(body.outstandingTreatments).toEqual([]);
   });
 

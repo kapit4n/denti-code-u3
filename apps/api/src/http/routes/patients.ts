@@ -260,10 +260,10 @@ export async function registerPatientsRoutes(
   /**
    * The patient profile: the central clinical context for the rest of the app.
    *
-   * One round trip returns the record plus the four things a clinician needs on
-   * open — allergies, the next appointment, recent visits and the outstanding
-   * balance — because a profile that has to be assembled from five requests is a
-   * profile that renders half-empty in practice.
+   * One round trip returns the record plus the context a clinician needs on open:
+   * allergies, the appointments still ahead, the ones that have gone quiet, the
+   * open visits and the outstanding balance. A profile assembled from that many
+   * requests renders half-empty in practice.
    *
    * The aggregate is assembled in the repository rather than here, and the reason
    * is a bug this route used to have: the response was a spread of the raw row, so
