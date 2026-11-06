@@ -160,6 +160,7 @@ function harness(
 
   const charges: ChargeRepository = {
     findForVisit: async () => options.storedCharges ?? [],
+    findForTreatmentPlanItem: async () => undefined,
     save: async () => {},
     markInvoiced: async (clinicId, chargeIds, invoiceId, invoicedAt) => {
       recorded.markedInvoiced.push({ clinicId, chargeIds, invoiceId, invoicedAt });

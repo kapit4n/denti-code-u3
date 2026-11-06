@@ -23,6 +23,7 @@ import {
   clinicFixture,
   invoicePayment,
   noInvoices,
+  noPrescriptions,
   noTreatmentPlans,
   settledBalance,
 } from './fixtures/api-responses.js';
@@ -45,6 +46,7 @@ function profileSections(invoices: unknown, balance: unknown = anaBalance) {
     [PROFILE_PATH]: { body: anaProfile },
     [`${PROFILE_PATH}/odontogram`]: { body: anaOdontogram },
     [`${PROFILE_PATH}/treatment-plans`]: { body: noTreatmentPlans },
+    [`${PROFILE_PATH}/prescriptions`]: { body: noPrescriptions },
     [INVOICES_PATH]: { body: invoices },
     [BALANCE_PATH]: { body: balance },
   };

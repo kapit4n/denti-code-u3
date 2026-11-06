@@ -33,7 +33,7 @@
 
 import { useState } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { formatMinorUnits, type PatientAppointmentSummary } from '@denti-code-u3/domain';
+import type { PatientAppointmentSummary } from '@denti-code-u3/domain';
 import { Card, CardContent, CardHeader, CardTitle, Button } from '@denti-code-u3/ui';
 import { ArrowLeft, CalendarPlus, ChevronRight } from 'lucide-react';
 
@@ -44,6 +44,8 @@ import { RecordPaymentDialog } from '../features/payments/components/record-paym
 import { usePatient } from '../features/patients/hooks/use-patients.js';
 import { PatientAllergiesCard } from '../features/patients/components/patient-allergies-card.js';
 import { PatientTreatmentPlansSection } from '../features/patients/components/patient-treatment-plans-section.js';
+import { PatientTreatmentOverviewCard } from '../features/patients/components/patient-treatment-overview-card.js';
+import { PatientPrescriptionsSection } from '../features/patients/components/patient-prescriptions-section.js';
 import { PatientInvoicesSection } from '../features/patients/components/patient-invoices-section.js';
 import { PatientStatementSection } from '../features/patients/components/patient-statement-section.js';
 import { PatientBalanceSection } from '../features/patients/components/patient-balance-section.js';
@@ -258,38 +260,7 @@ function PatientProfile() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('patients.profile.outstandingTreatments')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {patient.outstandingTreatments.length > 0 ? (
-              <ul className="space-y-2">
-                {patient.outstandingTreatments.map((item) => (
-                  <li
-                    key={item.id}
-                    className="flex items-center justify-between rounded-lg border p-3 text-sm"
-                  >
-                    <span>
-                      {item.title ?? t('patients.profile.planItemFallback')}
-                      {item.tooth ? t('patients.profile.tooth', { tooth: item.tooth }) : ''}
-                      {item.quantity > 1
-                        ? t('patients.profile.quantity', { count: item.quantity })
-                        : ''}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {formatMinorUnits(item.estimatedPriceMinor)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {t('patients.profile.nothingOutstanding')}
-              </p>
-            )}
-          </CardContent>
-        </Card>
+        <PatientTreatmentOverviewCard treatments={patient.outstandingTreatments} />
       </div>
 
       {/*
@@ -298,6 +269,13 @@ function PatientProfile() {
         of decisions, not a fact about the person.
       */}
       <PatientTreatmentPlansSection patientId={patient.id} clinicTimeZone={timeZone} />
+
+      {/*
+        What the patient was sent home with, read as a patient-level history
+        rather than visit by visit. Each row keeps its visit link, because the
+        prescription is still a record of that visit.
+      */}
+      <PatientPrescriptionsSection patientId={patient.id} clinicTimeZone={timeZone} />
 
       {/*
         The documents the clinic has issued, and what they come to: siblings of the

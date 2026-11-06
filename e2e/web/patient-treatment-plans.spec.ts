@@ -25,6 +25,7 @@ import {
   clinicFixture,
   createdTreatmentPlan,
   noInvoices,
+  noPrescriptions,
   noTreatmentPlans,
   TREATMENT_CATALOGUE_ID,
   treatmentsCatalogue,
@@ -97,6 +98,7 @@ test.describe('Treatment plans on the profile', () => {
       [PLANS_PATH]: { body: anaTreatmentPlans },
       [INVOICES_PATH]: { body: noInvoices },
       [BALANCE_PATH]: { body: anaBalance },
+      [`${PROFILE_PATH}/prescriptions`]: { body: noPrescriptions },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -131,6 +133,7 @@ test.describe('Treatment plans on the profile', () => {
       [PLANS_PATH]: { body: noTreatmentPlans },
       [INVOICES_PATH]: { body: noInvoices },
       [BALANCE_PATH]: { body: anaBalance },
+      [`${PROFILE_PATH}/prescriptions`]: { body: noPrescriptions },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -147,6 +150,7 @@ test.describe('Treatment plans on the profile', () => {
       ...clinicFixture(),
       [PROFILE_PATH]: { body: anaProfile },
       [`${PROFILE_PATH}/odontogram`]: { body: anaOdontogram },
+      [`${PROFILE_PATH}/prescriptions`]: { body: noPrescriptions },
       // No fixture for the plans path: the mock answers 501 naming it, which is
       // what a missing registration looks like.
     });
@@ -174,6 +178,7 @@ test.describe('Treatment plans on the profile', () => {
       [PLANS_PATH]: { body: noTreatmentPlans },
       [INVOICES_PATH]: { body: noInvoices },
       [BALANCE_PATH]: { body: anaBalance },
+      [`${PROFILE_PATH}/prescriptions`]: { body: noPrescriptions },
       [`POST ${PLANS_PATH}`]: { status: 201, body: createdTreatmentPlan },
     });
 
@@ -224,6 +229,7 @@ test.describe('Treatment plans on the profile', () => {
       [PLANS_PATH]: { body: noTreatmentPlans },
       [INVOICES_PATH]: { body: noInvoices },
       [BALANCE_PATH]: { body: anaBalance },
+      [`${PROFILE_PATH}/prescriptions`]: { body: noPrescriptions },
       [`POST ${PLANS_PATH}`]: {
         status: 422,
         body: {
@@ -268,6 +274,7 @@ test.describe('Treatment plans on the profile', () => {
       [PLANS_PATH]: { body: anaTreatmentPlans },
       [INVOICES_PATH]: { body: noInvoices },
       [BALANCE_PATH]: { body: anaBalance },
+      [`${PROFILE_PATH}/prescriptions`]: { body: noPrescriptions },
       [`POST ${PLANS_PATH}/${PLAN_ID}/items/${PENDING_ITEM_ID}/complete`]: {
         status: 204,
         body: null,

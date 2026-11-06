@@ -29,6 +29,7 @@ import {
   anaTreatmentPlans,
   clinicFixture,
   noInvoices,
+  noPrescriptions,
 } from './fixtures/api-responses.js';
 import { watchForConsoleErrors } from './fixtures/console-errors.js';
 import { installApi } from './fixtures/mock-api.js';
@@ -52,6 +53,7 @@ async function installPatientApi(page: Page) {
     // The document card is the profile's other own read, for the same reason.
     [`${PROFILE_PATH}/invoices`]: { body: noInvoices },
     [`${PROFILE_PATH}/balance`]: { body: anaBalance },
+    [`${PROFILE_PATH}/prescriptions`]: { body: noPrescriptions },
     [LIST_PATH]: { body: { data: [], meta: { page: 1, pageSize: 25, total: 0 } } },
     // The edit endpoint answers 204 with nothing in it.
     [EDIT_PATH]: { status: 204, body: null },

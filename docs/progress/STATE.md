@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 86 (start planned treatments from the agenda)
+> Last updated: session 88 (bill completed planned work and choose lines while closing a visit)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
@@ -4103,3 +4103,61 @@ pre-existing `zoned-wall-clock.test.ts` repeated-hour failure. Root typecheck pa
 passed with the two existing React Compiler warnings; web production build and boundary guard
 passed (guard keeps its existing scanner false positive). E2E was not run for this slice. No
 commit.
+
+---
+
+Session 87: the patient profile shows treatment progress and prescriptions.
+
+The profile's outstanding treatments now carry the treatment name, optional catalogue code and
+the number of recorded sessions. The treatment card groups them under **In progress** (a line
+with at least one session) and **Pending** (no session yet), so open planned work is visible
+without opening the plan; completed items stay excluded by the existing profile query. No
+table, column or migration was added — `sessionCount` is a correlated count over
+`visit_treatment_executions`, scoped by clinic and patient, in both engines.
+
+The profile also gained a prescriptions section backed by
+`GET /api/v1/patients/:patientId/prescriptions` (`visits:read`). Prescriptions remain
+visit-owned rows; the new port method `findForPatient` joins through `visits` so tenancy is
+still enforced by the visit, returns `undefined` when the clinic does not hold the patient
+(404) and an empty list for a real patient with none. Rows are newest first and show the
+medication, dose, route/frequency/duration, instructions, clinic-local issue time and a link
+to the source visit. Creating a prescription invalidates both the visit's and the patient's
+prescription reads. English and Spanish copy was added; the tooth separator was fixed so
+`Tooth 36 · Scaling and prophylaxis` no longer concatenates without a space. ADR 0037 records
+the read decision.
+
+**Tests.** Domain **413/413**; full app **426/427**, with only the pre-existing
+`zoned-wall-clock.test.ts` repeated-hour failure; API **135 passed / 288 skipped**
+(PostgreSQL-only tests need a server on `127.0.0.1:5433`); SQLite smoke **34/34**; targeted
+Playwright **20/20**; full e2e **182/182**. Root typecheck passed; lint passed with the two
+existing React Compiler warnings; the boundary guard kept its existing scanner false positive;
+changed files are Prettier-clean (root `format:check` still names the two untouched generated
+migration snapshots); web production build passed. No commit.
+
+---
+
+Session 88: completed planned work is billed, and closing a visit asks which lines it finished.
+
+Completing an open treatment-plan item now raises a linked charge from
+`estimatedPriceMinor` and issues it through the existing invoice path. The charge carries the
+item's `treatmentPlanItemId` and the visit's `visitId` when the completion has a visit context;
+an existing charge for the line is reused rather than duplicated, an already-invoiced charge is
+left alone, and a zero estimate writes no charge. Completion remains idempotent and keeps the
+first `completedAt`. No migration was needed: both columns already existed.
+
+Closing a visit now accepts an optional `{ treatmentPlanItems: [{ planId, itemId }] }` body.
+The endpoint completes each selected line with deferred invoicing, issues one invoice for the
+visit's pending charges, then completes the visit; unchecked lines stay open. A bodyless
+closure still works. When the patient has open planned lines, the workspace opens a translated
+multi-select **VisitClosureDialog**; with nothing open it closes in one click as before. The
+dialog names each line's plan, treatment and tooth, keeps the selection visible, and reports a
+refusal without pretending the visit closed. The patient-profile plan completion and the visit
+closure invalidate plans, profile, invoices, balance and statement reads.
+
+**Tests.** Domain **418/418**; validation **167/167**; full app **427/428**, with only the
+pre-existing `zoned-wall-clock.test.ts` repeated-hour failure; API **137 passed / 288 skipped**
+(PostgreSQL-only tests need a server on `127.0.0.1:5433`); SQLite smoke **36/36**; full e2e
+**182/182**. Root typecheck **12/12**, lint **12/12** with the two existing React Compiler
+warnings and the boundary guard's scanner false positive, build **5/5**, changed files
+Prettier-clean. Root `format:check` still names the two untouched generated migration
+snapshots. No commit.

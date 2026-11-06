@@ -31,8 +31,10 @@ import { registerTreatmentPlanRoutes } from '../src/http/routes/treatment-plans.
 import { DrizzlePatientRepository } from '../src/infrastructure/persistence/repositories/patient-repository.js';
 import { DrizzleOdontogramEntryRepository } from '../src/infrastructure/persistence/repositories/odontogram-entry-repository.js';
 import { DrizzleTreatmentPlanRepository } from '../src/infrastructure/persistence/repositories/treatment-plan-repository.js';
+import { DrizzlePrescriptionRepository } from '../src/infrastructure/persistence/repositories/prescription-repository.js';
 import { DrizzleDentistRepository } from '../src/infrastructure/persistence/repositories/dentist-repository.js';
 import { DrizzleTreatmentRepository } from '../src/infrastructure/persistence/repositories/treatment-repository.js';
+import { DrizzleUnitOfWork } from '../src/infrastructure/persistence/postgres/unit-of-work.js';
 import { systemClock } from '../src/infrastructure/clock/system-clock.js';
 import { uuidGenerator } from '../src/infrastructure/id/uuid-generator.js';
 import type { DentiDatabase } from '../src/infrastructure/persistence/postgres/connection.js';
@@ -57,6 +59,7 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
   const visitId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   const itemId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
   const chargeId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const prescriptionId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
   /**
    * The clinic the next request is scoped to, read by the hook.
@@ -91,6 +94,7 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
       patients,
       odontogramEntries: new DrizzleOdontogramEntryRepository(db),
       treatmentPlans,
+      prescriptions: new DrizzlePrescriptionRepository(db),
       ids: uuidGenerator,
       clock: systemClock,
     });
@@ -101,6 +105,7 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
       dentists: new DrizzleDentistRepository(db),
       treatments: new DrizzleTreatmentRepository(db),
       treatmentPlans,
+      unitOfWork: new DrizzleUnitOfWork(db),
       ids: uuidGenerator,
       clock: systemClock,
     });
@@ -135,6 +140,25 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
       on conflict (id) do nothing
     `;
 
+    // A course written on the first patient's visit. The patient-shaped read must
+    // find it without opening the visit.
+    await sql`
+      insert into prescriptions (
+        id, visit_id, patient_id, medication, dosage, route, frequency, duration_days
+      )
+      values (
+        ${prescriptionId},
+        ${visitId},
+        ${patientWithHistory},
+        'Ibuprofen',
+        '400 mg',
+        'ORAL',
+        'Every 8 hours',
+        5
+      )
+      on conflict (id) do nothing
+    `;
+
     // An accepted plan with one open item, belonging to the first patient only.
     await sql`
       insert into treatment_plans (id, clinic_id, patient_id, status, title)
@@ -165,6 +189,7 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
     }
     await sql`delete from treatment_plan_items where id = ${itemId}`;
     await sql`delete from treatment_plans where id = ${planId}`;
+    await sql`delete from prescriptions where id = ${prescriptionId}`;
     await sql`delete from charges where id = ${chargeId}`;
     await sql`delete from visits where id = ${visitId}`;
     await sql`
@@ -210,6 +235,37 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
     ]);
     // The regression: this query used to filter by clinic only.
     expect(withoutHistory.outstandingTreatments).toEqual([]);
+  });
+
+  it("reads one patient's prescriptions through the patient, not another patient's visit", async () => {
+    scopedClinicId = clinicId;
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${patientWithHistory}/prescriptions`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().prescriptions).toHaveLength(1);
+    expect(response.json().prescriptions[0]).toMatchObject({
+      id: prescriptionId,
+      patientId: patientWithHistory,
+      visitId,
+      medication: 'Ibuprofen',
+    });
+
+    const empty = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${patientWithoutHistory}/prescriptions`,
+    });
+    expect(empty.statusCode).toBe(200);
+    expect(empty.json().prescriptions).toEqual([]);
+
+    const otherClinic = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${otherClinicPatient}/prescriptions`,
+    });
+    expect(otherClinic.statusCode).toBe(404);
+    expect(otherClinic.json().error.code).toBe('NOT_FOUND');
   });
 
   it("does not include another patient's charges in the balance", async () => {
@@ -332,7 +388,7 @@ describeIntegration('patients: profile scoping (PostgreSQL)', () => {
       payload: {
         title: '  Two-visit rehab  ',
         items: [
-          { tooth: '16', surfaces: ['MESIAL', 'OCCLUSAL'], estimatedPriceMinor: 30_000 },
+          { tooth: '16', surfaces: ['MESIAL', 'OCCLUSAL'], estimatedPriceMinor: 0 },
           { notes: 'Review whitening after the crown settles' },
         ],
       },

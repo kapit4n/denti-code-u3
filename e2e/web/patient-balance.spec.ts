@@ -22,6 +22,7 @@ import {
   anaInvoices,
   clinicFixture,
   noInvoices,
+  noPrescriptions,
   noTreatmentPlans,
   settledBalance,
 } from './fixtures/api-responses.js';
@@ -43,6 +44,7 @@ function profileSections(balance: unknown) {
     [`${PROFILE_PATH}/treatment-plans`]: { body: noTreatmentPlans },
     [INVOICES_PATH]: { body: anaInvoices },
     [BALANCE_PATH]: { body: balance },
+    [`${PROFILE_PATH}/prescriptions`]: { body: noPrescriptions },
   };
 }
 
@@ -120,6 +122,7 @@ test.describe('Patient balance', () => {
       [PROFILE_PATH]: { body: anaProfile },
       [`${PROFILE_PATH}/odontogram`]: { body: anaOdontogram },
       [`${PROFILE_PATH}/treatment-plans`]: { body: noTreatmentPlans },
+      [`${PROFILE_PATH}/prescriptions`]: { body: noPrescriptions },
       [INVOICES_PATH]: { body: noInvoices },
       [BALANCE_PATH]: { status: 500, body: { message: 'boom' } },
     });

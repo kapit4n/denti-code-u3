@@ -952,9 +952,19 @@ export interface TreatmentSupplyRepository {
  * the one refusal it translates is the foreign key — a visit deleted between the read
  * and the insert answers the same `NOT_FOUND` the read would have, rather than a
  * `23503` reaching the API as a 500.
+ *
+ * `findForPatient` is the profile's clinical read. It resolves the patient first, so
+ * `undefined` keeps "this clinic holds no such patient" distinct from a real patient
+ * who has never been prescribed anything. The rows are newest first because the
+ * profile is answering "what was this patient given?" rather than replaying a single
+ * course in the order it was handed over.
  */
 export interface PrescriptionRepository {
   findForVisit(clinicId: ClinicId, visitId: VisitId): Promise<readonly Prescription[]>;
+  findForPatient(
+    clinicId: ClinicId,
+    patientId: PatientId,
+  ): Promise<readonly Prescription[] | undefined>;
   save(prescription: Prescription): Promise<void>;
 }
 
@@ -984,6 +994,18 @@ export interface PrescriptionRepository {
  */
 export interface ChargeRepository {
   findForVisit(clinicId: ClinicId, visitId: VisitId): Promise<readonly Charge[]>;
+  /**
+   * The charge that bills one planned line, if it has already been raised.
+   *
+   * Completion is retried after a failure, so billing must be able to answer
+   * "this line is already charged" without relying on the caller remembering. A
+   * hand-raised charge linked to the line counts too: the line is billed, and a
+   * second automatic charge would make the patient owe it twice.
+   */
+  findForTreatmentPlanItem(
+    clinicId: ClinicId,
+    treatmentPlanItemId: string,
+  ): Promise<Charge | undefined>;
   save(charge: Charge): Promise<void>;
   markInvoiced(
     clinicId: ClinicId,

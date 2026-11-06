@@ -60,6 +60,7 @@ import {
   payments,
   treatmentPlanItems,
   treatmentPlans,
+  treatments,
   visits,
 } from '@denti-code-u3/database/schema/sqlite';
 
@@ -371,12 +372,24 @@ export class SQLitePatientRepository implements PatientRepository {
           planId: treatmentPlans.id,
           planStatus: treatmentPlans.status,
           title: treatmentPlans.title,
+          treatmentCode: treatments.code,
+          treatmentName: treatments.name,
           tooth: treatmentPlanItems.tooth,
           quantity: treatmentPlanItems.quantity,
           estimatedPriceMinor: treatmentPlanItems.estimatedPriceMinor,
+          sessionCount: sql<number>`(
+            select count(*)
+            from visit_treatment_executions
+            inner join visits as treatment_session_visit
+              on treatment_session_visit.id = visit_treatment_executions.visit_id
+            where visit_treatment_executions.treatment_plan_item_id = treatment_plan_items.id
+              and treatment_session_visit.clinic_id = ${clinicId}
+              and treatment_session_visit.patient_id = ${patientId}
+          )`,
         })
         .from(treatmentPlanItems)
         .innerJoin(treatmentPlans, eq(treatmentPlans.id, treatmentPlanItems.treatmentPlanId))
+        .leftJoin(treatments, eq(treatments.id, treatmentPlanItems.treatmentId))
         .where(
           and(
             eq(treatmentPlans.clinicId, clinicId),
@@ -466,9 +479,12 @@ export class SQLitePatientRepository implements PatientRepository {
         planId: asTreatmentPlanId(item.planId),
         planStatus: item.planStatus,
         title: item.title,
+        treatmentName: item.treatmentName,
+        treatmentCode: item.treatmentCode,
         tooth: item.tooth,
         quantity: item.quantity,
         estimatedPriceMinor: item.estimatedPriceMinor,
+        sessionCount: item.sessionCount,
       })),
       financialBalance: {
         outstandingMinor: balance?.outstandingMinor ?? 0,

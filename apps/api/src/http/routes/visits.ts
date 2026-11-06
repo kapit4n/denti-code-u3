@@ -46,6 +46,7 @@ import type {
   Clock,
   DentistRepository,
   IdGenerator,
+  PatientRepository,
   PaymentRepository,
   PrescriptionRepository,
   TreatmentPlanRepository,
@@ -60,10 +61,12 @@ import {
   addVisitAttachment,
   addVisitCharge,
   addVisitPrescription,
+  completeTreatmentPlanItem,
   completeVisitRecord,
   finishVisitTreatment,
   getVisit,
   issueVisitInvoice,
+  issueVisitInvoiceIfAny,
   listClinicalNotes,
   listTreatmentRecords,
   listTreatmentSupplies,
@@ -89,6 +92,7 @@ import {
   createVisitAttachmentSchema,
   recordTreatmentSupplySchema,
   recordVisitTreatmentSchema,
+  completeVisitSchema,
   startVisitSchema,
   startWalkInVisitSchema,
   uuidSchema,
@@ -105,6 +109,7 @@ import {
   asPaymentId,
   asPrescriptionId,
   asTreatmentId,
+  asTreatmentPlanId,
   asVisitAttachmentId,
   asVisitId,
   asVisitTreatmentExecutionId,
@@ -191,15 +196,19 @@ export interface VisitsDependencies {
   readonly treatmentSupplies: TreatmentSupplyRepository;
   readonly treatments: TreatmentRepository;
 
+  /** The subject of a closure's selected plan lines, read before any plan write. */
+  readonly patients: Pick<PatientRepository, 'findProfile'>;
+
   /**
-   * The patient's plans, so a record can name the item it fulfils.
+   * The patient's plans: read for a record's provenance, written when a closure
+   * completes the lines the clinician selected.
    *
-   * A plain repository, read-only here: recording a treatment resolves the linked
-   * item on the patient's own plan before it inserts (the record validates the link),
-   * and it never writes the plan — linking is provenance, and completing a line is
-   * `completeTreatmentPlanItem`'s job, not a side effect of a record.
+   * Recording a treatment only reads here — linking is provenance, and completing a
+   * line is not a side effect of a record. The closure is the one visitor that does
+   * write a plan, through `completeTreatmentPlanItem`, because the dialog asks which
+   * lines the visit finished.
    */
-  readonly treatmentPlans: Pick<TreatmentPlanRepository, 'listForPatient'>;
+  readonly treatmentPlans: TreatmentPlanRepository;
 
   /**
    * The prescriptions written on a visit.
@@ -274,6 +283,7 @@ export async function registerVisitsRoutes(
     treatmentRecords,
     treatmentSupplies,
     treatments,
+    patients,
     treatmentPlans,
     prescriptions,
     charges,
@@ -421,9 +431,11 @@ export async function registerVisitsRoutes(
   /**
    * `POST /api/v1/visits/:visitId/complete` — the clinician finished with the patient.
    *
-   * 200 with the visit as it now stands, including the end time the clock produced. The
-   * body is empty in both directions: nothing about the visit is the caller's to say,
-   * and the end time is a fact the server is the only party that can know.
+   * 200 with the visit as it now stands, including the end time the clock produced.
+   * The optional body names the planned lines the closure dialog ticked: every one is
+   * completed in the visit's patient's plan, and its charge is raised with the invoice
+   * deferred so the whole visit is billed as one document. A body that names none is
+   * the old bodyless closure — still valid, and still bills whatever the visit did.
    *
    * **A second endpoint rather than a status body**, because completing and reopening
    * are not two values of one field — completing sets `endedAt` and reopening clears it
@@ -446,7 +458,52 @@ export async function registerVisitsRoutes(
         return sendInvalidVisitId(reply, request);
       }
 
+      const parsed = completeVisitSchema.safeParse(request.body ?? {});
+
+      if (!parsed.success) {
+        return reply.status(422).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'The visit closure could not be accepted',
+            details: { issues: parsed.error.issues },
+            requestId: request.id,
+          },
+        });
+      }
+
       try {
+        const visit = await getVisit(path.clinicId, path.visitId, { visits });
+
+        for (const selected of parsed.data.treatmentPlanItems) {
+          await completeTreatmentPlanItem(
+            path.clinicId,
+            visit.patientId,
+            asTreatmentPlanId(selected.planId),
+            selected.itemId,
+            {
+              patients,
+              treatmentPlans,
+              clock,
+              billing: {
+                unitOfWork,
+                newChargeId: () => asChargeId(ids.nextId()),
+                newInvoiceId: () => asInvoiceId(ids.nextId()),
+                visitId: path.visitId,
+                // One document for the visit, not one per ticked line.
+                deferInvoice: true,
+              },
+            },
+          );
+        }
+
+        // Fold every un-invoiced charge on the visit into one document before the
+        // status moves. A visit with nothing priced closes without an empty invoice.
+        await issueVisitInvoiceIfAny(path.clinicId, path.visitId, {
+          unitOfWork,
+          clock,
+          newInvoiceId: () => asInvoiceId(ids.nextId()),
+        });
+
         const completed = await completeVisitRecord(path.clinicId, path.visitId, {
           visits,
           clock,

@@ -22,6 +22,7 @@ import {
   anaProfile,
   anaStatement,
   clinicFixture,
+  noPrescriptions,
   noStatement,
   noTreatmentPlans,
 } from './fixtures/api-responses.js';
@@ -39,6 +40,7 @@ function profileSections(statement: unknown) {
     [PROFILE_PATH]: { body: anaProfile },
     [`${PROFILE_PATH}/odontogram`]: { body: anaOdontogram },
     [`${PROFILE_PATH}/treatment-plans`]: { body: noTreatmentPlans },
+    [`${PROFILE_PATH}/prescriptions`]: { body: noPrescriptions },
     [INVOICES_PATH]: { body: anaInvoices },
     [BALANCE_PATH]: { body: anaBalance },
     [STATEMENT_PATH]: { body: statement },

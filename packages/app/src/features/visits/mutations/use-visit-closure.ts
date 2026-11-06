@@ -8,10 +8,11 @@
  * Which buttons appear is decided at render time by asking the domain — this file
  * only knows the paths.
  *
- * **The two closures are two paths, not one endpoint with a field.** `complete` and
- * `reopen` are bodyless and neither may be asked for the other's move, so the path
- * is a lookup rather than a parameter a caller could typo into a 404: the only
- * values the type admits are the two the API implements.
+ * **The two closures are two paths, not one endpoint with a field.** `reopen` is
+ * bodyless, and `complete` carries only the planned lines the closure dialog ticked;
+ * neither may be asked for the other's move, so the path is a lookup rather than a
+ * parameter a caller could typo into a 404: the only values the type admits are the
+ * two the API implements.
  *
  * **Nothing here decides anything about the appointment.** Both writes leave the
  * booking exactly as it was (ADR 0022), which is also why the invalidation list has
@@ -32,9 +33,22 @@ const CLOSURE_PATH: Readonly<Record<VisitClosure, 'complete' | 'reopen'>> = {
   OPEN: 'reopen',
 };
 
+/** One planned line the closure selected, with the plan that owns it. */
+export interface VisitClosurePlanItem {
+  readonly planId: string;
+  readonly itemId: string;
+}
+
 export interface TransitionVisitVariables {
   readonly visitId: string;
   readonly to: VisitClosure;
+  /**
+   * The open planned lines the closure dialog selected.
+   *
+   * Only `complete` reads it. An empty list closes the visit without completing a
+   * line, which is the old bodyless closure the API still accepts.
+   */
+  readonly treatmentPlanItems?: readonly VisitClosurePlanItem[];
 }
 
 export function useVisitClosure() {
@@ -42,10 +56,20 @@ export function useVisitClosure() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ visitId, to }: TransitionVisitVariables) =>
-      // `undefined` body, not `{}`: both endpoints are bodyless, and a JSON body
-      // they never read is a place a client could believe a field was accepted.
-      client.post<Visit, undefined>(`/visits/${visitId}/${CLOSURE_PATH[to]}`, undefined),
+    mutationFn: ({ visitId, to, treatmentPlanItems }: TransitionVisitVariables) => {
+      const selected = to === 'COMPLETED' ? (treatmentPlanItems ?? []) : [];
+
+      return client.post<
+        Visit,
+        { readonly treatmentPlanItems: readonly VisitClosurePlanItem[] } | undefined
+      >(
+        `/visits/${visitId}/${CLOSURE_PATH[to]}`,
+        // `undefined` rather than `{}` when nothing was selected: the closure is
+        // bodyless then, and a JSON body the endpoint never reads is a place a
+        // client could believe a field was accepted.
+        selected.length > 0 ? { treatmentPlanItems: selected } : undefined,
+      );
+    },
     onSuccess: async (visit) => {
       await invalidateVisitQueries(queryClient, visit.patientId);
     },

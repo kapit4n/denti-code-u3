@@ -25,6 +25,15 @@ export const visits = {
 
   'visits.closure.COMPLETED': 'Completar visita',
   'visits.closure.OPEN': 'Reabrir visita',
+  'visits.closureDialog.title': 'Completar esta visita',
+  'visits.closureDialog.description':
+    'Selecciona los tratamientos planificados que se terminaron en esta visita. Se completan y facturan ahora; las líneas no seleccionadas quedan abiertas.',
+  'visits.closureDialog.selected': 'Líneas planificadas seleccionadas: {count}',
+  'visits.closureDialog.noneSelected':
+    'No hay líneas planificadas seleccionadas. Quedarán abiertas.',
+  'visits.closureDialog.confirm': 'Completar visita',
+  'visits.closureDialog.completing': 'Completando…',
+  'visits.closureDialog.cancel': 'Cancelar',
 
   'visits.workspace.loading': 'Cargando la visita…',
   'visits.workspace.notFound': 'Esta visita no existe en la clínica actual.',

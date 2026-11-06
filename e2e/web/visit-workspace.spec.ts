@@ -69,6 +69,7 @@ import {
   recordedVisitTreatmentSupply,
   recordedSupplyResult,
   inventoryItems,
+  noPrescriptions,
   treatmentsCatalogue,
   visitNote,
   visitPayment,
@@ -251,17 +252,37 @@ test.describe('Visit workspace', () => {
 
     await page.getByTestId('complete-visit').click();
 
+    // The open planned line is the work this visit can still finish, so closing
+    // asks which lines it did. A completed line is not offered.
+    await expect(page.getByTestId('visit-closure-dialog')).toBeVisible();
+    await expect(
+      page.getByTestId('visit-closure-item-11111111-bbbb-4a11-9ccc-000000000012'),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId('visit-closure-item-11111111-bbbb-4a11-9ccc-000000000011'),
+    ).toHaveCount(0);
+
+    await page.getByTestId('visit-closure-item-11111111-bbbb-4a11-9ccc-000000000012').click();
+    await page.getByTestId('visit-closure-confirm').click();
+
     await expect(page.getByTestId('visit-status')).toHaveText('Completed');
     await expect(page.getByTestId('reopen-visit')).toBeVisible();
     await expect(page.getByTestId('complete-visit')).toHaveCount(0);
 
-    // Bodyless, both ways: the endpoint reads nothing, and a JSON body it never
-    // parses is a place a client could believe a field was accepted.
     const post = api.recorded.find(
       (entry) => entry.method === 'POST' && entry.url.includes(`/visits/${VISIT_ID}/complete`),
     );
     expect(post).toBeTruthy();
-    expect(post?.body).toBeUndefined();
+    // The ticked line travels with the closure; the patient and the bill are the
+    // server's to resolve from the visit.
+    expect(post?.body).toEqual({
+      treatmentPlanItems: [
+        {
+          planId: '11111111-bbbb-4a11-9ccc-000000000001',
+          itemId: '11111111-bbbb-4a11-9ccc-000000000012',
+        },
+      ],
+    });
 
     // The chip did not change because a mutation handed the component a row: the
     // visit was read again, which is what the invalidation is for.
@@ -290,6 +311,7 @@ test.describe('Visit workspace', () => {
 
     await page.goto(`/visits/${VISIT_ID}`);
     await page.getByTestId('complete-visit').click();
+    await page.getByTestId('visit-closure-confirm').click();
 
     // The wire code collapses every rule refusal into one, so the message is the
     // only part that says why — and the record underneath still says Open.
@@ -320,6 +342,7 @@ test.describe('Visit workspace', () => {
       ...visitWorkspaceFixtures(),
       [`/api/v1/patients/${ANA_ID}`]: { body: anaProfile },
       [`/api/v1/patients/${ANA_ID}/visits`]: { body: anaVisitHistory },
+      [`/api/v1/patients/${ANA_ID}/prescriptions`]: { body: noPrescriptions },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -698,8 +721,8 @@ test.describe('Visit workspace', () => {
       treatmentPlanItemId: '11111111-bbbb-4a11-9ccc-000000000012',
     });
 
-    // The plan is read once when the section opens, then again because this record
-    // is now one of the line's sessions.
+    // The header read the plans for the closure question, the section reused that
+    // fresh answer, and this record's session refetched them.
     await expect
       .poll(
         () =>
@@ -983,8 +1006,9 @@ test.describe('Visit workspace', () => {
     const row = page.getByTestId('charge').filter({ hasText: 'Scaling and prophylaxis' });
     await expect(row).toBeVisible();
 
-    // Linking is provenance, so the plan's own read is asked for once — when the
-    // section opened — and never again: nothing about the plan could have changed.
+    // Linking is provenance, so the plan's own read is asked for once — the header
+    // reads it for the closure question and the charges picker reuses that fresh
+    // answer — and never again: nothing about the plan could have changed.
     const planReads = api.recorded.filter(
       (entry) =>
         entry.method === 'GET' &&

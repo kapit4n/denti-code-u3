@@ -20,6 +20,7 @@ import {
   anaTreatmentPlans,
   clinicFixture,
   noInvoices,
+  noPrescriptions,
   openVisit,
   PATIENT_LIST_RESPONSE,
   paymentsFixtures,
@@ -156,6 +157,7 @@ test.describe('Spanish', () => {
       [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
       [`/api/v1/patients/${ANA_ID}/invoices`]: { body: noInvoices },
       [`/api/v1/patients/${ANA_ID}/balance`]: { body: anaBalance },
+      [`/api/v1/patients/${ANA_ID}/prescriptions`]: { body: noPrescriptions },
     });
 
     await page.goto(`/patients/${ANA_ID}`);

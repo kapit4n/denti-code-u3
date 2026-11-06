@@ -49,6 +49,7 @@ import { DrizzleClinicRepository } from '../src/infrastructure/persistence/repos
 import { DrizzleChairRepository } from '../src/infrastructure/persistence/repositories/chair-repository.js';
 import { DrizzleDentistRepository } from '../src/infrastructure/persistence/repositories/dentist-repository.js';
 import { DrizzlePrescriptionRepository } from '../src/infrastructure/persistence/repositories/prescription-repository.js';
+import { DrizzlePatientRepository } from '../src/infrastructure/persistence/repositories/patient-repository.js';
 import { DrizzlePaymentRepository } from '../src/infrastructure/persistence/repositories/payment-repository.js';
 import { DrizzleTreatmentPlanRepository } from '../src/infrastructure/persistence/repositories/treatment-plan-repository.js';
 import { DrizzleTreatmentRecordRepository } from '../src/infrastructure/persistence/repositories/treatment-record-repository.js';
@@ -504,9 +505,10 @@ describeIntegration('POST /api/v1/visits (PostgreSQL)', () => {
       treatmentRecords: new DrizzleTreatmentRecordRepository(db),
       treatmentSupplies: new DrizzleTreatmentSupplyRepository(db),
       treatments: new DrizzleTreatmentRepository(db),
-      // The patient's plans, read-only here: a record may name the plan item it
-      // fulfils, and the use case resolves it on the patient's own plan before the
-      // insert. Linking is provenance — the record never writes the plan.
+      // The patient of a closure's selected plan lines.
+      patients: new DrizzlePatientRepository(db),
+      // The patient's plans: a record resolves the line it fulfils, and a closure
+      // completes the lines the clinician selected.
       treatmentPlans: new DrizzleTreatmentPlanRepository(db),
       // The prescriptions written on a visit, exercised by the prescription tests
       // below; a plain repository for the same read-then-write reason (ADR 0014).

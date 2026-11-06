@@ -8,7 +8,8 @@
  * what the notes mutation argues, for the same reason. The key invalidated is exactly
  * the one the read used, and the server's own answer is what becomes the row in the
  * list: a course shown before the server accepted it is a clinical claim the record
- * does not contain.
+ * does not contain. The patient-level prescription read is invalidated too, so the
+ * profile card cannot keep showing yesterday's list after a course was added.
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -65,7 +66,10 @@ export function useCreatePrescription() {
         instructions: instructions?.trim() || undefined,
       }),
     onSuccess: async (_prescription, { visitId }) => {
-      await queryClient.invalidateQueries({ queryKey: ['visits', 'prescriptions', visitId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['visits', 'prescriptions', visitId] }),
+        queryClient.invalidateQueries({ queryKey: ['patients', 'prescriptions'] }),
+      ]);
     },
   });
 }

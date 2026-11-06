@@ -26,6 +26,7 @@ import type {
   IdGenerator,
   OdontogramEntryRepository,
   PatientRepository,
+  PrescriptionRepository,
   TreatmentPlanRepository,
 } from '@denti-code-u3/domain';
 import { recordOdontogramEntry, registerPatient, updatePatient } from '@denti-code-u3/domain';
@@ -63,6 +64,11 @@ export interface PatientsDependencies {
    * table has its own `clinic_id`, so the read scopes in the statement.
    */
   readonly treatmentPlans: TreatmentPlanRepository;
+  /**
+   * The patient's prescriptions, read newest first. The repository resolves the
+   * patient first so a foreign patient answers 404 rather than an empty list.
+   */
+  readonly prescriptions: PrescriptionRepository;
   readonly ids: IdGenerator;
   readonly clock: Clock;
 }
@@ -86,7 +92,7 @@ function resolvePage(raw: unknown): number {
 
 export async function registerPatientsRoutes(
   app: FastifyInstance,
-  { patients, odontogramEntries, treatmentPlans, ids, clock }: PatientsDependencies,
+  { patients, odontogramEntries, treatmentPlans, prescriptions, ids, clock }: PatientsDependencies,
 ): Promise<void> {
   /**
    * Register a patient.
@@ -366,6 +372,42 @@ export async function registerPatientsRoutes(
         return { items: plans };
       } catch (error) {
         return sendProblem(reply, request, error, 'Failed to read the treatment plans');
+      }
+    },
+  );
+
+  /**
+   * One patient's prescriptions, newest first — what the patient was sent home
+   * with, read from the profile rather than one visit at a time.
+   *
+   * `undefined` from the repository means the clinic holds no such patient and
+   * answers 404; `{ prescriptions: [] }` is a real patient who has never been
+   * prescribed anything. Prescriptions remain visit-owned rows; this read only
+   * changes the subject from the visit to the patient.
+   */
+  app.get(
+    '/api/v1/patients/:patientId/prescriptions',
+    { config: { permission: 'visits:read' } },
+    async (request, reply) => {
+      const clinicId = request.clinicId as ClinicId;
+      const { patientId } = request.params as { patientId: string };
+
+      try {
+        const list = await prescriptions.findForPatient(clinicId, asPatientId(patientId));
+
+        if (!list) {
+          return reply.status(404).send({
+            error: {
+              code: 'NOT_FOUND',
+              message: 'No patient with that id exists in this clinic',
+              requestId: request.id,
+            },
+          });
+        }
+
+        return { prescriptions: list };
+      } catch (error) {
+        return sendProblem(reply, request, error, 'Failed to read the prescriptions');
       }
     },
   );

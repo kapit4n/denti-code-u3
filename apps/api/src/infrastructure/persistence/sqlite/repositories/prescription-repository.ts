@@ -16,11 +16,12 @@ import {
   asVisitId,
   type ClinicId,
   type IsoDateTime,
+  type PatientId,
   type VisitId,
 } from '@denti-code-u3/types';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 
-import { prescriptions, visits } from '@denti-code-u3/database/schema/sqlite';
+import { patients, prescriptions, visits } from '@denti-code-u3/database/schema/sqlite';
 
 import type { SqliteDatabase } from '../connection.js';
 import { isForeignKeyViolation } from '../sqlite-error.js';
@@ -49,6 +50,37 @@ export class SQLitePrescriptionRepository implements PrescriptionRepository {
       .innerJoin(visits, eq(visits.id, prescriptions.visitId))
       .where(and(eq(prescriptions.visitId, visitId), eq(visits.clinicId, clinicId)))
       .orderBy(asc(prescriptions.issuedAt), asc(prescriptions.id));
+
+    return rows.map(toEntity);
+  }
+
+  async findForPatient(
+    clinicId: ClinicId,
+    patientId: PatientId,
+  ): Promise<readonly Prescription[] | undefined> {
+    const patient = this.db
+      .select({ id: patients.id })
+      .from(patients)
+      .where(
+        and(
+          eq(patients.clinicId, clinicId),
+          eq(patients.id, patientId),
+          isNull(patients.anonymizedAt),
+        ),
+      )
+      .get();
+
+    if (!patient) {
+      return undefined;
+    }
+
+    const rows = this.db
+      .select(PRESCRIPTION_COLUMNS)
+      .from(prescriptions)
+      .innerJoin(visits, eq(visits.id, prescriptions.visitId))
+      .where(and(eq(prescriptions.patientId, patientId), eq(visits.clinicId, clinicId)))
+      .orderBy(desc(prescriptions.issuedAt), desc(prescriptions.id))
+      .all();
 
     return rows.map(toEntity);
   }

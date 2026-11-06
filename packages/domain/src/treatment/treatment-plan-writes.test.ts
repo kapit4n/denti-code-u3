@@ -22,21 +22,27 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  asChargeId,
   asClinicId,
   asDentistId,
+  asInvoiceId,
   asPatientId,
   asTreatmentId,
   asTreatmentPlanId,
+  asVisitId,
   type IsoDateTime,
   type TreatmentPlanId,
 } from '@denti-code-u3/types';
 import type { PatientProfile } from '../patient/index.js';
+import type { Charge, Invoice } from '../billing/invoice.js';
 import type {
   DentistRepository,
   DentistSummary,
   PatientRepository,
+  Repositories,
   TreatmentCatalogueItem,
   TreatmentPlanRepository,
+  TreatmentPlanSummary,
   TreatmentPlanWriteModel,
   TreatmentRepository,
 } from '../ports/index.js';
@@ -436,5 +442,231 @@ describe('completeTreatmentPlanItem', () => {
       completeTreatmentPlanItem(CLINIC, OTHER_PATIENT, PLAN, 'item-a', dependencies),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(recorded.saved).toEqual([]);
+  });
+});
+
+const CHARGE = asChargeId('88888888-8888-4888-8888-888888888888');
+const INVOICE = asInvoiceId('99999999-9999-4999-8999-999999999999');
+const VISIT = asVisitId('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+
+interface BillingRecorded {
+  saved: TreatmentPlanWriteModel[];
+  charges: Charge[];
+  invoices: Invoice[];
+  markedInvoiced: { chargeIds: readonly string[]; invoiceId: string }[];
+}
+
+/**
+ * The billing side of completion, with only the repositories that path touches.
+ *
+ * The transaction is handed this partial set at runtime; the cast is the test's
+ * statement that completion reaches no further than these five ports. It is
+ * deliberately not a second fake of every repository `Repositories` declares.
+ */
+function billingHarness(
+  options: {
+    price?: number;
+    alreadyCompleted?: boolean;
+    existingCharge?: Charge;
+    deferInvoice?: boolean;
+  } = {},
+) {
+  const recorded: BillingRecorded = {
+    saved: [],
+    charges: [],
+    invoices: [],
+    markedInvoiced: [],
+  };
+
+  const price = options.price ?? 45_000;
+  const completedAt = options.alreadyCompleted ? LATER : null;
+  const item = {
+    id: 'item-a',
+    treatmentId: TREATMENT,
+    treatmentCode: 'CROWN',
+    treatmentName: 'Porcelain crown',
+    tooth: '16',
+    surfaces: ['MESIAL'],
+    quantity: 1,
+    estimatedPriceMinor: price,
+    isCompleted: completedAt !== null,
+    completedAt,
+    notes: null,
+    sessions: [],
+  };
+  const summary: TreatmentPlanSummary = {
+    id: PLAN,
+    dentistId: null,
+    status: 'DRAFT',
+    title: 'Restore the upper right',
+    notes: null,
+    presentedAt: null,
+    acceptedAt: null,
+    updatedAt: NOW,
+    items: [item],
+    progress: {
+      total: 1,
+      completed: completedAt ? 1 : 0,
+      pending: completedAt ? 0 : 1,
+      inProgress: completedAt ? 1 : 0,
+      percentComplete: 0,
+    },
+  };
+  const stored = aStoredPlan({
+    items: [
+      {
+        id: item.id,
+        treatmentId: TREATMENT,
+        tooth: item.tooth,
+        surfaces: item.surfaces,
+        quantity: 1,
+        estimatedPriceMinor: price,
+        isCompleted: item.isCompleted,
+        completedAt,
+        notes: null,
+      },
+    ],
+  });
+
+  const repositories = {
+    patients: {
+      findProfile: async (clinicId: string, patientId: string) =>
+        clinicId === CLINIC && patientId === PATIENT ? aPatient() : undefined,
+    },
+    treatmentPlans: {
+      getForPatient: async (clinicId: string, patientId: string, id: string) =>
+        clinicId === CLINIC && patientId === PATIENT && id === PLAN ? stored : undefined,
+      save: async (plan: TreatmentPlanWriteModel) => {
+        recorded.saved.push(plan);
+      },
+      listForPatient: async () => [summary],
+    },
+    charges: {
+      findForVisit: async () => [],
+      findForTreatmentPlanItem: async () => options.existingCharge,
+      save: async (charge: Charge) => {
+        recorded.charges.push(charge);
+      },
+      markInvoiced: async (_clinicId: string, chargeIds: readonly string[], invoiceId: string) => {
+        recorded.markedInvoiced.push({ chargeIds, invoiceId });
+      },
+    },
+    clinics: {
+      findById: async (clinicId: string) =>
+        clinicId === CLINIC ? { id: CLINIC, currency: 'PEN' } : undefined,
+    },
+    invoices: {
+      issue: async (invoice: Invoice) => {
+        recorded.invoices.push(invoice);
+        return 'F001-00001';
+      },
+    },
+  };
+
+  return {
+    recorded,
+    dependencies: {
+      patients: repositories.patients,
+      treatmentPlans: repositories.treatmentPlans,
+      clock: { now: () => NOW },
+      billing: {
+        unitOfWork: {
+          transaction: async <T>(work: (value: Repositories) => Promise<T>) =>
+            work(repositories as unknown as Repositories),
+        },
+        newChargeId: () => CHARGE,
+        newInvoiceId: () => INVOICE,
+        visitId: VISIT,
+        deferInvoice: options.deferInvoice,
+      },
+    },
+  };
+}
+
+describe('completeTreatmentPlanItem billing', () => {
+  it('raises one linked charge and issues its invoice', async () => {
+    const { recorded, dependencies } = billingHarness();
+
+    await completeTreatmentPlanItem(CLINIC, PATIENT, PLAN, 'item-a', dependencies);
+
+    expect(recorded.saved[0]?.items[0]).toMatchObject({
+      isCompleted: true,
+      completedAt: NOW,
+    });
+    expect(recorded.charges).toHaveLength(1);
+    expect(recorded.charges[0]).toMatchObject({
+      id: CHARGE,
+      patientId: PATIENT,
+      visitId: VISIT,
+      treatmentPlanItemId: 'item-a',
+      description: 'Porcelain crown · 16',
+      quantity: 1,
+      unitPriceMinor: 45_000,
+      invoiceId: null,
+    });
+    expect(recorded.invoices).toHaveLength(1);
+    expect(recorded.invoices[0]).toMatchObject({
+      id: INVOICE,
+      status: 'ISSUED',
+      charges: [recorded.charges[0]],
+    });
+    expect(recorded.markedInvoiced).toEqual([{ chargeIds: [CHARGE], invoiceId: INVOICE }]);
+  });
+
+  it('bills a line that was already completed, keeping its first stamp', async () => {
+    const { recorded, dependencies } = billingHarness({ alreadyCompleted: true });
+
+    await completeTreatmentPlanItem(CLINIC, PATIENT, PLAN, 'item-a', dependencies);
+
+    expect(recorded.saved).toEqual([]);
+    expect(recorded.charges).toHaveLength(1);
+    expect(recorded.charges[0]?.unitPriceMinor).toBe(45_000);
+  });
+
+  it('does not invent an invoice for a zero estimate', async () => {
+    const { recorded, dependencies } = billingHarness({ price: 0 });
+
+    await completeTreatmentPlanItem(CLINIC, PATIENT, PLAN, 'item-a', dependencies);
+
+    expect(recorded.saved[0]?.items[0]?.isCompleted).toBe(true);
+    expect(recorded.charges).toEqual([]);
+    expect(recorded.invoices).toEqual([]);
+  });
+
+  it('reuses an already raised charge instead of making the patient owe it twice', async () => {
+    const existing: Charge = {
+      id: CHARGE,
+      clinicId: CLINIC,
+      patientId: PATIENT,
+      visitId: null,
+      invoiceId: INVOICE,
+      invoicedAt: LATER,
+      createdAt: NOW,
+      treatmentId: TREATMENT,
+      treatmentPlanItemId: 'item-a',
+      description: 'Porcelain crown · 16',
+      quantity: 1,
+      unitPriceMinor: 45_000,
+      discountMinor: 0,
+      taxRatePercent: 0,
+      currency: 'PEN',
+    };
+    const { recorded, dependencies } = billingHarness({ existingCharge: existing });
+
+    await completeTreatmentPlanItem(CLINIC, PATIENT, PLAN, 'item-a', dependencies);
+
+    expect(recorded.charges).toEqual([]);
+    expect(recorded.invoices).toEqual([]);
+    expect(recorded.markedInvoiced).toEqual([]);
+  });
+
+  it('leaves the invoice to the visit closure when deferral is asked for', async () => {
+    const { recorded, dependencies } = billingHarness({ deferInvoice: true });
+
+    await completeTreatmentPlanItem(CLINIC, PATIENT, PLAN, 'item-a', dependencies);
+
+    expect(recorded.charges).toHaveLength(1);
+    expect(recorded.charges[0]?.invoiceId).toBeNull();
+    expect(recorded.invoices).toEqual([]);
   });
 });

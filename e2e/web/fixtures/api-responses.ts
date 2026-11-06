@@ -135,13 +135,16 @@ export const anaProfile = {
   ],
   outstandingTreatments: [
     {
-      id: '11111111-9999-4aaa-8bbb-000000000001',
-      planId: '11111111-8888-4999-8aaa-000000000001',
+      id: '11111111-bbbb-4a11-9ccc-000000000012',
+      planId: '11111111-bbbb-4a11-9ccc-000000000001',
       planStatus: 'ACCEPTED',
       title: 'Restorative plan',
-      tooth: '26',
+      treatmentName: 'Scaling and prophylaxis',
+      treatmentCode: null,
+      tooth: '36',
       quantity: 1,
-      estimatedPriceMinor: 15000,
+      estimatedPriceMinor: 0,
+      sessionCount: 0,
     },
   ],
   financialBalance: {
@@ -920,6 +923,46 @@ export const anaTreatmentPlans = {
 
 /** A patient nothing has been offered yet — the section's empty sentence. */
 export const noTreatmentPlans = { items: [] } as const;
+
+/**
+ * Ana's courses, newest first — the profile's patient-shaped prescription read.
+ *
+ * The two rows have different issue days so the card can be checked for the
+ * server's order and for the clinic's clock (13:00Z is 08:00 in Lima).
+ */
+export const anaPrescriptions = {
+  prescriptions: [
+    {
+      id: '11111111-eeee-4fff-8aaa-000000000002',
+      visitId: VISIT_ID,
+      patientId: ANA_ID,
+      dentistId: null,
+      issuedAt: '2026-10-06T13:30:00.000Z',
+      medication: 'Amoxicillin',
+      dosage: '500 mg',
+      route: 'ORAL',
+      frequency: 'Every 8 hours',
+      durationDays: 7,
+      instructions: 'Finish the course.',
+    },
+    {
+      id: '11111111-eeee-4fff-8aaa-000000000001',
+      visitId: COMPLETED_VISIT_ID,
+      patientId: ANA_ID,
+      dentistId: null,
+      issuedAt: '2026-10-05T13:00:00.000Z',
+      medication: 'Ibuprofen',
+      dosage: '400 mg',
+      route: 'ORAL',
+      frequency: 'Every 8 hours as needed',
+      durationDays: 5,
+      instructions: null,
+    },
+  ],
+} as const;
+
+/** A patient with no prescriptions yet — the card's empty sentence. */
+export const noPrescriptions = { prescriptions: [] } as const;
 
 /**
  * A patient's invoices, newest first — the ledger's read the profile card draws.

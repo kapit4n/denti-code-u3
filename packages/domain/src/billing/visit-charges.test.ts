@@ -194,6 +194,7 @@ function harness(
       recorded.reads.push({ clinicId, visitId });
       return options.stored ?? [];
     },
+    findForTreatmentPlanItem: async () => undefined,
     save: async (charge) => {
       recorded.saved.push(charge);
     },

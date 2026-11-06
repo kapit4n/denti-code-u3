@@ -22,6 +22,7 @@ import type {
   PatientOdontogram,
   PatientProfile,
   PatientStatement,
+  Prescription,
   TreatmentPlanSummary,
 } from '@denti-code-u3/domain';
 
@@ -105,6 +106,28 @@ export function usePatientTreatmentPlans(patientId: string, enabled = true) {
     queryFn: () =>
       client.get<PatientTreatmentPlansResponse>(`/patients/${patientId}/treatment-plans`),
     enabled: enabled && patientId.length > 0,
+  });
+}
+
+export interface PatientPrescriptionsResponse {
+  readonly prescriptions: readonly Prescription[];
+}
+
+/**
+ * Every prescription this patient has been given, newest first.
+ *
+ * The profile is the subject, but the rows stay visit-owned: each carries its
+ * `visitId`, so the card can link back to the visit that issued it. A patient
+ * this clinic does not hold answers 404 rather than `[]`, for the same reason
+ * the plans do.
+ */
+export function usePatientPrescriptions(patientId: string) {
+  const client = useApiClient();
+
+  return useQuery({
+    queryKey: ['patients', 'prescriptions', patientId],
+    queryFn: () => client.get<PatientPrescriptionsResponse>(`/patients/${patientId}/prescriptions`),
+    enabled: patientId.length > 0,
   });
 }
 

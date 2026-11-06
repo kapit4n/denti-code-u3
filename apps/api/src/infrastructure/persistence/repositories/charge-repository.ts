@@ -39,7 +39,7 @@ import {
   type IsoDateTime,
   type VisitId,
 } from '@denti-code-u3/types';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 
 import { charges } from '@denti-code-u3/database/schema';
 
@@ -81,6 +81,22 @@ export class DrizzleChargeRepository implements ChargeRepository {
       .orderBy(asc(charges.createdAt), asc(charges.id));
 
     return rows.map(toEntity);
+  }
+
+  async findForTreatmentPlanItem(
+    clinicId: ClinicId,
+    treatmentPlanItemId: string,
+  ): Promise<Charge | undefined> {
+    const [row] = await this.db
+      .select(CHARGE_COLUMNS)
+      .from(charges)
+      .where(
+        and(eq(charges.clinicId, clinicId), eq(charges.treatmentPlanItemId, treatmentPlanItemId)),
+      )
+      .orderBy(desc(charges.createdAt), desc(charges.id))
+      .limit(1);
+
+    return row ? toEntity(row) : undefined;
   }
 
   async save(charge: Charge): Promise<void> {

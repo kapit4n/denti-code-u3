@@ -557,7 +557,10 @@ describe('API on SQLite', () => {
             treatmentId,
             tooth: '36',
             surfaces: ['OCCLUSAL', 'MESIAL'],
-            estimatedPriceMinor: 45_000,
+            // This test is the plan write, not billing: a zero estimate keeps the
+            // automatically raised invoice out of the numbering the ledger tests
+            // below assert. The billing test at the end of the suite covers the price.
+            estimatedPriceMinor: 0,
           },
         ],
       },
@@ -666,6 +669,15 @@ describe('API on SQLite', () => {
     const plan = created.json().plan;
     const itemId = plan.items[0].id;
 
+    // The profile only carries plans the clinic has actually offered, so move this
+    // draft to proposed before reading it from the treatment overview.
+    const presented = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans/${plan.id}`,
+      payload: { status: 'PROPOSED' },
+    });
+    expect(presented.statusCode).toBe(204);
+
     const recorded = await app.inject({
       method: 'POST',
       url: `/api/v1/visits/${visitId}/treatments`,
@@ -703,6 +715,21 @@ describe('API on SQLite', () => {
       id: recorded.json().id,
       visitId,
       endedAt: null,
+    });
+
+    // The profile's treatment overview carries the same fact as a count, so the
+    // card can say "in progress" without fetching the whole plan.
+    const profile = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}`,
+    });
+    const overviewItem = profile
+      .json()
+      .outstandingTreatments.find((entry: { id: string }) => entry.id === itemId);
+    expect(overviewItem).toMatchObject({
+      treatmentName: 'Composite restoration',
+      treatmentCode: 'COMPO',
+      sessionCount: 1,
     });
 
     // An item that is not on the patient's plan is refused, folded to 422 by the wire,
@@ -751,6 +778,23 @@ describe('API on SQLite', () => {
     });
     expect(ours.statusCode).toBe(200);
     expect(ours.json().prescriptions).toHaveLength(1);
+
+    // The patient-shaped read asks the same rows a different subject question: the
+    // profile sees the course without opening each visit. A patient this clinic does
+    // not hold is 404, not an empty list.
+    const forPatient = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/prescriptions`,
+    });
+    expect(forPatient.statusCode).toBe(200);
+    expect(forPatient.json().prescriptions).toEqual(ours.json().prescriptions);
+
+    const foreignPatient = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${foreignPatientId}/prescriptions`,
+    });
+    expect(foreignPatient.statusCode).toBe(404);
+    expect(foreignPatient.json().error.code).toBe('NOT_FOUND');
 
     // `prescriptions` has no clinic column, so the read scopes by joining the visit —
     // the same story the notes and the records tell, and the same 404 for another
@@ -1826,6 +1870,161 @@ describe('API on SQLite', () => {
     expect(invalidPath.json().error.details.issues[0]).toMatchObject({
       path: ['invoiceId'],
       code: 'invalid_uuid',
+    });
+  });
+
+  it('bills a completed planned line once, so the patient owes it immediately', async () => {
+    const before = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/balance`,
+    });
+
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans`,
+      payload: {
+        title: 'Automatic billing plan',
+        items: [
+          {
+            treatmentId,
+            tooth: '46',
+            estimatedPriceMinor: 35_000,
+          },
+        ],
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const plan = created.json().plan as {
+      id: string;
+      items: { id: string }[];
+    };
+    const itemId = plan.items[0]?.id;
+
+    // Completing the line is the clinical act and the billing act: the same call
+    // raises its charge and issues the document the patient owes.
+    const completed = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans/${plan.id}/items/${itemId}/complete`,
+    });
+    expect(completed.statusCode).toBe(204);
+
+    const invoices = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/invoices`,
+    });
+    const invoice = invoices.json().items[0] as {
+      id: string;
+      status: string;
+      totalMinor: number;
+      chargeCount: number;
+      balanceMinor: number;
+    };
+    expect(invoice).toMatchObject({
+      status: 'ISSUED',
+      totalMinor: 35_000,
+      chargeCount: 1,
+      balanceMinor: 35_000,
+    });
+
+    const detail = await app.inject({ method: 'GET', url: `/api/v1/invoices/${invoice.id}` });
+    expect(detail.json().charges[0]).toMatchObject({
+      treatmentPlanItemId: itemId,
+      unitPriceMinor: 35_000,
+      quantity: 1,
+    });
+
+    const after = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/balance`,
+    });
+    expect(after.json()).toMatchObject({
+      billedMinor: before.json().billedMinor + 35_000,
+      outstandingMinor: before.json().outstandingMinor + 35_000,
+      balanceMinor: before.json().balanceMinor + 35_000,
+    });
+
+    // A second completion keeps the first stamp and the one charge: a patient must
+    // not owe an automatically billed line twice.
+    await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans/${plan.id}/items/${itemId}/complete`,
+    });
+    const again = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/invoices`,
+    });
+    expect(again.json().items).toHaveLength(invoices.json().items.length);
+  });
+
+  it('closes a visit with the planned lines selected, billing them in one document', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans`,
+      payload: {
+        title: 'Closure selections',
+        items: [
+          { treatmentId, tooth: '24', estimatedPriceMinor: 10_000 },
+          { treatmentId, tooth: '25', estimatedPriceMinor: 7_000 },
+        ],
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const plan = created.json().plan as { id: string; items: { id: string }[] };
+    const selectedItemId = plan.items[0]?.id;
+    const leftOpenItemId = plan.items[1]?.id;
+
+    const completed = await app.inject({
+      method: 'POST',
+      url: `/api/v1/visits/${visitId}/complete`,
+      payload: { treatmentPlanItems: [{ planId: plan.id, itemId: selectedItemId }] },
+    });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json()).toMatchObject({ status: 'COMPLETED' });
+
+    const plans = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/treatment-plans`,
+    });
+    const stored = plans.json().items.find((entry: { id: string }) => entry.id === plan.id) as {
+      items: { id: string; isCompleted: boolean }[];
+    };
+    expect(stored.items.find((entry) => entry.id === selectedItemId)?.isCompleted).toBe(true);
+    expect(stored.items.find((entry) => entry.id === leftOpenItemId)?.isCompleted).toBe(false);
+
+    // The selected line's charge is on this visit and invoiced by the closure;
+    // the untouched line has no charge at all.
+    const charges = await app.inject({
+      method: 'GET',
+      url: `/api/v1/visits/${visitId}/charges`,
+    });
+    const billed = charges
+      .json()
+      .charges.find(
+        (entry: { treatmentPlanItemId: string | null }) =>
+          entry.treatmentPlanItemId === selectedItemId,
+      );
+    expect(billed).toMatchObject({
+      unitPriceMinor: 10_000,
+      visitId,
+      invoiceId: expect.any(String),
+    });
+    expect(
+      charges
+        .json()
+        .charges.some(
+          (entry: { treatmentPlanItemId: string | null }) =>
+            entry.treatmentPlanItemId === leftOpenItemId,
+        ),
+    ).toBe(false);
+
+    const invoices = await app.inject({
+      method: 'GET',
+      url: `/api/v1/patients/${apiPatientId}/invoices`,
+    });
+    expect(invoices.json().items[0]).toMatchObject({
+      status: 'ISSUED',
+      totalMinor: 10_000,
+      chargeCount: 1,
     });
   });
 });

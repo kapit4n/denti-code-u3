@@ -214,6 +214,7 @@ function harness(
       recorded.visitsRead.push({ clinicId, visitId });
       return options.storedCharges ?? [];
     },
+    findForTreatmentPlanItem: async () => undefined,
     save: async () => {},
     markInvoiced: async (clinicId, chargeIds, invoiceId, invoicedAt) => {
       recorded.markedInvoiced.push({ clinicId, chargeIds, invoiceId, invoicedAt });

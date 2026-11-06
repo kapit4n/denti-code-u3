@@ -165,6 +165,7 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     patients: connection.repositories.patients,
     odontogramEntries: connection.repositories.odontogramEntries,
     treatmentPlans: connection.repositories.treatmentPlans,
+    prescriptions: connection.repositories.prescriptions,
     ids: uuidGenerator,
     clock: systemClock,
   });
@@ -221,6 +222,9 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     dentists,
     treatments,
     treatmentPlans: connection.repositories.treatmentPlans,
+    // A completion raises the line's charge and issues its invoice with the status
+    // flip; the three rows are one fact about the patient's treatment and bill.
+    unitOfWork: connection.unitOfWork,
     ids: uuidGenerator,
     clock: systemClock,
   });
@@ -248,10 +252,11 @@ export async function buildServer(env: EnvSource = process.env): Promise<DentiAp
     treatmentRecords,
     treatmentSupplies,
     treatments,
-    // The patient's plans, read-only here: a record may name the planned item it
-    // fulfils, and the write resolves that item on the patient's own plan before it
-    // inserts. Linking is provenance — it does not complete the item, so this door
-    // never reaches the plan's write side.
+    // A closure may complete the planned lines the dialog selected, so it reads the
+    // patient and writes the plan through `completeTreatmentPlanItem` in one unit.
+    patients: connection.repositories.patients,
+    // The patient's plans: a record resolves the line it fulfils, and a closure
+    // completes the lines the clinician selected.
     treatmentPlans,
     // What the patient was sent home with — the same read-then-write shape as the
     // notes, and a plain repository for the same reason (ADR 0014).

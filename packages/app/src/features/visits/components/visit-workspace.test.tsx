@@ -735,6 +735,63 @@ describe('VisitWorkspace', () => {
     expect(profileCalls.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('asks which open planned lines the visit finished, and sends only the ticked ones', async () => {
+    const { fetchImplementation } = renderWorkspace({
+      visitAfterClosure: COMPLETED_VISIT,
+      patientPlans: [
+        {
+          id: 'plan-1',
+          title: 'Full mouth rehab',
+          status: 'ACCEPTED',
+          items: [
+            {
+              id: 'item-open',
+              treatmentId: 'treatment-1',
+              treatmentName: 'Composite filling',
+              tooth: '16',
+              isCompleted: false,
+              sessions: [],
+            },
+            {
+              id: 'item-done',
+              treatmentId: 'treatment-1',
+              treatmentName: 'Composite filling',
+              tooth: '26',
+              isCompleted: true,
+              sessions: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    const complete = await screen.findByTestId('complete-visit');
+    await waitFor(() => expect(complete).not.toBeDisabled());
+    await user.click(complete);
+
+    expect(await screen.findByTestId('visit-closure-dialog')).toBeTruthy();
+    expect(screen.getByTestId('visit-closure-item-item-open')).toBeTruthy();
+    // A completed line is not work the closure can still finish, so it is not asked.
+    expect(screen.queryByTestId('visit-closure-item-item-done')).toBeNull();
+
+    await user.click(screen.getByTestId('visit-closure-item-item-open'));
+    await user.click(screen.getByTestId('visit-closure-confirm'));
+
+    await waitFor(() => {
+      const post = fetchImplementation.mock.calls.find(
+        ([url, init]) =>
+          String(url).endsWith(`/visits/${VISIT_ID}/complete`) &&
+          (init?.method ?? 'GET').toUpperCase() === 'POST',
+      );
+      expect(post).toBeTruthy();
+      expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+        treatmentPlanItems: [{ planId: 'plan-1', itemId: 'item-open' }],
+      });
+    });
+
+    expect(await screen.findByTestId('visit-status')).toHaveTextContent('Completed');
+  });
+
   it('keeps the visit on screen and says why when the server refuses', async () => {
     const { fetchImplementation } = renderWorkspace({
       closureRefusal: {
@@ -1216,7 +1273,9 @@ describe('VisitWorkspace', () => {
           String(url).endsWith(`/patients/${PATIENT_ID}/treatment-plans`) &&
           (init?.method ?? 'GET').toUpperCase() === 'GET',
       );
-    await waitFor(() => expect(planReads()).toHaveLength(2));
+    // The workspace header reads the plans for the closure question, the treatments
+    // section reads them when it mounts, and finishing the linked record refetches.
+    await waitFor(() => expect(planReads()).toHaveLength(3));
   });
 
   it('records a supply against a treatment and shows it once the server has answered', async () => {
@@ -1330,7 +1389,7 @@ describe('VisitWorkspace', () => {
           String(url).endsWith(`/patients/${PATIENT_ID}/treatment-plans`) &&
           (init?.method ?? 'GET').toUpperCase() === 'GET',
       );
-    await waitFor(() => expect(planReads()).toHaveLength(2));
+    await waitFor(() => expect(planReads()).toHaveLength(3));
   });
 
   it('shows a planned line’s previous sessions, continues it, and completes it only on request', async () => {

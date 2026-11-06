@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  completeVisitSchema,
   createChargeSchema,
   createClinicalNoteSchema,
   createPaymentSchema,
@@ -130,6 +131,41 @@ describe('startWalkInVisitSchema', () => {
 
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ patientId: PATIENT_ID, dentistId: DENTIST_ID });
+  });
+});
+
+describe('completeVisitSchema', () => {
+  const PLAN_ID = '99999999-9999-4999-8999-999999999999';
+
+  it('defaults to an empty selection, so the old bodyless closure still parses', () => {
+    expect(completeVisitSchema.parse({})).toEqual({ treatmentPlanItems: [] });
+  });
+
+  it('accepts the planned lines the closure dialog ticked', () => {
+    const selected = [{ planId: PLAN_ID, itemId: PLAN_ITEM_ID }];
+
+    expect(completeVisitSchema.parse({ treatmentPlanItems: selected })).toEqual({
+      treatmentPlanItems: selected,
+    });
+  });
+
+  it('refuses a plan or item id that is not a uuid', () => {
+    for (const treatmentPlanItems of [
+      [{ planId: '1', itemId: PLAN_ITEM_ID }],
+      [{ planId: PLAN_ID, itemId: '' }],
+      [{ planId: null, itemId: PLAN_ITEM_ID }],
+    ]) {
+      expect(completeVisitSchema.safeParse({ treatmentPlanItems }).success).toBe(false);
+    }
+  });
+
+  it('refuses more lines than one closure could sensibly finish', () => {
+    const tooMany = Array.from({ length: 101 }, () => ({
+      planId: PLAN_ID,
+      itemId: PLAN_ITEM_ID,
+    }));
+
+    expect(completeVisitSchema.safeParse({ treatmentPlanItems: tooMany }).success).toBe(false);
   });
 });
 

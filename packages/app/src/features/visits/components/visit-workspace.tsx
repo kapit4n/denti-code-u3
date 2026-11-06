@@ -8,7 +8,7 @@
  * knew the id, which is no client at all. This is where the action happens, which
  * is what the milestone's exit criterion was waiting for.
  *
- * **Three things this screen refuses to guess.**
+ * **Four things this screen refuses to guess.**
  *
  *  - *Times are the clinic's.* Every instant is drawn with `formatClinicDayTime`
  *    against `clinic.timeZone`, and while the clinic is still being fetched the
@@ -22,11 +22,16 @@
  *  - *Buttons come from the domain, and only from moves with an endpoint.* See
  *    `visitClosureTransitions` — the legal table allows a cancellation no endpoint
  *    performs, so offering it would be a control that 404s.
+ *  - *Closing asks what the visit finished.* When the patient still has open
+ *    planned lines, the complete button opens `VisitClosureDialog`; only the ticked
+ *    lines are completed and billed with the closure, and the rest stay open. A
+ *    patient with nothing planned closes with one click, as before.
  *
- * **Nothing is written optimistically.** The mutation invalidates the visit and the
- * patient's profile; the refetch is what changes the status chip. A panel that
- * showed "Completed" before the server agreed would be the only screen in the app
- * that could contradict the record.
+ * **Nothing is written optimistically.** The mutation invalidates the visit, the
+ * patient's profile, the plans and the money caches the closure can move; the
+ * refetch is what changes the status chip and the balance. A panel that showed
+ * "Completed" — or a settled bill — before the server agreed would be the only
+ * screen in the app that could contradict the record.
  *
  * The section nav is data-driven and holds the sections an endpoint stands behind:
  * `summary` reads the visit, `notes` reads and writes the notes on it, `treatments`
@@ -124,6 +129,11 @@ import {
   visitStatusClassName,
   visitStatusLabel,
 } from '../visit-status-presentation.js';
+import {
+  VisitClosureDialog,
+  type VisitClosurePlanLine,
+  type VisitClosureSelection,
+} from './visit-closure-dialog.js';
 
 export interface VisitWorkspaceProps {
   readonly visitId: string;
@@ -163,12 +173,16 @@ export function VisitWorkspace({ visitId, initialTreatmentPlanItemId }: VisitWor
   // query is held back by `enabled` inside the hook rather than by a conditional
   // hook call, which React forbids.
   const patientQuery = usePatient(visitQuery.data?.patientId ?? '');
+  // Read here as well as inside the treatments section: the complete button must
+  // know whether this patient still has open planned work before it decides to ask.
+  const treatmentPlansQuery = usePatientTreatmentPlans(visitQuery.data?.patientId ?? '');
   const dentistsQuery = useDentists({ onlyActive: false });
   const chairsQuery = useChairs({ onlyActive: false });
   const closure = useVisitClosure();
   const [section, setSection] = useState<VisitSectionId>(
     initialTreatmentPlanItemId ? 'treatments' : 'summary',
   );
+  const [closureDialogOpen, setClosureDialogOpen] = useState(false);
 
   if (visitQuery.isPending) {
     return <p className="text-sm text-muted-foreground">{t('visits.workspace.loading')}</p>;
@@ -211,6 +225,26 @@ export function VisitWorkspace({ visitId, initialTreatmentPlanItemId }: VisitWor
     network: t('visits.failure.visitNetwork'),
   });
   const closable = visitClosureTransitions(visit.status);
+  const openPlanLines: readonly VisitClosurePlanLine[] =
+    treatmentPlansQuery.data?.items.flatMap((plan) =>
+      plan.items.filter((item) => !item.isCompleted).map((item) => ({ plan, item })),
+    ) ?? [];
+
+  function chooseClosure(to: 'COMPLETED' | 'OPEN') {
+    if (to === 'COMPLETED' && openPlanLines.length > 0) {
+      setClosureDialogOpen(true);
+      return;
+    }
+
+    closure.mutate({ visitId: visit.id, to });
+  }
+
+  function confirmClosure(selection: readonly VisitClosureSelection[]) {
+    closure.mutate(
+      { visitId: visit.id, to: 'COMPLETED', treatmentPlanItems: selection },
+      { onSuccess: () => setClosureDialogOpen(false) },
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6" data-testid="visit-workspace">
@@ -267,9 +301,11 @@ export function VisitWorkspace({ visitId, initialTreatmentPlanItemId }: VisitWor
                 <Button
                   key={to}
                   type="button"
-                  disabled={closure.isPending}
+                  disabled={
+                    closure.isPending || (to === 'COMPLETED' && treatmentPlansQuery.isPending)
+                  }
                   data-testid={to === 'COMPLETED' ? 'complete-visit' : 'reopen-visit'}
-                  onClick={() => closure.mutate({ visitId: visit.id, to })}
+                  onClick={() => chooseClosure(to)}
                 >
                   {visitClosureLabel(t, to)}
                 </Button>
@@ -294,6 +330,16 @@ export function VisitWorkspace({ visitId, initialTreatmentPlanItemId }: VisitWor
           </div>
         ) : null}
       </header>
+
+      {closureDialogOpen ? (
+        <VisitClosureDialog
+          lines={openPlanLines}
+          isPending={closure.isPending}
+          failure={failure ?? null}
+          onClose={() => setClosureDialogOpen(false)}
+          onConfirm={confirmClosure}
+        />
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[13rem_minmax(0,1fr)]">
         <nav aria-label={t('visits.workspace.sectionNav')} className="self-start">

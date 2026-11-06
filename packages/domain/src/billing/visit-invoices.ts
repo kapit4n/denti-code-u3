@@ -159,6 +159,30 @@ export async function issueVisitInvoice(
   visitId: VisitId,
   dependencies: IssueVisitInvoiceDependencies,
 ): Promise<Invoice> {
+  const invoice = await issueVisitInvoiceIfAny(clinicId, visitId, dependencies);
+
+  if (!invoice) {
+    throw new DomainError('INVALID_INPUT', 'There is nothing left to invoice on this visit', {
+      visitId,
+    });
+  }
+
+  return invoice;
+}
+
+/**
+ * Raise the visit's un-invoiced bill, or answer `undefined` when there is none.
+ *
+ * Closing a visit bills what it did, and a visit whose work was priced at zero (or
+ * already invoiced) is a normal closure rather than a refusal. The explicit issuing
+ * endpoint still wants the refusal, so it keeps it by calling `issueVisitInvoice`;
+ * both share this one implementation of "read the visit, fold what is left".
+ */
+export async function issueVisitInvoiceIfAny(
+  clinicId: ClinicId,
+  visitId: VisitId,
+  dependencies: IssueVisitInvoiceDependencies,
+): Promise<Invoice | undefined> {
   return dependencies.unitOfWork.transaction(async (repositories) => {
     const visit = await repositories.visits.findById(clinicId, visitId);
 
@@ -176,9 +200,7 @@ export async function issueVisitInvoice(
     const uninvoiced = charges.filter((charge) => charge.invoiceId === null);
 
     if (uninvoiced.length === 0) {
-      throw new DomainError('INVALID_INPUT', 'There is nothing left to invoice on this visit', {
-        visitId,
-      });
+      return undefined;
     }
 
     return issueInvoice(repositories, {

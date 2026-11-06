@@ -26,6 +26,7 @@ import type {
   PatientRepository,
   TreatmentPlanRepository,
   TreatmentRepository,
+  UnitOfWork,
 } from '@denti-code-u3/domain';
 import {
   completeTreatmentPlanItem,
@@ -34,7 +35,9 @@ import {
 } from '@denti-code-u3/domain';
 import { createTreatmentPlanSchema, updateTreatmentPlanSchema } from '@denti-code-u3/validation';
 import {
+  asChargeId,
   asDentistId,
+  asInvoiceId,
   asPatientId,
   asTreatmentId,
   asTreatmentPlanId,
@@ -53,13 +56,28 @@ export interface TreatmentPlanRoutesDependencies {
   readonly treatments: TreatmentRepository;
   /** The plan's own write half: read scoped by clinic and patient, save whole. */
   readonly treatmentPlans: TreatmentPlanRepository;
+  /**
+   * Completion raises a charge and issues its invoice with the status flip.
+   *
+   * One transaction, because a completed line whose invoice failed is a patient
+   * who was treated and not billed until somebody notices.
+   */
+  readonly unitOfWork: UnitOfWork;
   readonly ids: IdGenerator;
   readonly clock: Clock;
 }
 
 export async function registerTreatmentPlanRoutes(
   app: FastifyInstance,
-  { patients, dentists, treatments, treatmentPlans, ids, clock }: TreatmentPlanRoutesDependencies,
+  {
+    patients,
+    dentists,
+    treatments,
+    treatmentPlans,
+    unitOfWork,
+    ids,
+    clock,
+  }: TreatmentPlanRoutesDependencies,
 ): Promise<void> {
   /**
    * Propose a plan for the patient on the path.
@@ -174,9 +192,11 @@ export async function registerTreatmentPlanRoutes(
    * Mark one line of a plan done.
    *
    * Bodyless: the completion is the verb, and an item already done keeps its first
-   * `completedAt`, so a second call is not a second write. A plan that is not this
-   * patient's, or an item that is not this plan's, answers 404 — a success that
-   * changed nothing would be the worst answer a write can give.
+   * `completedAt`, so a second call is not a second write. Completing also raises
+   * the line's charge from its estimate and issues the invoice, in the same
+   * transaction, so the patient's balance moves with the clinical record. A plan
+   * that is not this patient's, or an item that is not this plan's, answers 404 —
+   * a success that changed nothing would be the worst answer a write can give.
    */
   app.post(
     '/api/v1/patients/:patientId/treatment-plans/:planId/items/:itemId/complete',
@@ -195,7 +215,16 @@ export async function registerTreatmentPlanRoutes(
           asPatientId(patientId),
           asTreatmentPlanId(planId),
           itemId,
-          { patients, treatmentPlans, clock },
+          {
+            patients,
+            treatmentPlans,
+            clock,
+            billing: {
+              unitOfWork,
+              newChargeId: () => asChargeId(ids.nextId()),
+              newInvoiceId: () => asInvoiceId(ids.nextId()),
+            },
+          },
         );
 
         return reply.status(204).send();

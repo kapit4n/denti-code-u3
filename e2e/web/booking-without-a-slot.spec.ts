@@ -34,6 +34,7 @@ import {
   CHAIR_ID,
   DENTIST_ID,
   noInvoices,
+  noPrescriptions,
 } from './fixtures/api-responses.js';
 import { watchForConsoleErrors } from './fixtures/console-errors.js';
 import { installApi, type InstalledApi } from './fixtures/mock-api.js';
@@ -93,6 +94,7 @@ test.describe('Booking from a patient profile', () => {
       [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
       [`/api/v1/patients/${ANA_ID}/invoices`]: { body: noInvoices },
       [`/api/v1/patients/${ANA_ID}/balance`]: { body: anaBalance },
+      [`/api/v1/patients/${ANA_ID}/prescriptions`]: { body: noPrescriptions },
       [CREATE_PATH]: { status: 201, body: bookedAppointment() },
     });
 
@@ -129,6 +131,7 @@ test.describe('Booking from a patient profile', () => {
       [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
       [`/api/v1/patients/${ANA_ID}/invoices`]: { body: noInvoices },
       [`/api/v1/patients/${ANA_ID}/balance`]: { body: anaBalance },
+      [`/api/v1/patients/${ANA_ID}/prescriptions`]: { body: noPrescriptions },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -148,6 +151,7 @@ test.describe('Booking from a patient profile', () => {
       [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
       [`/api/v1/patients/${ANA_ID}/invoices`]: { body: noInvoices },
       [`/api/v1/patients/${ANA_ID}/balance`]: { body: anaBalance },
+      [`/api/v1/patients/${ANA_ID}/prescriptions`]: { body: noPrescriptions },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -169,6 +173,7 @@ test.describe('Booking from a patient profile', () => {
       [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
       [`/api/v1/patients/${ANA_ID}/invoices`]: { body: noInvoices },
       [`/api/v1/patients/${ANA_ID}/balance`]: { body: anaBalance },
+      [`/api/v1/patients/${ANA_ID}/prescriptions`]: { body: noPrescriptions },
     });
 
     await page.goto(`/patients/${ANA_ID}`);
@@ -193,6 +198,7 @@ test.describe('Booking from a patient profile', () => {
       [`/api/v1/patients/${ANA_ID}/treatment-plans`]: { body: anaTreatmentPlans },
       [`/api/v1/patients/${ANA_ID}/invoices`]: { body: noInvoices },
       [`/api/v1/patients/${ANA_ID}/balance`]: { body: anaBalance },
+      [`/api/v1/patients/${ANA_ID}/prescriptions`]: { body: noPrescriptions },
     });
 
     await page.goto(`/patients/${ANA_ID}`);

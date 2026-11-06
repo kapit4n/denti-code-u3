@@ -112,6 +112,7 @@ function harness(options: { visit?: Visit; stored?: readonly Prescription[] } = 
       recorded.reads.push({ clinicId, visitId });
       return options.stored ?? [];
     },
+    findForPatient: async () => undefined,
     save: async (prescription) => {
       recorded.saved.push(prescription);
     },

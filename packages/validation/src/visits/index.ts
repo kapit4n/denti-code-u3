@@ -59,6 +59,32 @@ export const startWalkInVisitSchema = z.object({
 export type StartWalkInVisitInput = z.infer<typeof startWalkInVisitSchema>;
 
 /**
+ * Finish a visit, optionally closing planned lines with it.
+ *
+ * The body is only the plan lines the clinician ticked in the closure dialog. Who
+ * and what they belong to are the path's visit and that visit's patient, so a body
+ * cannot restate them; `endedAt` is the server's clock. Both ids are uuids because
+ * the domain resolves the plan on the patient's own record — a mismatched pair is
+ * its `NOT_FOUND`, not a value this schema could validate alone.
+ *
+ * An absent body means "close the visit and bill what it already did", which is why
+ * the list defaults to empty rather than being required.
+ */
+export const completeVisitSchema = z.object({
+  treatmentPlanItems: z
+    .array(
+      z.object({
+        planId: uuidSchema,
+        itemId: uuidSchema,
+      }),
+    )
+    .max(100, 'Too many planned lines to complete at once')
+    .default([]),
+});
+
+export type CompleteVisitInput = z.infer<typeof completeVisitSchema>;
+
+/**
  * File a clinical note on a visit.
  *
  * `body` is the whole request: who wrote it and when are facts the server owns, so

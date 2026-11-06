@@ -4529,3 +4529,64 @@ passed with the two existing React Compiler warnings; web production build and b
 passed (guard keeps its existing scanner false positive). The PostgreSQL-only API tests remain
 skipped because no server is listening on `127.0.0.1:5433`; this slice's e2e was not run. No
 commit.
+
+---
+
+Session 87: the patient profile shows treatment progress and prescriptions.
+
+`PatientOutstandingTreatment` now carries `treatmentName`, `treatmentCode` and `sessionCount`.
+Both patient repositories left-join the catalogue and count the line's
+`visit_treatment_executions` rows through a correlated, clinic- and patient-scoped subquery;
+no table, column or migration changed. The profile card groups open work under **In progress**
+(`sessionCount > 0`) and **Pending** (`sessionCount === 0`); completed plan items remain
+excluded by the existing query.
+
+The profile also lists the patient's prescriptions, read through the new
+`GET /api/v1/patients/:patientId/prescriptions` (`visits:read`). The new
+`PrescriptionRepository.findForPatient` joins through `visits` to enforce tenancy, answers
+`undefined` when the clinic does not hold the patient (404) and an empty list for a real
+patient with none. Rows are newest first and show medication, dose, route/frequency/duration,
+instructions, clinic-local issue time and a link to the source visit. Creating a prescription
+invalidates the visit's and the patient's reads. English and Spanish copy was added, the tooth
+separator was fixed, and ADR 0037 records the read decision.
+
+**Tests.** Domain **413/413**; full app **426/427**, with only the pre-existing
+`zoned-wall-clock.test.ts` repeated-hour failure; API **135 passed / 288 skipped**
+(PostgreSQL-only tests need a server on `127.0.0.1:5433`); SQLite smoke **34/34**; targeted
+Playwright **20/20**; full e2e **182/182**. Root typecheck and lint passed with the two
+existing React Compiler warnings; the boundary guard kept its existing scanner false positive;
+changed files are Prettier-clean (root `format:check` still names two untouched generated
+migration snapshots); web production build passed. No commit.
+
+---
+
+Session 88: completed planned work is billed, and closing a visit chooses what it finished.
+
+Completing a treatment-plan item from the patient profile now raises a charge from the line's
+`estimatedPriceMinor` and issues it. The charge is linked by `treatmentPlanItemId` and, when
+completion happens with visit context, by `visitId`. A repeated completion keeps the first
+`completedAt`; an existing charge for the line is reused rather than duplicated, an
+already-invoiced charge stays settled, and a zero estimate writes no charge. Both columns
+already existed, so no migration was added.
+
+Visit closure now accepts an optional list of plan lines. Each selected line is completed with
+deferred invoicing, one invoice is issued for the visit's pending charges, and only then is the
+visit completed; lines not selected stay open. The body is optional, so a bodyless closure keeps
+its old behaviour. When the patient has open planned lines the workspace opens a translated
+multi-select **VisitClosureDialog** that names each line's plan, treatment and tooth; when
+nothing is open the visit still closes in one click. A refusal leaves the visit open and is
+reported in the dialog. Plan completion and visit closure invalidate the plan read, profile,
+invoices, balance and statement.
+
+The validation schema caps the selection at 100 lines and defaults it to empty. Domain and API
+tests cover linked charges, duplicate reuse, zero estimates, deferred invoicing, visit closure
+with selected and unselected lines, and both existing charge repositories gained the
+plan-item lookup.
+
+**Tests.** Domain **418/418**; validation **167/167**; full app **427/428**, with only the
+pre-existing `zoned-wall-clock.test.ts` repeated-hour failure; API **137 passed / 288 skipped**
+(PostgreSQL-only tests need a server on `127.0.0.1:5433`); SQLite smoke **36/36**; full e2e
+**182/182**. Root typecheck **12/12**, lint **12/12** with the two existing React Compiler
+warnings and the boundary guard's scanner false positive, build **5/5**, changed files
+Prettier-clean. Root `format:check` still names the two untouched generated migration
+snapshots. No commit.

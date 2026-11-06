@@ -137,10 +137,20 @@ export interface PatientOutstandingTreatment {
   readonly planId: TreatmentPlanId;
   readonly planStatus: string;
   readonly title: string | null;
+  /** The catalogue's name, or null when the treatment was removed from it. */
+  readonly treatmentName: string | null;
+  /** The catalogue's code, or null when the treatment was removed from it. */
+  readonly treatmentCode: string | null;
   /** FDI notation, e.g. `16`. Null for treatment not tied to one tooth. */
   readonly tooth: string | null;
   readonly quantity: number;
   readonly estimatedPriceMinor: number;
+  /**
+   * Visit records that name this line. Zero means work not started yet; one or
+   * more means a line in progress across visits. Completion stays `isCompleted`
+   * on the plan item and is never inferred from this count.
+   */
+  readonly sessionCount: number;
 }
 
 export interface PatientFinancialBalance {
