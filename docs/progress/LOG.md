@@ -4633,3 +4633,33 @@ validation **167**, api-client **15**, domain **418**, database **6**, API **137
 skipped**, app **427/428** with only the known `zoned-wall-clock.test.ts` repeated-hour failure.
 Changed files are Prettier-clean; root `format:check` still names the two untouched generated
 migration snapshots.
+
+---
+
+Session 91: Ubuntu gets a `.deb` from the same release tag.
+
+The user chose `.deb` only and a fresh `v0.1.1` tag, so no published tag was moved. Every package
+manifest, `Cargo.toml`, `Cargo.lock` and `tauri.conf.json` now says `0.1.1`; a workflow rename
+turned `release-windows.yml` into `release-desktop.yml`. The Windows job remains the draft owner:
+it creates the release, uploads the MSI, and exports `releaseId`. The Ubuntu job declares
+`needs: msi`, passes that id to `tauri-action` instead of `tagName`, installs the Tauri system
+libraries on `ubuntu-22.04`, and calls `tauri build --bundles deb`. That serial edge is the point:
+two jobs creating one draft for one tag could leave two drafts. Both bundles land in the same
+draft and as workflow artifacts.
+
+`ubuntu-22.04` is the Linux baseline because Tauri's guidance names it as an oldest suitable
+system with WebKitGTK 4.1 in the standard repositories; a newer image would raise the `.deb`'s
+glibc floor. The Linux PNG icons (`32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.png`) were
+generated from the product PNG and added to `bundle.icon`, and the ICO now carries the 24px and
+256px layers Tauri expects. ADR 0039 records the decision and marks ADR 0038 as superseded in
+part: the tag rule and draft gate still hold.
+
+**Tests.** Workflow YAML parsed (jobs `['msi', 'deb']`, trigger `v*`, runners `windows-2022` /
+`ubuntu-22.04`, `deb.needs = msi`, release id handoff present); local simulation passed
+(`v0.1.1 | http://localhost:3010/api/v1 | csp host allowed: true`); all package and Rust versions
+agree; PNG sizes/modes and the six ICO layers checked. `pnpm install --frozen-lockfile --offline`
+says the lockfile is up to date. Desktop tests **8/8**. Root typecheck **12/12**, lint **12/12**
+(existing warnings), build **5/5**. Root `pnpm run test` was **9/10 tasks** with only the known
+`zoned-wall-clock.test.ts` repeated-hour failure (app **427/428**; validation **167**, api-client
+**15**, domain **418**, database **6**, API **137 passed / 288 skipped**). Changed files are
+Prettier-clean. The `v0.1.1` tag run is the remaining verification.

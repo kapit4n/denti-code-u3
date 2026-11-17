@@ -1,5 +1,8 @@
 # ADR 0038 — The Windows installer is built from a version tag in GitHub Actions
 
+> Superseded in part by [ADR 0039](./0039-ubuntu-deb-release.md): the tag rule and
+> draft gate still hold, but the pipeline now also produces an Ubuntu `.deb`.
+
 - **Status:** Accepted
 - **Date:** 2026-11-17
 - **Decides:** how the first Windows MSI is built, versioned and published

@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 90 (tag-driven Windows MSI release pipeline)
+> Last updated: session 91 (Ubuntu DEB release job)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Session 90** added the first release pipeline: pushing a `v*` tag whose name equals
@@ -14,6 +14,16 @@
 > Windows app, it is an unsigned localhost-only MSI; ADR 0038 records why the pipeline is
 > tag-driven, Windows-only and deliberately minimal. The commit, tag and push that trigger the
 > first release are the next verification step.
+
+> **Session 91** extended the tag release to Ubuntu. The user chose a `.deb` only and a fresh
+> `v0.1.1` tag rather than rewriting `v0.1.0`. The source version is now `0.1.1` in every package
+> manifest, `Cargo.toml`, `Cargo.lock` and `tauri.conf.json`; the workflow was renamed to
+> `.github/workflows/release-desktop.yml`. Its `msi` job still creates the draft release, now
+> exporting the `releaseId`; its new `deb` job waits for that id, installs WebKitGTK 4.1 on
+> `ubuntu-22.04`, and uploads one `.deb` into the same draft instead of racing to create another.
+> The Linux PNG icon set was generated and named in `bundle.icon`, alongside an expanded ICO.
+> ADR 0039 records the two-job topology, the Ubuntu 22.04 glibc baseline and the rejected
+> alternatives. The `v0.1.1` tag run is the remaining verification.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
 

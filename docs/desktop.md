@@ -164,34 +164,44 @@ limitation, and they stay documented for a machine that does not have them.
 What has not been run here is a **release** build: `tauri build` in the release
 profile with the `deb`/`msi`/`app`/`dmg` bundles in `bundle.targets`. It cannot be:
 the MSI bundle needs WiX v3, which runs only on Windows. §9 is the pipeline that
-builds one on a Windows runner; its first run is the verification, and the first
-installer is unsigned. Nothing in the local verification above depends on them,
+builds the installers on GitHub runners; its runs are the verification, and the
+installers are unsigned. Nothing in the local verification above depends on them,
 and the profile difference between the debug build used for manual testing and a
 release build is optimisation, not behaviour.
 
-## 9. Releasing the Windows installer
+## 9. Releasing the desktop installers
 
-The first installer is made by a tag, not by a branch:
+Installers are made by a tag, not by a branch. The Windows MSI from `v0.1.0` was
+the first run; the next release is `v0.1.1`:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
-`.github/workflows/release-windows.yml` then runs on `windows-2022`, checks that
-the tag equals `v` plus the version in `tauri.conf.json`, installs dependencies
-with the committed lockfile, and calls `tauri build --bundles msi` through
-`tauri-apps/tauri-action@v1`. The action uploads the `.msi` to a **draft** GitHub
-release for that tag and also keeps it as a workflow artifact. Publishing is a
-separate act; see ADR 0038 for why.
+`.github/workflows/release-desktop.yml` then checks that the tag equals `v` plus
+the version in `tauri.conf.json` and runs two jobs. The `msi` job uses
+`windows-2022` for WiX v3, calls `tauri build --bundles msi` through
+`tauri-apps/tauri-action@v1`, creates the **draft** GitHub release, and passes its
+`releaseId` to the `deb` job. The `deb` job waits for it, installs WebKitGTK 4.1
+and the other Tauri system libraries on `ubuntu-22.04`, and calls
+`tauri build --bundles deb`. Both bundles are uploaded to the same draft release
+and kept as workflow artifacts. The handoff matters: two jobs creating a release
+for one tag would race and could leave two drafts. Publishing stays a separate,
+human act; see ADR 0038 and ADR 0039.
 
-The build reads `VITE_API_URL` from `.env.example` before invoking Vite, so the
+`ubuntu-22.04` is the Linux baseline because it supplies WebKitGTK 4.1 from its
+standard repositories and its glibc is old enough for the `.deb` to run on older
+Ubuntu and Debian systems. Building on a newer image would raise that floor.
+
+Both builds read `VITE_API_URL` from `.env.example` before invoking Vite, so the
 compiled API URL and the webview CSP still agree — the same contract
-`apps/desktop/test/tauri-config.test.ts` checks locally. The first installer
-therefore calls `http://localhost:3010/api/v1`: it expects a clinic API on the
-same machine, not a cloud server. Repointing it means changing `.env.example` and
-the CSP together and cutting a new tag, not changing a secret at install time.
+`apps/desktop/test/tauri-config.test.ts` checks locally. The installers therefore
+call `http://localhost:3010/api/v1`: they expect a clinic API on the same machine,
+not a cloud server. Repointing them means changing `.env.example` and the CSP
+together and cutting a new tag, not changing a secret at install time.
 
-`bundle.icon` names `icons/icon.ico`, generated from the existing `icon.png`.
-`--no-bundle` builds never needed it; an MSI does. The pipeline builds only the
-MSI: Debian, macOS and NSIS artifacts are deliberately out of scope.
+`bundle.icon` names the generated Windows `icon.ico` and the Linux PNG set
+(`32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.png`). `--no-bundle` builds
+never needed them; bundles do. The pipeline produces only MSI and DEB: macOS,
+NSIS and the updater manifest are deliberately out of scope.

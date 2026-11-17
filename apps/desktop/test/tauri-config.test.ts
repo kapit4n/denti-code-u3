@@ -37,6 +37,10 @@ const tauriConfig = JSON.parse(
   bundle: { icon: string[]; targets: string[] };
 };
 const exampleEnv = readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
+const releaseWorkflow = readFileSync(
+  path.join(repoRoot, '.github/workflows/release-desktop.yml'),
+  'utf8',
+);
 
 function envValue(name: string): string {
   const line = exampleEnv.split('\n').find((candidate) => candidate.startsWith(`${name}=`));
@@ -94,14 +98,34 @@ describe('the Tauri CSP', () => {
   });
 });
 
-describe('the Windows release bundle', () => {
-  it('names a Windows icon that exists in the tree', () => {
-    const icon = 'icons/icon.ico';
-    expect(tauriConfig.bundle.icon).toContain(icon);
-    expect(existsSync(path.join(repoRoot, 'apps/desktop/src-tauri', icon))).toBe(true);
+describe('the release bundles', () => {
+  it('names icons that exist for every bundle platform', () => {
+    const icons = [
+      'icons/32x32.png',
+      'icons/128x128.png',
+      'icons/128x128@2x.png',
+      'icons/icon.png',
+      'icons/icon.ico',
+    ];
+    for (const icon of icons) {
+      expect(tauriConfig.bundle.icon).toContain(icon);
+      expect(existsSync(path.join(repoRoot, 'apps/desktop/src-tauri', icon))).toBe(true);
+    }
   });
 
-  it('keeps the MSI target the tag workflow builds', () => {
+  it('keeps the MSI and DEB targets the tag workflow builds', () => {
     expect(tauriConfig.bundle.targets).toContain('msi');
+    expect(tauriConfig.bundle.targets).toContain('deb');
+  });
+});
+
+describe('the tag-driven release workflow', () => {
+  it('builds both desktop installers from one tag', () => {
+    expect(releaseWorkflow).toContain('args: --bundles msi');
+    expect(releaseWorkflow).toContain('args: --bundles deb');
+  });
+
+  it('hands the MSI release id to the Ubuntu job instead of creating a second draft', () => {
+    expect(releaseWorkflow).toContain('releaseId: ${{ needs.msi.outputs.releaseId }}');
   });
 });
