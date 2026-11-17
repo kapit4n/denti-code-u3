@@ -74,8 +74,15 @@ export const DEVELOPMENT_USERS = [
   },
 ] as const;
 
-/** The password every seeded development user shares. Printed by the seed. */
-export const DEVELOPMENT_PASSWORD = 'denti-code-dev';
+/**
+ * The password every seeded user shares. Printed by the seed.
+ *
+ * A bundle build overrides it so a distributed database never ships with the
+ * well-known development credential; a plain `pnpm run db:seed` keeps the old
+ * default. It is a build-time input, not an API setting, so it is not part of
+ * `apiEnvironmentSchema`.
+ */
+export const DEVELOPMENT_PASSWORD = process.env.DENTI_CODE_SEED_PASSWORD ?? 'denti-code-dev';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -114,6 +121,13 @@ const DEVELOPMENT_LUIS_PAYMENT_MINOR = 8_000;
 const now = new Date();
 
 /**
+ * The seed books a full fortnight — this calendar week and the next — rather than
+ * a rolling week counted from today. `getDay()` is 0 on Sunday, so the shift makes
+ * 0 Monday; the result is this week's Monday as a day offset from today.
+ */
+const mondayDayOffset = -((now.getDay() + 6) % 7);
+
+/**
  * Hash a password the way the API's `ScryptPasswordHasher` does.
  *
  * Duplicated here rather than imported from `apps/api`, because the seed is part
@@ -141,7 +155,7 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 function seedSummary(): string {
-  return `clinic ${DEVELOPMENT_CLINIC_ID}, 10 patients, 2 dentists, 2 rooms, 4 chairs, ${ALL_APPOINTMENTS.length} appointments (a week ahead), 10 visits (8 completed, 1 open, 1 cancelled), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 attachments, 10 odontogram entries, 3 charges, 2 issued invoices, 2 payments, 2 payment allocations`;
+  return `clinic ${DEVELOPMENT_CLINIC_ID}, 10 patients, 2 dentists, 2 rooms, 4 chairs, ${ALL_APPOINTMENTS.length} appointments (this week + next), 10 visits (8 completed, 1 open, 1 cancelled), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 attachments, 10 odontogram entries, 3 charges, 2 issued invoices, 2 payments, 2 payment allocations`;
 }
 
 /**
@@ -665,8 +679,9 @@ type AppointmentInput = typeof pgSchema.appointments.$inferInsert;
 type SeedAppointment = Omit<AppointmentInput, 'id'> & { readonly id: string };
 
 /**
- * A week of bookings starting today, so a fresh seed fills every column of the
- * week calendar rather than a handful of days.
+ * A week of bookings starting today, extended to a full fortnight below, so a
+ * fresh seed fills every column of the two-week calendar rather than a handful
+ * of days.
  *
  * Room 1 always uses dentist 1 and chair 1; room 2 always uses dentist 2 and
  * chair 3. Rooms are exclusive while a booking runs, so that pairing keeps every
@@ -1003,6 +1018,48 @@ const WEEK_AHEAD_SLOTS = [
   },
 ] as const;
 
+/**
+ * `WEEK_AHEAD_SLOTS` reaches today through +7 days, with each day's rooms placed
+ * around the ten fixed bookings above. The fortnight starts on this week's Monday,
+ * so the days it does not reach are filled here. Those days have no fixed bookings
+ * to avoid, and a room 1 / room 2 alternation keeps every room exclusive.
+ */
+const FORTNIGHT_EXTRA_DAY_OFFSETS = Array.from(
+  { length: 14 },
+  (_, weekday) => mondayDayOffset + weekday,
+).filter((offset) => !WEEK_AHEAD_SLOTS.some((slot) => slot.dayOffset === offset));
+
+const FORTNIGHT_EXTRA_APPOINTMENTS: readonly SeedAppointment[] =
+  FORTNIGHT_EXTRA_DAY_OFFSETS.flatMap((dayOffset, dayIndex) => {
+    const past = dayOffset < 0;
+    const slots = [
+      { hour: 9, minute: 0, patient: 4, room: 2, status: past ? 'COMPLETED' : 'CONFIRMED' },
+      { hour: 10, minute: 30, patient: 5, room: 1, status: past ? 'COMPLETED' : 'SCHEDULED' },
+      { hour: 14, minute: 0, patient: 6, room: 2, status: past ? 'NO_SHOW' : 'CONFIRMED' },
+      { hour: 15, minute: 30, patient: 7, room: 1, status: past ? 'COMPLETED' : 'SCHEDULED' },
+    ] as const;
+    return slots.map((slot, slotIndex) => ({
+      id: `11111111-4444-4555-8666-${String(APPOINTMENTS.length + WEEK_AHEAD_SLOTS.length + dayIndex * slots.length + slotIndex + 1).padStart(12, '0')}`,
+      clinicId: DEVELOPMENT_CLINIC_ID,
+      patientId: PATIENTS[slot.patient - 1]!.id,
+      dentistId:
+        slot.room === 1
+          ? '11111111-2222-4333-8444-000000000001'
+          : '11111111-2222-4333-8444-000000000002',
+      chairId:
+        slot.room === 1
+          ? '11111111-4444-4555-8666-000000000001'
+          : '11111111-4444-4555-8666-000000000003',
+      roomId:
+        slot.room === 1
+          ? '11111111-3333-4444-8555-000000000001'
+          : '11111111-3333-4444-8555-000000000002',
+      startsAt: at(dayOffset, slot.hour, slot.minute),
+      durationMinutes: 45,
+      status: slot.status,
+    }));
+  });
+
 const WEEK_AHEAD_APPOINTMENTS: readonly SeedAppointment[] = WEEK_AHEAD_SLOTS.map((slot, index) => ({
   id: `11111111-4444-4555-8666-${String(index + APPOINTMENTS.length + 1).padStart(12, '0')}`,
   clinicId: DEVELOPMENT_CLINIC_ID,
@@ -1024,7 +1081,11 @@ const WEEK_AHEAD_APPOINTMENTS: readonly SeedAppointment[] = WEEK_AHEAD_SLOTS.map
   status: slot.status,
 }));
 
-const ALL_APPOINTMENTS = [...APPOINTMENTS, ...WEEK_AHEAD_APPOINTMENTS];
+const ALL_APPOINTMENTS = [
+  ...APPOINTMENTS,
+  ...WEEK_AHEAD_APPOINTMENTS,
+  ...FORTNIGHT_EXTRA_APPOINTMENTS,
+];
 
 async function insertAppointmentsPg(db: PostgresJsDatabase<typeof pgSchema>): Promise<void> {
   await db

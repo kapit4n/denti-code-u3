@@ -61,17 +61,18 @@ pnpm run dev:desktop          # Tauri window
 
 ## Commands
 
-| Command                                                          | Purpose                                    |
-| ---------------------------------------------------------------- | ------------------------------------------ |
-| `pnpm build`                                                     | Build everything (Turbo)                   |
-| `pnpm typecheck`                                                 | `tsc --noEmit` in every package            |
-| `pnpm lint`                                                      | ESLint (includes the architecture guard)   |
-| `pnpm format` / `pnpm format:check`                              | Prettier                                   |
-| `pnpm test`                                                      | Vitest unit + component tests              |
-| `pnpm test:integration`                                          | Database integration tests (needs `db:up`) |
-| `pnpm test:e2e`                                                  | Playwright (needs browsers + build)        |
-| `pnpm guard:boundaries`                                          | Architectural dependency rules             |
-| `pnpm db:up` / `db:down` / `db:migrate` / `db:seed` / `db:reset` | Database                                   |
+| Command                                                          | Purpose                                     |
+| ---------------------------------------------------------------- | ------------------------------------------- |
+| `pnpm build`                                                     | Build everything (Turbo)                    |
+| `pnpm typecheck`                                                 | `tsc --noEmit` in every package             |
+| `pnpm lint`                                                      | ESLint (includes the architecture guard)    |
+| `pnpm format` / `pnpm format:check`                              | Prettier                                    |
+| `pnpm test`                                                      | Vitest unit + component tests               |
+| `pnpm test:integration`                                          | Database integration tests (needs `db:up`)  |
+| `pnpm test:e2e`                                                  | Playwright (needs browsers + build)         |
+| `pnpm guard:boundaries`                                          | Architectural dependency rules              |
+| `pnpm bundle:server`                                             | Self-contained API bundle with initial data |
+| `pnpm db:up` / `db:down` / `db:migrate` / `db:seed` / `db:reset` | Database                                    |
 
 ## Documentation
 
@@ -81,6 +82,7 @@ pnpm run dev:desktop          # Tauri window
 - [`docs/backend.md`](./docs/backend.md) — REST API architecture
 - [`docs/database.md`](./docs/database.md) — PostgreSQL + Drizzle
 - [`docs/desktop.md`](./docs/desktop.md) — Tauri 2 strategy
+- [`docs/server-bundle.md`](./docs/server-bundle.md) — installable API with initial data
 - [`docs/testing.md`](./docs/testing.md) — testing architecture
 - [`docs/security.md`](./docs/security.md) — security baseline (**no compliance
   claims**)

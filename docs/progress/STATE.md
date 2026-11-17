@@ -1,7 +1,17 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 91 (Ubuntu DEB release job)
+> Last updated: session 94 (v0.1.2 release to test the bundle jobs)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
+
+> **Session 89** reset the development SQLite database and reseeded it so the app has
+> bookings for a full fortnight aligned to calendar weeks — Monday 16 November through
+> Sunday 29 November 2026 (70 appointments, every clinic day covered). The seed previously
+> only reached a rolling eight days from the day it was run, and because its rows use fixed
+> ids with `onConflictDoNothing`, rerunning it never moved stale dates. `FORTNIGHT_EXTRA_DAY_OFFSETS`
+> now fills the days of the two-week window the existing slots do not reach, computing this
+> week's Monday from `now` so the window stays correct on any weekday. The dev database was
+> cleared in place (rows deleted, migrations table kept, so the running API's file handle stayed
+> valid) and `db:migrate && db:seed` rebuilt it. No migration, API, domain or UI change.
 
 > **Session 90** added the first release pipeline: pushing a `v*` tag whose name equals
 > `v<apps/desktop/src-tauri/tauri.conf.json.version>` runs
@@ -24,6 +34,36 @@
 > The Linux PNG icon set was generated and named in `bundle.icon`, alongside an expanded ICO.
 > ADR 0039 records the two-job topology, the Ubuntu 22.04 glibc baseline and the rejected
 > alternatives. The `v0.1.1` tag run is the remaining verification.
+
+> **Session 92** verified that tag run end to end. Commit `a349dfc` was pushed to `main` with only
+> the desktop release work; the unrelated session-89 seed/progress changes stayed uncommitted, and
+> `v0.1.1` was pushed as a new annotated tag. GitHub Actions
+> [run `44160451789`](https://github.com/kapit4n/denti-code-u3/actions/runs/44160451789) succeeded
+> in **9m 15s**: `msi` took 5m 13s and `deb` 3m 55s. Artifacts `windows-x64-msi` (4.29 MB) and
+> `linux-amd64-deb` (4.36 MB) were produced and the draft release reports two assets. The only
+> warnings were GitHub's Node 20 deprecation notices for the pinned actions.
+
+> **Session 93** answered "how does an installed app have data?" with a separate,
+> self-contained server bundle (ADR 0040). `pnpm run bundle:server` builds the API
+> with `pnpm deploy --prod --legacy`, transpiles the workspace packages to JS inside
+> the bundle (Node refuses type stripping under `node_modules`), packages a Node
+> runtime, and ships a migrated + seeded SQLite database with `start.sh` /
+> `start.cmd`. Each build generates its own admin password, written to the bundle
+> README; `NODE_ENV=production` keeps ADR 0030's password-free endpoints off.
+> `docs/server-bundle.md` explains build/install; two new jobs in
+> `release-desktop.yml` upload one archive per platform to the same draft release.
+> The bundle was extracted to a different path and verified: admin login **200**,
+> seeded patients served, `/auth/dev-users` **404**, Tauri CORS preflight allowed.
+> A hard-link bug that first rewrote source package manifests was found and fixed by
+> replacing files through a new inode. **OPEN QUESTION T10:** password change and
+> first-admin provisioning still do not exist.
+
+> **Session 94** cut `v0.1.2` to test the new release jobs. Every package manifest,
+> `Cargo.toml`, `Cargo.lock` and `tauri.conf.json` moved from `0.1.1` to `0.1.2`;
+> docs examples follow, historical ADR/progress entries do not. A fresh local
+> `pnpm run bundle:server` produced the 0.1.2 archive. This release is the first
+> CI run of the two server-bundle upload jobs; their result is the remaining
+> verification.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
 
@@ -4183,3 +4223,49 @@ pre-existing `zoned-wall-clock.test.ts` repeated-hour failure; API **137 passed 
 warnings and the boundary guard's scanner false positive, build **5/5**, changed files
 Prettier-clean. Root `format:check` still names the two untouched generated migration
 snapshots. No commit.
+
+---
+
+Session 89: development data now covers a full fortnight for app testing.
+
+The seed's appointments were three weeks stale and rerunning it could not move them (fixed ids
+plus `onConflictDoNothing`). `mondayDayOffset` now derives this week's Monday from `now`, and
+`FORTNIGHT_EXTRA_DAY_OFFSETS` books four appointments on every day of the two-week window the
+existing slots do not reach, so a fresh seed spans Monday 16 to Sunday 29 November 2026 with
+70 appointments and every clinic day represented. Past days carry COMPLETED/NO_SHOW; days from
+today carry CONFIRMED/SCHEDULED; rooms 1 and 2 alternate so the exclusivity guard still holds.
+The dev SQLite file was reset in place (all 27 app tables emptied, `__drizzle_migrations` kept)
+so the already-running API kept its connection, then migrate + seed rebuilt it. A logged-in
+API smoke confirms `GET /api/v1/appointments` over that window answers 70 rows, first Monday
+16 10:00 and last Sunday 29 16:30 in the clinic's clock. No migration, API, domain or UI change.
+
+**Tests.** Root typecheck **12/12**; lint **12/12** with the two existing React Compiler warnings
+and the boundary guard's scanner false positive; build **5/5**; app **427/428** with only the
+pre-existing `zoned-wall-clock.test.ts` repeated-hour failure; API **137 passed / 288 skipped**;
+SQLite smoke **36/36**. Root `format:check` still names the two untouched generated migration
+snapshots; `database/seed.ts` is Prettier-clean. No commit.
+
+---
+
+Session 92: verified `v0.1.1` builds both desktop installers.
+
+The staged release-only set was committed as `a349dfc ci(desktop): build ubuntu deb on version
+tags` and pushed (`b7828ae..a349dfc main -> main`). A new annotated `v0.1.1` tag was created at
+that commit and pushed; `v0.1.0` was left untouched. `database/seed.ts`, the session-89 progress
+hunks and `.opencode/` remained uncommitted.
+
+GitHub Actions
+[run `44160451789`](https://github.com/kapit4n/denti-code-u3/actions/runs/44160451789) started from
+the tag, ran `msi` on `windows-2022` for 5m 13s and then `deb` on `ubuntu-22.04` for 3m 55s, and
+finished **Success** in 9m 15s. Artifacts `windows-x64-msi` (4.29 MB) and `linux-amd64-deb`
+(4.36 MB) were uploaded; the draft release at
+`https://github.com/kapit4n/denti-code-u3/releases/tag/v0.1.1` reports **Assets 2**. The release
+page hides asset names to signed-out/anonymous views, but both upload steps succeeded in the
+successful run. The two warnings were GitHub's Node 20 deprecation notices for `actions/checkout@v4`,
+`actions/setup-node@v4` and `pnpm/action-setup@v4`.
+
+**Tests.** No source changed after the session-91 verification: typecheck **12/12**, lint **12/12**
+(existing warnings), build **5/5**, desktop **8/8**, root `pnpm run test` **9/10 tasks** with only
+the known `zoned-wall-clock.test.ts` repeated-hour failure, changed files Prettier-clean. The
+remaining limit is product configuration: both installers still compile `.env.example`'s localhost
+API URL and are unsigned.

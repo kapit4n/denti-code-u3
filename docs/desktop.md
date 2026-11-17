@@ -2,6 +2,8 @@
 
 Decision record: [ADR 0002](./decisions/0002-tauri-2-for-desktop.md).
 Platform boundary: [ADR 0009](./decisions/0009-platform-abstraction.md).
+Local API with data: [ADR 0040](./decisions/0040-server-bundle-with-initial-data.md),
+[`docs/server-bundle.md`](./server-bundle.md).
 
 ---
 
@@ -172,23 +174,26 @@ release build is optimisation, not behaviour.
 ## 9. Releasing the desktop installers
 
 Installers are made by a tag, not by a branch. The Windows MSI from `v0.1.0` was
-the first run; the next release is `v0.1.1`:
+the first run, `v0.1.1` added the Ubuntu `.deb`, and `v0.1.2` adds the seeded
+server bundles:
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 `.github/workflows/release-desktop.yml` then checks that the tag equals `v` plus
-the version in `tauri.conf.json` and runs two jobs. The `msi` job uses
+the version in `tauri.conf.json` and runs four jobs. The `msi` job uses
 `windows-2022` for WiX v3, calls `tauri build --bundles msi` through
 `tauri-apps/tauri-action@v1`, creates the **draft** GitHub release, and passes its
 `releaseId` to the `deb` job. The `deb` job waits for it, installs WebKitGTK 4.1
 and the other Tauri system libraries on `ubuntu-22.04`, and calls
 `tauri build --bundles deb`. Both bundles are uploaded to the same draft release
-and kept as workflow artifacts. The handoff matters: two jobs creating a release
-for one tag would race and could leave two drafts. Publishing stays a separate,
-human act; see ADR 0038 and ADR 0039.
+and kept as workflow artifacts. Two more jobs wait for that release too and upload
+the Linux and Windows server bundles described in `docs/server-bundle.md`, so the
+draft has four assets. The handoff matters: two jobs creating a release for one
+tag would race and could leave two drafts. Publishing stays a separate, human
+act; see ADR 0038, ADR 0039 and ADR 0040.
 
 `ubuntu-22.04` is the Linux baseline because it supplies WebKitGTK 4.1 from its
 standard repositories and its glibc is old enough for the `.deb` to run on older

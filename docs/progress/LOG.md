@@ -4593,6 +4593,40 @@ snapshots. No commit.
 
 ---
 
+Session 89: populate this week and the next week for app testing.
+
+The user asked for test data covering the current week and the next. Inspection showed the dev
+SQLite appointments all sat between 28 October and 7 November 2026, roughly three weeks stale,
+plus a few stray test rows; simply rerunning `pnpm run db:seed` could not move them because the
+seed's rows use fixed ids with `onConflictDoNothing`. The user chose a full reset and a
+Monday-to-Sunday fortnight.
+
+`database/seed.ts` gained `mondayDayOffset`, derived from `now` with the Sunday-first
+`getDay()` shifted so Monday is 0. `WEEK_AHEAD_SLOTS` still covers today through +7 days with
+its carefully collision-free room pattern; `FORTNIGHT_EXTRA_DAY_OFFSETS` takes the 14 days from
+this week's Monday to next Sunday, removes the ones already covered, and books four rows on each
+remaining day. Past days get COMPLETED/NO_SHOW, current and future days get CONFIRMED/SCHEDULED,
+and room 1 / room 2 alternation keeps the room exclusivity guard satisfied. The seed summary now
+says "this week + next".
+
+The dev database was reset in place rather than deleting the file: a short better-sqlite3
+script emptied all 27 app tables with foreign keys off and kept `__drizzle_migrations`, so the
+API dev server already running against `/home/luis/proj/denti-code-u3/data/denti-code-u3.db`
+kept its open handle. `pnpm run db:migrate` (no schema change) and `pnpm run db:seed` then rebuilt
+the data — 70 appointments. Verification: a direct SQLite query shows Mon 16 Nov 10:00 through
+Sun 29 Nov 16:30 in the clinic's timezone, with every one of the 14 days represented; a login
+plus `GET /api/v1/appointments` over that window through the running API returns 70 rows with the
+same first and last instants. No migration, ADR, API, domain, validation or UI change. No commit.
+
+**Tests.** Root typecheck **12/12**; lint **12/12** with the two existing React Compiler warnings
+and the boundary guard's scanner false positive; build **5/5**; app **427/428**, with only the
+pre-existing `zoned-wall-clock.test.ts` repeated-hour failure; API **137 passed / 288 skipped**
+(PostgreSQL-only tests need a server on `127.0.0.1:5433`); SQLite smoke **36/36**. Root
+`format:check` still names the two untouched generated migration snapshots; `database/seed.ts`
+is Prettier-clean.
+
+---
+
 Session 90: tag-driven Windows MSI release pipeline.
 
 The user asked whether the repo had a GitHub Action for a Windows installer and then asked to
@@ -4663,3 +4697,81 @@ says the lockfile is up to date. Desktop tests **8/8**. Root typecheck **12/12**
 `zoned-wall-clock.test.ts` repeated-hour failure (app **427/428**; validation **167**, api-client
 **15**, domain **418**, database **6**, API **137 passed / 288 skipped**). Changed files are
 Prettier-clean. The `v0.1.1` tag run is the remaining verification.
+
+---
+
+Session 92: verified `v0.1.1` builds both desktop installers.
+
+The staged release-only set was committed as `a349dfc ci(desktop): build ubuntu deb on version
+tags` and pushed (`b7828ae..a349dfc main -> main`). A new annotated `v0.1.1` tag was created at
+that commit and pushed; `v0.1.0` was left untouched. `database/seed.ts`, the session-89 progress
+hunks and `.opencode/` stayed uncommitted, as did the session-92 progress notes after this log
+entry.
+
+GitHub Actions
+[run `44160451789`](https://github.com/kapit4n/denti-code-u3/actions/runs/44160451789) started from
+the tag, ran `msi` on `windows-2022` for 5m 13s and then `deb` on `ubuntu-22.04` for 3m 55s, and
+finished **Success** in 9m 15s. Artifacts `windows-x64-msi` (4.29 MB, sha256
+`ed5a64724456af16c3daf5d1108da24ba8c9542192190ef126f2d2276eb89b3b`) and `linux-amd64-deb`
+(4.36 MB, sha256 `0a011ebede9ed73b11e9fa32884ec45db0008bb90e8342d76c8eb0980eddad8b`) were
+uploaded. The draft release at
+`https://github.com/kapit4n/denti-code-u3/releases/tag/v0.1.1` reports **Assets 2**; its
+signed-out expanded-assets view only lists the source archives, but both upload steps succeeded in
+the successful run. The only warnings were GitHub's Node 20 deprecation notices for
+`actions/checkout@v4`, `actions/setup-node@v4` and `pnpm/action-setup@v4`.
+
+**Tests.** No source changed after session 91's verification: typecheck **12/12**, lint **12/12**
+(existing warnings), build **5/5**, desktop **8/8**, root `pnpm run test` **9/10 tasks** with only
+the known `zoned-wall-clock.test.ts` repeated-hour failure, changed files Prettier-clean. The
+remaining limits are product configuration: both installers still compile `.env.example`'s
+localhost API URL and are unsigned.
+
+---
+
+Session 93: added a server bundle with initial data.
+
+The user asked for an installation that actually contains data and chose a separate
+server bundle over embedding the API and a database in the desktop installers. ADR 0040
+records that decision. `scripts/build-server-bundle.mjs` (exposed as `pnpm run bundle:server`)
+builds the API, runs `pnpm deploy --prod --legacy`, transpiles every workspace package's
+TypeScript to JS inside the bundle and repoints its export map, migrates and seeds a fresh
+SQLite file at `data/denti-code-u3.db`, copies the running Node binary, and writes
+`start.sh`, `start.cmd` and a README with the credentials. The launcher derives an absolute
+`sqlite:` URL from its own directory, so the archive is relocatable; all settings except
+`NODE_ENV` can be overridden. `database/seed.ts` now accepts `DENTI_CODE_SEED_PASSWORD` so
+each bundle gets a generated password instead of the well-known development one. Two new
+jobs in `.github/workflows/release-desktop.yml` upload a Linux `.tar.gz` and a Windows `.zip`
+to the draft release created by the MSI job. `docs/server-bundle.md`, README and
+`docs/desktop.md` point to it, and `docs/open-questions.md` T10 records the missing
+password-change / first-admin flow.
+
+**Bug found and fixed.** `pnpm deploy` hard-links copied package files from its store, so the
+first build's in-place `package.json` rewrite also changed five source manifests. The builder
+now writes through a temporary file and renames it over the target; the source files were
+restored with `git checkout --` and a rebuild left them clean.
+
+**Verification.** Built with `--password local-verify-password-123`, extracted the `.tar.gz`
+to a different directory and started it with `API_PORT=3097 ./start.sh`: admin login **200**,
+`GET /patients` **200** with the seeded rows, `GET /auth/dev-users` **404** (production), and
+an OPTIONS preflight from `tauri://localhost` returned `204` with the origin echoed. Typecheck
+**12/12**, lint **12/12** (existing warnings), `pnpm run test` **9/10 tasks** with only the known
+`zoned-wall-clock.test.ts` repeated-hour failure. `format:check` still flags two committed
+Drizzle snapshot JSON files that this session did not touch. The new CI jobs have not been run
+against a tag yet.
+
+---
+
+Session 94: cut `v0.1.2` so CI exercises the new server-bundle jobs.
+
+The version moved from `0.1.1` to `0.1.2` in the root and every workspace manifest,
+`apps/desktop/src-tauri/Cargo.toml`, the single `denti-code-u3-desktop` entry in
+`Cargo.lock`, and `tauri.conf.json`. Historical ADR and progress text keeps `v0.1.1`;
+only `docs/desktop.md` and `docs/server-bundle.md` examples were advanced. The workflow's
+tag checks all read `0.1.2`, so one tag satisfies the MSI, DEB and both bundle jobs.
+`docs/desktop.md` now describes four release jobs.
+
+**Verification.** All 14 manifests, the Tauri config and both Cargo files report `0.1.2`;
+`pnpm install --frozen-lockfile --offline` says the lockfile is up to date. Typecheck
+**12/12**, lint **12/12** (existing warnings), desktop **8/8**, and a fresh
+`pnpm run bundle:server` produced `.artifacts/denti-code-u3-server-0.1.2-linux-x64.tar.gz`.
+The CI run itself is the remaining check.

@@ -1,6 +1,6 @@
 {
   "name": "denti-code-u3",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Denti-Code U3 — modern dental clinic management system (Web + Desktop)",
   "license": "UNLICENSED",
@@ -19,6 +19,7 @@
     "desktop:run": "node scripts/desktop-pin.mjs run",
     "desktop:pins": "node scripts/desktop-pin.mjs pins",
     "desktop:forget": "node scripts/desktop-pin.mjs forget",
+    "bundle:server": "node scripts/build-server-bundle.mjs",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint && node scripts/check-boundaries.mjs",
     "lint:root": "eslint . --max-warnings 0",
