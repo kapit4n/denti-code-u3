@@ -4590,3 +4590,46 @@ pre-existing `zoned-wall-clock.test.ts` repeated-hour failure; API **137 passed 
 warnings and the boundary guard's scanner false positive, build **5/5**, changed files
 Prettier-clean. Root `format:check` still names the two untouched generated migration
 snapshots. No commit.
+
+---
+
+Session 90: tag-driven Windows MSI release pipeline.
+
+The user asked whether the repo had a GitHub Action for a Windows installer and then asked to
+create the first installer with the tag. There was no `.github` directory, no workflow and no tag;
+`origin` is `git@github.com:kapit4n/denti-code-u3.git` and the Tauri app version is `0.1.0`.
+
+`.github/workflows/release-windows.yml` now runs on `push` of `v*`. Its first step reads the Tauri
+version with `node -p` and fails unless `GITHUB_REF_NAME` is exactly `v<version>`, so the first
+valid tag is `v0.1.0` and a CI-side version rewrite cannot produce a mislabelled release. It also
+reads `VITE_API_URL` from `.env.example` into `GITHUB_ENV` so the build's compiled API address is
+explicit; the current value is `http://localhost:3010/api/v1`. The job uses `windows-2022`
+because that runner already carries WiX Toolset 3, installs pnpm 10.34.6 / Node 22 / stable Rust
+with the MSVC target, restores pnpm and Rust caches, installs with `--frozen-lockfile`, and calls
+`tauri-apps/tauri-action@v1` with `tauriScript: pnpm --dir apps/desktop exec tauri` and
+`args: --bundles msi`. The release is a draft and the MSI is also uploaded as a workflow
+artifact. The local CLI is named explicitly because Tauri's action runs the Tauri command from
+the `projectPath` and this is a monorepo; the CLI's build hook then runs the existing
+`beforeBuildCommand` from `apps/desktop`.
+
+`apps/desktop/src-tauri/icons/icon.ico` was generated from the existing 128px `icon.png` with
+Pillow (16/32/48/64/128/256 px entries) and declared in `tauri.conf.json`; without an `.ico`,
+the Windows bundler has no MSI icon. `docs/desktop.md` §8 now says the MSI is built by the tag
+workflow rather than locally, and §9 gives the two commands that cut a release. ADR 0038 records
+three deliberate limits: Windows/MSI only, tag-driven release, and no signing, updater or
+remote API configuration in this first slice. Two tests were added to
+`apps/desktop/test/tauri-config.test.ts` so the icon file and the `msi` target cannot be lost.
+
+The commit, tag and push that trigger the first release are the next verification step: GitHub
+Actions must run the pushed tag on a Windows runner. The first MSI is unsigned and points at
+localhost.
+
+**Tests.** Workflow YAML parsed (one `msi` job, trigger `v*`, eight steps, `windows-2022`);
+local version/URL simulation passed (`v0.1.0 | http://localhost:3010/api/v1 | csp host allowed:
+true`); `file` identified the generated `.ico`; `pnpm --filter @denti-code-u3/desktop test`
+**6/6**. Root typecheck **12/12**, lint **12/12** (two existing React Compiler warnings and the
+boundary guard's scanner false positive), build **5/5**. Root `pnpm run test` was **9/10 tasks**:
+validation **167**, api-client **15**, domain **418**, database **6**, API **137 passed / 288
+skipped**, app **427/428** with only the known `zoned-wall-clock.test.ts` repeated-hour failure.
+Changed files are Prettier-clean; root `format:check` still names the two untouched generated
+migration snapshots.

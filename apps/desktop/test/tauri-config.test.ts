@@ -20,7 +20,7 @@
  * purpose.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -34,6 +34,7 @@ const tauriConfig = JSON.parse(
     security: { csp: string };
   };
   build: { frontendDist: string; devUrl: string };
+  bundle: { icon: string[]; targets: string[] };
 };
 const exampleEnv = readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
 
@@ -90,5 +91,17 @@ describe('the Tauri CSP', () => {
     // that difference — see `scripts/desktop-pin.mjs`.
     expect(tauriConfig.build.frontendDist).toBe('../dist');
     expect(tauriConfig.build.devUrl).toMatch(/^http:\/\/localhost:/);
+  });
+});
+
+describe('the Windows release bundle', () => {
+  it('names a Windows icon that exists in the tree', () => {
+    const icon = 'icons/icon.ico';
+    expect(tauriConfig.bundle.icon).toContain(icon);
+    expect(existsSync(path.join(repoRoot, 'apps/desktop/src-tauri', icon))).toBe(true);
+  });
+
+  it('keeps the MSI target the tag workflow builds', () => {
+    expect(tauriConfig.bundle.targets).toContain('msi');
   });
 });

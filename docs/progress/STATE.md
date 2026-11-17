@@ -1,7 +1,19 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 88 (bill completed planned work and choose lines while closing a visit)
+> Last updated: session 90 (tag-driven Windows MSI release pipeline)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
+
+> **Session 90** added the first release pipeline: pushing a `v*` tag whose name equals
+> `v<apps/desktop/src-tauri/tauri.conf.json.version>` runs
+> `.github/workflows/release-windows.yml` on GitHub-hosted `windows-2022`, builds only the MSI
+> bundle with the locally pinned Tauri CLI, and opens a draft release with the installer plus a
+> workflow artifact. Tag `v0.1.0` is the first valid tag. The bundle icon is a generated
+> `apps/desktop/src-tauri/icons/icon.ico`, `docs/desktop.md` explains how to cut the release, and
+> `apps/desktop/test/tauri-config.test.ts` pins both the icon and the `msi` target. Because this
+> first build compiles `.env.example`'s `VITE_API_URL` (`http://localhost:3010/api/v1`) into the
+> Windows app, it is an unsigned localhost-only MSI; ADR 0038 records why the pipeline is
+> tag-driven, Windows-only and deliberately minimal. The commit, tag and push that trigger the
+> first release are the next verification step.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
 

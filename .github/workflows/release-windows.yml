@@ -1,0 +1,64 @@
+name: Release Windows installer
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  msi:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.6
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Check the tag and read the desktop API URL
+        shell: bash
+        run: |
+          version=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match app version $version"
+            exit 1
+          fi
+          api_url=$(node -e "const fs=require('fs');const line=fs.readFileSync('.env.example','utf8').split('\n').find(l=>l.startsWith('VITE_API_URL='));if(!line)process.exit(1);process.stdout.write(line.slice('VITE_API_URL='.length).trim())")
+          echo "VITE_API_URL=$api_url" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and publish the MSI
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tauriScript: pnpm --dir apps/desktop exec tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: Denti-Code U3 ${{ github.ref_name }}
+          releaseBody: Windows MSI installer for Denti-Code U3. The desktop app calls the API URL compiled into this build; see docs/desktop.md.
+          releaseDraft: true
+          prerelease: false
+          args: --bundles msi
+          uploadWorkflowArtifacts: true
