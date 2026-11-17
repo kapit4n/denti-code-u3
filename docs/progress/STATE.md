@@ -62,8 +62,9 @@
 > `Cargo.toml`, `Cargo.lock` and `tauri.conf.json` moved from `0.1.1` to `0.1.2`;
 > docs examples follow, historical ADR/progress entries do not. A fresh local
 > `pnpm run bundle:server` produced the 0.1.2 archive. This release is the first
-> CI run of the two server-bundle upload jobs; their result is the remaining
-> verification.
+> CI run of the two server-bundle upload jobs: Actions run `44168506663` finished
+> with `msi`, `deb`, `server-linux` and `server-windows` all successful, so the
+> draft `v0.1.2` release has all four artifacts.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
 

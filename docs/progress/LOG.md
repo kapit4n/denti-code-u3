@@ -4774,4 +4774,6 @@ tag checks all read `0.1.2`, so one tag satisfies the MSI, DEB and both bundle j
 `pnpm install --frozen-lockfile --offline` says the lockfile is up to date. Typecheck
 **12/12**, lint **12/12** (existing warnings), desktop **8/8**, and a fresh
 `pnpm run bundle:server` produced `.artifacts/denti-code-u3-server-0.1.2-linux-x64.tar.gz`.
-The CI run itself is the remaining check.
+The tag was pushed and Actions run `44168506663` completed with all four jobs
+successful: `msi`, `deb`, `server-linux` and `server-windows`. The draft `v0.1.2`
+release therefore has the MSI, DEB, Linux `.tar.gz` and Windows `.zip` server bundles.
