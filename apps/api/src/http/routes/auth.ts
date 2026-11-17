@@ -9,8 +9,14 @@
  */
 
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { DomainError, login, logout, type AuthDependencies } from '@denti-code-u3/domain';
-import { loginSchema } from '@denti-code-u3/validation';
+import {
+  changePassword,
+  DomainError,
+  login,
+  logout,
+  type AuthDependencies,
+} from '@denti-code-u3/domain';
+import { changePasswordSchema, loginSchema } from '@denti-code-u3/validation';
 import type { ClinicId } from '@denti-code-u3/types';
 
 import type { LoginRateLimiter } from '../../infrastructure/security/login-rate-limiter.js';
@@ -33,6 +39,10 @@ export interface AuthRoutesDependencies {
  */
 function rateLimitKey(email: string, clientAddress: string): string {
   return `${email.trim().toLowerCase()}|${clientAddress}`;
+}
+
+function passwordRateLimitKey(userId: string, clientAddress: string): string {
+  return `change-password|${userId}|${clientAddress}`;
 }
 
 function readBearerToken(request: FastifyRequest): string | undefined {
@@ -100,6 +110,49 @@ export async function registerAuthRoutes(
         loginRateLimiter.recordFailure(key);
       }
       return sendProblem(reply, request, error, 'Login failed');
+    }
+  });
+
+  app.post('/api/v1/auth/change-password', async (request, reply) => {
+    const parsed = changePasswordSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(422).send({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'The current or new password is missing or malformed',
+          details: { issues: parsed.error.issues },
+          requestId: request.id,
+        },
+      });
+    }
+
+    const key = passwordRateLimitKey(request.principal.userId, request.ip);
+    const decision = loginRateLimiter.check(key);
+    if (!decision.allowed) {
+      reply.header('retry-after', String(decision.retryAfterSeconds));
+      return reply.status(429).send({
+        error: {
+          code: 'RATE_LIMITED',
+          message: 'Too many password attempts. Try again later.',
+          requestId: request.id,
+        },
+      });
+    }
+
+    try {
+      await changePassword(
+        request.clinicId as ClinicId,
+        request.principal.userId,
+        parsed.data,
+        auth,
+      );
+      loginRateLimiter.recordSuccess(key);
+      return reply.status(204).send();
+    } catch (error) {
+      if (error instanceof DomainError && error.code === 'UNAUTHENTICATED') {
+        loginRateLimiter.recordFailure(key);
+      }
+      return sendProblem(reply, request, error, 'Password change failed');
     }
   });
 

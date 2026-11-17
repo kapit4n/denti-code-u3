@@ -2,7 +2,8 @@
 
 Decision record: [ADR 0002](./decisions/0002-tauri-2-for-desktop.md).
 Platform boundary: [ADR 0009](./decisions/0009-platform-abstraction.md).
-Local API with data: [ADR 0040](./decisions/0040-server-bundle-with-initial-data.md),
+Embedded local API: [ADR 0041](./decisions/0041-desktop-installer-embeds-local-clinic-server.md).
+Separate LAN server bundle: [ADR 0040](./decisions/0040-server-bundle-with-initial-data.md),
 [`docs/server-bundle.md`](./server-bundle.md).
 
 ---
@@ -10,24 +11,26 @@ Local API with data: [ADR 0040](./decisions/0040-server-bundle-with-initial-data
 ## 1. What the desktop app is
 
 A **host** for the same React application the browser runs, packaged as a native
-application with Tauri 2. It is not a second application, not an offline client,
-and not a database client.
+application with Tauri 2. It is not a second application and not an offline client.
+The installed MSI/DEB also embeds a local clinic server (ADR 0041), so one installer
+opens to a working login screen.
 
 ```
 Tauri 2 (Rust)
-   └── loads the SAME React bundle as web (built from packages/app)
-          └── packages/app → api-client → REST API → PostgreSQL
+   ├── loads the SAME React bundle as web (built from packages/app)
+   │      └── packages/app → api-client → REST API on 127.0.0.1:3010
+   └── starts the bundled Node API; SQLite lives in the app data directory
 ```
 
 Concretely:
 
-| Concern           | Desktop                         | Web                          |
-| ----------------- | ------------------------------- | ---------------------------- |
-| UI code           | `packages/app`                  | `packages/app`               |
-| Routing           | `packages/app/src/routes`       | `packages/app/src/routes`    |
-| Data              | `packages/api-client` → REST    | `packages/api-client` → REST |
-| Database          | none                            | none                         |
-| Host capabilities | via `packages/app/src/platform` | via `platform/web.ts`        |
+| Concern           | Desktop                                       | Web                          |
+| ----------------- | --------------------------------------------- | ---------------------------- |
+| UI code           | `packages/app`                                | `packages/app`               |
+| Routing           | `packages/app/src/routes`                     | `packages/app/src/routes`    |
+| Data              | `packages/api-client` → REST                  | `packages/api-client` → REST |
+| Database          | app-data SQLite, opened only by the local API | none                         |
+| Host capabilities | via `packages/app/src/platform`               | via `platform/web.ts`        |
 
 ## 2. Layout
 
@@ -69,19 +72,24 @@ rule 18).
 
 ## 4. Configuration
 
-- The desktop shell reads the API URL from its own env (`VITE_API_URL`), so a
-  desktop build can point at a different backend (clinic LAN server vs cloud)
-  without touching feature code.
+- The desktop shell reads the API URL from its own env (`VITE_API_URL_DESKTOP`,
+  falling back to `VITE_API_URL`), so a desktop build can point at a different
+  backend (clinic LAN server vs cloud) without touching feature code.
 - The build embeds this at compile time (Vite env), and the runtime can
   override it through the platform storage (planned: an environment switcher in
   Settings — a product decision, Milestone 12).
-- There is no local database and therefore no local secrets beyond the API URL.
+- An installed build embeds a seeded local API at `127.0.0.1:3010`. The database is
+  copied from the installer to `app_data_dir/server/` on first launch and reused
+  afterwards; the generated password is exposed through
+  `getLocalClinicCredentials()` on the platform abstraction.
 
 ## 5. Security posture
 
 - Tauri capabilities are minimal: only the windows and plugins actually used are
-  granted in `src-tauri/capabilities/`.
-- No filesystem-wide access; no shell plugin; no arbitrary command execution.
+  granted in `src-tauri/capabilities/`. The embedded API is a child process created
+  in Rust; the webview has no shell or filesystem capability.
+- No filesystem-wide access; no shell plugin; no arbitrary command execution from
+  the webview. The local API binds only `127.0.0.1`.
 - The webview loads only local bundled assets in release builds (no remote URL
   loading), with a CSP that disallows remote script execution.
 - `connect-src` in that CSP names the API origin, and it has to be kept in step
@@ -90,8 +98,8 @@ rule 18).
   empty agenda, with nothing in any log.
   `apps/desktop/test/tauri-config.test.ts` asserts the two agree, against
   `.env.example` so a clinic LAN URL in a developer's own `.env` cannot fail it.
-- Clinical data is never written to the desktop app's local store; only UI
-  preferences are persisted.
+- Clinical data is written only to the embedded API's SQLite file in the app data
+  directory, never to the webview's key/value store. UI preferences stay separate.
 
 ## 6. Development
 
@@ -148,12 +156,16 @@ compiles. The rationale, and the reasoning behind the debug profile, is in
 - **OS webview variance:** WebKitGTK / WebView2 / WKWebView differ. The app
   targets evergreen Chromium-baseline CSS/JS; platform-specific styling is kept
   to a minimum.
-- **Requires network access to the API:** by design (ADR 0003). A clinic
-  without connectivity loses the desktop app; this is a documented product
-  limitation, not a bug. Offline is a possible future milestone with its own
-  ADRs.
-- **No local data:** no local backup, no local export, no local database.
-  Requesting these is a product conversation, not an implementation detail.
+- **Port `3010` must be free:** the embedded API binds it at startup. A developer
+  API or separately downloaded server bundle already on that port prevents launch;
+  this is reported as a startup error and written to the app-data log. Runtime port
+  negotiation is an OPEN QUESTION because the API URL is compiled into the webview.
+- **Local data is single-workstation:** the app-data SQLite file is not shared with
+  other machines. Clinics needing several workstations use the separate server
+  bundle or a hosted API. There is no offline mode or synchronization (ADR 0041).
+- **No local backup/restore yet:** the database file exists, but backup and restore
+  are still product work. Change the generated password in Settings before real data;
+  see [ADR 0042](./decisions/0042-password-change-and-first-admin-bootstrap.md).
 
 ## 8. Verification status on this machine
 
@@ -174,36 +186,39 @@ release build is optimisation, not behaviour.
 ## 9. Releasing the desktop installers
 
 Installers are made by a tag, not by a branch. The Windows MSI from `v0.1.0` was
-the first run, `v0.1.1` added the Ubuntu `.deb`, and `v0.1.2` adds the seeded
-server bundles:
+the first run, `v0.1.1` added the Ubuntu `.deb`, `v0.1.2` added the seeded
+separate server bundles, and `v0.1.3` adds the embedded local server to both
+MSI and DEB:
 
 ```bash
-git tag v0.1.2
-git push origin v0.1.2
+git tag v0.1.3
+git push origin v0.1.3
 ```
 
 `.github/workflows/release-desktop.yml` then checks that the tag equals `v` plus
 the version in `tauri.conf.json` and runs four jobs. The `msi` job uses
-`windows-2022` for WiX v3, calls `tauri build --bundles msi` through
+`windows-2022` for WiX v3, runs `pnpm run bundle:desktop-server` to embed a Windows
+Node runtime and the seeded API, calls `tauri build --bundles msi` through
 `tauri-apps/tauri-action@v1`, creates the **draft** GitHub release, and passes its
 `releaseId` to the `deb` job. The `deb` job waits for it, installs WebKitGTK 4.1
-and the other Tauri system libraries on `ubuntu-22.04`, and calls
-`tauri build --bundles deb`. Both bundles are uploaded to the same draft release
-and kept as workflow artifacts. Two more jobs wait for that release too and upload
-the Linux and Windows server bundles described in `docs/server-bundle.md`, so the
-draft has four assets. The handoff matters: two jobs creating a release for one
-tag would race and could leave two drafts. Publishing stays a separate, human
-act; see ADR 0038, ADR 0039 and ADR 0040.
+and the other Tauri system libraries on `ubuntu-22.04`, builds Linux resources and
+calls `tauri build --bundles deb`. Both bundles are uploaded to the same draft
+release and kept as workflow artifacts. Two more jobs wait for that release too
+and upload the separate Linux and Windows server bundles described in
+`docs/server-bundle.md`, so the draft has four assets. The handoff matters: two
+jobs creating a release for one tag would race and could leave two drafts.
+Publishing stays a separate, human act; see ADR 0038, ADR 0039, ADR 0040 and ADR 0041.
 
 `ubuntu-22.04` is the Linux baseline because it supplies WebKitGTK 4.1 from its
 standard repositories and its glibc is old enough for the `.deb` to run on older
 Ubuntu and Debian systems. Building on a newer image would raise that floor.
 
-Both builds read `VITE_API_URL` from `.env.example` before invoking Vite, so the
-compiled API URL and the webview CSP still agree — the same contract
-`apps/desktop/test/tauri-config.test.ts` checks locally. The installers therefore
-call `http://localhost:3010/api/v1`: they expect a clinic API on the same machine,
-not a cloud server. Repointing them means changing `.env.example` and the CSP
+Both builds read the desktop API URL from `.env.example` before invoking Vite, so
+the compiled API URL and the webview CSP still agree — the same contract
+`apps/desktop/test/tauri-config.test.ts` checks locally. The installers call
+`http://localhost:3010/api/v1`, which the embedded API serves on the same machine.
+The separate server bundle serves the same URL for clinics that want a shared
+server. Repointing the compiled URL means changing `.env.example` and the CSP
 together and cutting a new tag, not changing a secret at install time.
 
 `bundle.icon` names the generated Windows `icon.ico` and the Linux PNG set

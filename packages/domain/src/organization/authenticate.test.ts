@@ -72,6 +72,11 @@ function activeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUs
 interface FakeUsers extends UserRepository {
   readonly saved: (AuthenticatedUser & { readonly passwordHash: string })[];
   readonly loggedIn: { userId: string; at: string }[];
+  readonly updatedPasswordHashes: {
+    clinicId: string;
+    userId: string;
+    passwordHash: string;
+  }[];
   credentials?: UserWithCredentials;
   byId?: AuthenticatedUser;
 }
@@ -79,10 +84,19 @@ interface FakeUsers extends UserRepository {
 function fakeUsers(): FakeUsers {
   const saved: (AuthenticatedUser & { readonly passwordHash: string })[] = [];
   const loggedIn: { userId: string; at: string }[] = [];
+  const updatedPasswordHashes: {
+    clinicId: string;
+    userId: string;
+    passwordHash: string;
+  }[] = [];
   return {
     saved,
     loggedIn,
+    updatedPasswordHashes,
     async findByEmailForLogin() {
+      return this.credentials;
+    },
+    async findCredentialsById() {
       return this.credentials;
     },
     async findById() {
@@ -96,6 +110,9 @@ function fakeUsers(): FakeUsers {
     },
     async save(user) {
       saved.push(user);
+    },
+    async updatePasswordHash(clinicId, userId, passwordHash) {
+      updatedPasswordHashes.push({ clinicId, userId, passwordHash });
     },
   };
 }

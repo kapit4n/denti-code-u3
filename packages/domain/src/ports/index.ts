@@ -1182,6 +1182,7 @@ export interface UserRepository {
    * that into a different message than a wrong password.
    */
   findByEmailForLogin(clinicId: ClinicId, email: string): Promise<UserWithCredentials | undefined>;
+  findCredentialsById(clinicId: ClinicId, userId: UserId): Promise<UserWithCredentials | undefined>;
   findById(clinicId: ClinicId, userId: UserId): Promise<AuthenticatedUser | undefined>;
   /**
    * Every user in the clinic, active or not, ordered by name.
@@ -1194,6 +1195,7 @@ export interface UserRepository {
   /** Stamps `last_login_at` after a successful login. */
   recordLogin(clinicId: ClinicId, userId: UserId, at: IsoDateTime): Promise<void>;
   save(user: AuthenticatedUser & { readonly passwordHash: string }): Promise<void>;
+  updatePasswordHash(clinicId: ClinicId, userId: UserId, passwordHash: string): Promise<void>;
 }
 
 /**

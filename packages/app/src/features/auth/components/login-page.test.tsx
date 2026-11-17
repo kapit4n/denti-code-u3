@@ -12,6 +12,8 @@ import { ApiClient } from '@denti-code-u3/api-client';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { defaultWebCapabilities, type PlatformCapabilities } from '../../../platform/index.js';
+import { PlatformProvider } from '../../../providers.js';
 import { ApiClientProvider } from '../../../query/api-client-provider.js';
 import { SessionProvider } from '../session-provider.js';
 import { LoginPage } from './login-page.js';
@@ -20,7 +22,10 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-function renderLogin(fetchImplementation: typeof fetch) {
+function renderLogin(
+  fetchImplementation: typeof fetch,
+  capabilities: PlatformCapabilities = defaultWebCapabilities,
+) {
   const client = new ApiClient({
     baseUrl: 'http://api.test/api/v1',
     fetchImplementation,
@@ -28,11 +33,13 @@ function renderLogin(fetchImplementation: typeof fetch) {
 
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ApiClientProvider baseUrl="http://api.test/api/v1" client={client}>
-        <SessionProvider>
-          <LoginPage />
-        </SessionProvider>
-      </ApiClientProvider>
+      <PlatformProvider capabilities={capabilities}>
+        <ApiClientProvider baseUrl="http://api.test/api/v1" client={client}>
+          <SessionProvider>
+            <LoginPage />
+          </SessionProvider>
+        </ApiClientProvider>
+      </PlatformProvider>
     </QueryClientProvider>,
   );
 }
@@ -141,5 +148,27 @@ describe('LoginPage', () => {
     await waitFor(() => {
       expect(window.localStorage.getItem('denti-code-session')).toContain('dev-token');
     });
+  });
+
+  it('shows first-run credentials supplied by a desktop installer', async () => {
+    const capabilities: PlatformCapabilities = {
+      ...defaultWebCapabilities,
+      async getLocalClinicCredentials() {
+        return { email: 'admin@denti-code.test', password: 'bundle-secret-123' };
+      },
+    };
+    const fetchImplementation = vi.fn(async () =>
+      Promise.resolve(new Response('{}', { status: 200 })),
+    ) as unknown as typeof fetch;
+
+    renderLogin(fetchImplementation, capabilities);
+
+    const banner = await screen.findByTestId('local-credentials');
+    expect(banner).toHaveTextContent('admin@denti-code.test');
+    expect(banner).toHaveTextContent('bundle-secret-123');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use these credentials' }));
+    expect(screen.getByLabelText('Email')).toHaveValue('admin@denti-code.test');
+    expect(screen.getByLabelText('Password')).toHaveValue('bundle-secret-123');
   });
 });

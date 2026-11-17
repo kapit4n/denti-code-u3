@@ -1,6 +1,6 @@
 {
   "name": "@denti-code-u3/database",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -8,12 +8,13 @@
   "main": "schema/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "eslint schema db-url.ts db-url.test.ts migrate.ts seed.ts",
+    "lint": "eslint schema db-url.ts db-url.test.ts migrate.ts seed.ts password-hash.ts password-hash.test.ts bootstrap-admin.ts bootstrap-admin.test.ts",
     "test": "vitest run --passWithNoTests",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:generate:sqlite": "drizzle-kit generate --config drizzle.config.sqlite.ts",
     "db:migrate": "tsx --env-file-if-exists=../.env migrate.ts",
     "db:seed": "tsx --env-file-if-exists=../.env seed.ts",
+    "db:bootstrap-admin": "tsx --env-file-if-exists=../.env bootstrap-admin.ts",
     "db:studio": "drizzle-kit studio --config drizzle.config.ts"
   },
   "dependencies": {

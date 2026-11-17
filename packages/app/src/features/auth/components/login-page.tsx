@@ -13,12 +13,14 @@
  * and the server is the one that decides.
  */
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { ApiClientError } from '@denti-code-u3/api-client';
 import { Button, Input, Label } from '@denti-code-u3/ui';
 import { Stethoscope } from 'lucide-react';
 
 import { useTranslation, type Translate, type TranslationKey } from '../../../i18n/index.js';
+import type { LocalClinicCredentials } from '../../../platform/index.js';
+import { usePlatform } from '../../../providers.js';
 import type { SessionUser } from '../session-storage.js';
 import { useSession } from '../session-provider.js';
 import { useDevUsers } from '../queries/use-dev-users.js';
@@ -26,11 +28,28 @@ import { useDevUsers } from '../queries/use-dev-users.js';
 export function LoginPage(): React.ReactNode {
   const { t } = useTranslation();
   const { signIn, signInAs } = useSession();
+  const platform = usePlatform();
   const devUsers = useDevUsers();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
+  const [localCredentials, setLocalCredentials] = useState<LocalClinicCredentials | undefined>();
+
+  useEffect(() => {
+    let active = true;
+    void platform
+      .getLocalClinicCredentials()
+      .then((credentials) => {
+        if (active) setLocalCredentials(credentials);
+      })
+      .catch(() => {
+        if (active) setLocalCredentials(undefined);
+      });
+    return () => {
+      active = false;
+    };
+  }, [platform]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -114,6 +133,34 @@ export function LoginPage(): React.ReactNode {
             {submitting ? t('auth.signIn.submitting') : t('auth.signIn.submit')}
           </Button>
         </form>
+
+        {localCredentials ? (
+          <div
+            className="mt-4 rounded-lg border border-dashed bg-muted/40 p-3 text-sm"
+            data-testid="local-credentials"
+          >
+            <p className="font-medium">{t('auth.local.title')}</p>
+            <p className="mt-1 text-muted-foreground">
+              {t('auth.local.email')} <code>{localCredentials.email}</code>
+            </p>
+            <p className="text-muted-foreground">
+              {t('auth.local.password')} <code>{localCredentials.password}</code>
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">{t('auth.local.warning')}</p>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-3 w-full"
+              onClick={() => {
+                setEmail(localCredentials.email);
+                setPassword(localCredentials.password);
+                setError(undefined);
+              }}
+            >
+              {t('auth.local.useCredentials')}
+            </Button>
+          </div>
+        ) : null}
 
         {devUserList.length > 0 ? (
           <>

@@ -4777,3 +4777,76 @@ tag checks all read `0.1.2`, so one tag satisfies the MSI, DEB and both bundle j
 The tag was pushed and Actions run `44168506663` completed with all four jobs
 successful: `msi`, `deb`, `server-linux` and `server-windows`. The draft `v0.1.2`
 release therefore has the MSI, DEB, Linux `.tar.gz` and Windows `.zip` server bundles.
+
+---
+
+Session 95: embedded the clinic server in the desktop installer.
+
+The user asked if one installer could contain both the UI and server, and after the trade-off was
+explained said "ok do it". The accepted direction is both: MSI/DEB now embed a local API for a
+single workstation, while the separately published server bundle remains for a shared LAN server.
+ADR 0041 records the decision and supersedes ADR 0002's no-local-database rule for embedded
+installs; ADR 0040's status was updated. `docs/desktop.md`, `docs/server-bundle.md`,
+`README.md` and `docs/open-questions.md` T10 were updated to match.
+
+`scripts/build-desktop-server-resources.mjs` (root script `bundle:desktop-server`) calls the
+reusable exports from `scripts/build-server-bundle.mjs`, generates a per-build admin password, and
+copies the seeded API, Node runtime and DB into Tauri resources plus `desktop-server.json`. The
+resources directory is gitignored except for a committed `.gitkeep`. Both release jobs now call
+the script, and `desktop-pin.mjs` does the same before a local pinned build.
+
+Rust now owns the whole sidecar lifecycle in `apps/desktop/src-tauri/src/lib.rs`: read the config,
+copy the seeded database into `app_data_dir/server/`, check port 3010, spawn Node with production
+env and an app-data SQLite URL, log to `server.log`, wait for readiness, inject
+`window.__DENTI_CODE_LOCAL_CREDENTIALS__`, and stop the child when the last window is destroyed.
+The shared app gained `getLocalClinicCredentials()` via the platform abstraction; the desktop
+shell implements it from the injected global and the login page shows a first-run banner with a
+"Use these credentials" button. No `@tauri-apps/api` dependency was added.
+
+Two bundling bugs were found and fixed. `fs.cpSync`'s `dereference` option left absolute pnpm
+symlinks pointing at the deleted temp build, which Tauri's resource validator rejected. Rewriting
+them as relative symlinks passed validation but Tauri dereferenced them when copying, breaking
+Node resolution (`Cannot find module 'avvio'`). The final builder materialises symlinked packages
+as real directories and hoists every package from `.pnpm/*/node_modules` into the flat
+`node_modules` tree, so the copied resource is self-contained.
+
+**Verification.** Typecheck **12/12**, lint **12/12** (existing warnings), boundary guard OK,
+desktop tests **10/10**, login-page tests **5/5**, root `pnpm run test` **9/10 tasks** with only
+the known `zoned-wall-clock.test.ts` repeated-hour failure. Changed files are Prettier-clean;
+root `format:check` still names the two untouched generated Drizzle snapshots. `cargo check`
+passed; `cargo fmt --check` could not run because `rustfmt` is not installed.
+`pnpm run bundle:desktop-server`, `pnpm run desktop:pin`, and a fresh `DISPLAY=:0` launch all
+passed: the API copied the DB to app data, wrote no startup error, logged
+`Server listening at http://127.0.0.1:3010`, and admin login with the generated password returned
+**200** with a token. The process group was stopped and port 3010 is free. No commit, version bump
+or tag yet.
+
+---
+
+Session 96: closed T10 with self-service password change and first-admin provisioning.
+
+The user chose `"T10 password change (Recommended)"`. ADR 0042 accepts a new
+authenticated `POST /api/v1/auth/change-password` route with no permission, an id taken
+from the session principal, a generic `UNAUTHENTICATED` error for a wrong current
+password, a 12-character minimum, a principal-and-address throttle, and no session
+revocation. The wire schema lives in `packages/validation`, the use case in
+`packages/domain`, the route and credential persistence in the API, and the form in the
+Settings page. `UserRepository` gained `findCredentialsById` and `updatePasswordHash`
+for both PostgreSQL and SQLite; `save` remains insert-only.
+
+The local CLI `pnpm run db:bootstrap-admin --email … --password …` creates a clinic if
+missing and one `ADMINISTRATOR`, requires `DATABASE_URL` and `CLINIC_ID`, and refuses if
+the clinic already has any user. It never resets a password. Shared scrypt hashing moved
+to `database/password-hash.ts`; seeding imports it. ADR 0040, ADR 0041, `docs/security.md`,
+`docs/database.md`, `docs/desktop.md`, `docs/server-bundle.md`, the generated bundle
+README instructions, `docs/open-questions.md` and both translation catalogues were updated.
+T10 is resolved. All 14 package manifests, `Cargo.toml`, `Cargo.lock`, `tauri.conf.json`
+and current docs examples moved from `0.1.2` to `0.1.3`.
+
+**Verification.** Targeted suites passed: domain **4/4**, database **4/4**, API auth
+**20/20**, change-password card + settings **6/6**, and e2e **182/182**. Typecheck
+**12/12**, lint **12/12** (existing React Compiler warnings and boundary-guard scanner
+false positive), build **5/5**, boundary guard OK. Root `pnpm run test` still fails only
+at the pre-existing `zoned-wall-clock.test.ts` repeated-hour case; root `format:check`
+still names the two untouched generated migration snapshots. Changed files are
+Prettier-clean. Commit, tag and CI verification are pending.

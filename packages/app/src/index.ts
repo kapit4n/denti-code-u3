@@ -14,7 +14,9 @@ export { createAppRouter, type AppRouter, type CreateAppRouterOptions } from './
 
 export {
   PlatformUnsupportedError,
+  capabilitiesForTarget,
   defaultWebCapabilities,
+  type LocalClinicCredentials,
   type PlatformCapabilities,
   type RuntimeTarget,
 } from './platform/index.js';

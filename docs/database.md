@@ -117,6 +117,10 @@ inventory_items ── stock_movements
 - No automatic schema mutation at API boot: schema changes go through
   migrations, always.
 - Seed data (`pnpm run db:seed`) is idempotent and clearly marked development-only.
+- `pnpm run db:bootstrap-admin --email owner@clinic.test --password <12+ chars>` creates
+  the clinic named by `CLINIC_ID` when missing and inserts its first `ADMINISTRATOR`.
+  It refuses to continue if the clinic already has any user, on either engine
+  (ADR 0042). It never prints the password.
 
 ## 7. Development database
 

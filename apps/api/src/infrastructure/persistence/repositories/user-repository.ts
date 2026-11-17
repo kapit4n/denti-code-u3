@@ -55,6 +55,26 @@ export class DrizzleUserRepository implements UserRepository {
     };
   }
 
+  async findCredentialsById(
+    clinicId: ClinicId,
+    userId: UserId,
+  ): Promise<UserWithCredentials | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(users)
+      .where(and(eq(users.clinicId, clinicId), eq(users.id, userId)))
+      .limit(1);
+
+    if (!row) {
+      return undefined;
+    }
+
+    return {
+      user: toUser(row),
+      ...(row.passwordHash === null ? {} : { passwordHash: row.passwordHash }),
+    };
+  }
+
   async findById(clinicId: ClinicId, userId: UserId): Promise<AuthenticatedUser | undefined> {
     const [row] = await this.db
       .select()
@@ -92,6 +112,17 @@ export class DrizzleUserRepository implements UserRepository {
       role: user.role,
       isActive: user.isActive,
     });
+  }
+
+  async updatePasswordHash(
+    clinicId: ClinicId,
+    userId: UserId,
+    passwordHash: string,
+  ): Promise<void> {
+    await this.db
+      .update(users)
+      .set({ passwordHash, updatedAt: new Date() })
+      .where(and(eq(users.clinicId, clinicId), eq(users.id, userId)));
   }
 }
 

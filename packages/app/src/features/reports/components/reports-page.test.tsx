@@ -131,6 +131,9 @@ function renderReports() {
     hasNativeShell: false,
     locale: 'es-PE',
     timeZone: 'America/Lima',
+    async getLocalClinicCredentials() {
+      return undefined;
+    },
     async openExternal() {},
     saveFile,
   };

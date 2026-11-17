@@ -1,12 +1,14 @@
 # Server bundle with initial data
 
-The desktop MSI/DEB contains no API and no database: it is a webview compiled
-against `http://localhost:3010/api/v1` (`docs/desktop.md`). This bundle supplies
-that API together with an already migrated and seeded SQLite database, so a
-fresh installation has users and clinic data on first sign-in.
+The desktop MSI/DEB is a webview compiled against `http://localhost:3010/api/v1`
+(`docs/desktop.md`). Since ADR 0041 the installers embed a local copy of this API.
+This separate bundle supplies the same API and an already migrated and seeded
+SQLite database for clinics that want a shared or standalone server, or that
+prefer to run the server outside the desktop app.
 
 The decision and its limits are recorded in
-[ADR 0040](./decisions/0040-server-bundle-with-initial-data.md).
+[ADR 0040](./decisions/0040-server-bundle-with-initial-data.md) and
+[ADR 0041](./decisions/0041-desktop-installer-embeds-local-clinic-server.md).
 
 ## Build one locally
 
@@ -19,8 +21,8 @@ pnpm run bundle:server
 That writes a platform-specific directory and archive under `.artifacts/`:
 
 ```
-.artifacts/denti-code-u3-server-0.1.2-linux-x64/
-.artifacts/denti-code-u3-server-0.1.2-linux-x64.tar.gz
+.artifacts/denti-code-u3-server-0.1.3-linux-x64/
+.artifacts/denti-code-u3-server-0.1.3-linux-x64.tar.gz
 ```
 
 Useful options:
@@ -55,8 +57,8 @@ bundle and repoints their export maps. No repository source file is changed.
 On Linux/macOS:
 
 ```bash
-tar -xzf denti-code-u3-server-0.1.2-linux-x64.tar.gz
-cd denti-code-u3-server-0.1.2-linux-x64
+tar -xzf denti-code-u3-server-0.1.3-linux-x64.tar.gz
+cd denti-code-u3-server-0.1.3-linux-x64
 ./start.sh
 ```
 
@@ -78,9 +80,9 @@ The other seeded accounts are `recepcion@`, `elena.vargas@` and
 
 - The server runs with `NODE_ENV=production`, so `/api/v1/auth/dev-users` and the
   password-free sign-in buttons are not registered (ADR 0030).
-- There is no password-change screen yet. Treat the bundle password as
-  evaluation-only and rotate it before storing real patient data (**OPEN
-  QUESTION**).
+- Change the per-build bundle password in Settings before storing real patient data;
+  [ADR 0042](./decisions/0042-password-change-and-first-admin-bootstrap.md) resolves
+  the old open question.
 - The seed fixes appointments relative to the build date. A bundle stored for
   months will show an old calendar.
 - The API owns the database. Do not edit `data/denti-code-u3.db` from the desktop

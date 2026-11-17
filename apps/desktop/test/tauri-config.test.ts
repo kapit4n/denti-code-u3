@@ -34,7 +34,7 @@ const tauriConfig = JSON.parse(
     security: { csp: string };
   };
   build: { frontendDist: string; devUrl: string };
-  bundle: { icon: string[]; targets: string[] };
+  bundle: { icon: string[]; targets: string[]; resources: Record<string, string> };
 };
 const exampleEnv = readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
 const releaseWorkflow = readFileSync(
@@ -117,6 +117,10 @@ describe('the release bundles', () => {
     expect(tauriConfig.bundle.targets).toContain('msi');
     expect(tauriConfig.bundle.targets).toContain('deb');
   });
+
+  it('embeds the seeded local server under the path Rust reads', () => {
+    expect(tauriConfig.bundle.resources['resources/denti-code-server']).toBe('denti-code-server');
+  });
 });
 
 describe('the tag-driven release workflow', () => {
@@ -127,5 +131,9 @@ describe('the tag-driven release workflow', () => {
 
   it('hands the MSI release id to the Ubuntu job instead of creating a second draft', () => {
     expect(releaseWorkflow).toContain('releaseId: ${{ needs.msi.outputs.releaseId }}');
+  });
+
+  it('builds platform-specific embedded server resources in both installer jobs', () => {
+    expect(releaseWorkflow.match(/pnpm run bundle:desktop-server/g)).toHaveLength(2);
   });
 });

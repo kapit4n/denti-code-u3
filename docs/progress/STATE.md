@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 94 (v0.1.2 release to test the bundle jobs)
+> Last updated: session 96 (password change and first-admin bootstrap)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Session 89** reset the development SQLite database and reseeded it so the app has
@@ -65,6 +65,15 @@
 > CI run of the two server-bundle upload jobs: Actions run `44168506663` finished
 > with `msi`, `deb`, `server-linux` and `server-windows` all successful, so the
 > draft `v0.1.2` release has all four artifacts.
+
+> **Session 95** made the desktop installer self-hosting: ADR 0041 supersedes ADR 0002's
+> "no local database" rule for single-workstation installs, while ADR 0040's separate server
+> bundle stays for LAN/multi-client use. `pnpm run bundle:desktop-server` embeds the seeded
+> API, Node runtime and a generated password as Tauri resources; Rust starts it on
+> `127.0.0.1:3010` at launch, copies the database to app data, injects first-run credentials
+> through the platform abstraction, and stops the child on window destruction. The login screen
+> shows those credentials. A pinned desktop build started the embedded API and answered
+> `POST /api/v1/auth/login` **200**. No commit or new tag yet.
 
 > **Milestone 12 is in progress.** Session 48 delivered the **authentication slice** (ADR 0028): users, sessions, scrypt password hashing, opaque bearer tokens, a fail-closed auth plugin, a domain role/permission matrix enforced on routes, login/logout/me endpoints, and a login screen with a session gate in `packages/app`. Session 49 added **login throttling** (ADR 0029): failed attempts are counted per email and client address in process and answer `429 RATE_LIMITED` with `Retry-After`. Session 50 added a **development-only sign-in chooser** (ADR 0030): the login screen lists the clinic's active users and starts a real session as one, while the two routes are not registered when `NODE_ENV=production`. The remaining Milestone 12 bullets (error monitoring / log shipping, performance tuning, PostgreSQL backup/restore, a security review, data-handling review) are still to do.
 
@@ -4270,3 +4279,70 @@ successful run. The two warnings were GitHub's Node 20 deprecation notices for `
 the known `zoned-wall-clock.test.ts` repeated-hour failure, changed files Prettier-clean. The
 remaining limit is product configuration: both installers still compile `.env.example`'s localhost
 API URL and are unsigned.
+
+---
+
+Session 95: the desktop installer now contains its own clinic server.
+
+The user asked whether the UI and server could live in one installer, then said "ok do it".
+ADR 0041 accepts the embedded local server for single-workstation installs and supersedes ADR
+0002's no-local-database rule for that case; ADR 0040 remains current for the separate LAN
+bundle. `pnpm run bundle:desktop-server` builds the existing seeded server bundle, copies it to
+`apps/desktop/src-tauri/resources/denti-code-server`, and writes a per-build `desktop-server.json`
+with the generated password and production API env. `scripts/build-server-bundle.mjs` now exports
+`run`, `readEnvTemplate` and `runtimeEnvironment` with a direct-invocation guard. Both installer
+jobs call the new script, and a committed `.gitkeep` keeps `cargo check` working on a clean tree.
+
+`apps/desktop/src-tauri/src/lib.rs` reads the embedded config, copies `data/denti-code-u3.db` into
+`app_data_dir/server/`, refuses to start when port 3010 is busy, spawns the bundled Node with
+`NODE_ENV=production`, `API_HOST=127.0.0.1`, `API_PORT=3010` and an app-data `sqlite:` URL, writes
+stdout/stderr to `server.log`, waits for the port, injects
+`window.__DENTI_CODE_LOCAL_CREDENTIALS__` into the main window, and kills the child on
+`WindowEvent::Destroyed`. The webview gets a new platform capability,
+`getLocalClinicCredentials()`; the login screen shows a first-run banner with the generated email
+and password and a button that fills the form. No shell, filesystem or SQL capability was added
+to the webview.
+
+The first resource copy broke Node resolution: Tauri dereferences resource symlinks, which turned
+pnpm's `node_modules/fastify` link into a real directory without its sibling dependencies. The
+builder now materialises every symlink and hoists all packages from `.pnpm/*/node_modules` into the
+flat `node_modules` tree. A pinned build then ran the bundled server successfully.
+
+**Tests.** Changed files are Prettier-clean; root `format:check` still names the two untouched
+generated Drizzle snapshots. Typecheck **12/12**, lint **12/12** (existing React Compiler warnings
+and boundary-guard scanner false positive), boundary guard OK, desktop **10/10**, login page
+**5/5**, root `pnpm run test` **9/10 tasks** with only the known `zoned-wall-clock.test.ts`
+repeated-hour failure. `cargo check` and `pnpm run desktop:pin` passed; `cargo fmt --check` could
+not run because `rustfmt` is not installed. Fresh app data was removed, the pinned binary was run
+on `DISPLAY=:0`, the embedded API copied the database into app data with no startup error, and
+`POST /api/v1/auth/login` with the generated password answered **200** with a token. The process
+group was stopped and port 3010 is free. No commit, version bump or tag yet.
+
+---
+
+Session 96: self-service password change and first-admin bootstrap close open question T10.
+
+The user chose `"T10 password change (Recommended)"`. ADR 0042 records the decision:
+any authenticated user may change their own password through
+`POST /api/v1/auth/change-password`; the user id comes from the bearer principal, no
+permission is required, wrong current passwords answer generic `UNAUTHENTICATED`, new
+passwords need 12 characters, attempts are throttled by principal and client address,
+and existing sessions stay valid. No password reset, registration or revoke-all port was
+added. `pnpm run db:bootstrap-admin --email … --password …` creates the clinic if needed
+and its first `ADMINISTRATOR`, refuses when the clinic has any user, and never resets an
+existing password; ADR 0040/0041 and the bundle README now tell operators to rotate the
+generated password in Settings.
+
+`UserRepository` gained `findCredentialsById` and `updatePasswordHash` in both engines;
+`UserRepository.save` stayed insert-only. The domain owns `changePassword()` and
+`MIN_PASSWORD_LENGTH`, validation owns the wire schema, the API owns the route and
+throttle, and the app gained a password card in Settings that renders even when the
+clinic query fails. Integration coverage proves the old password stops working, the new
+one signs in, and `/auth/me` still answers after a successful change.
+
+**Tests.** Targeted suites passed: domain **4/4**, database **4/4**, API auth **20/20**,
+change-password card + settings **6/6**, and e2e **182/182**. Typecheck **12/12**, lint
+**12/12** (existing warnings), build **5/5**, boundary guard OK. Root `pnpm run test`
+still stops at the known `zoned-wall-clock.test.ts` repeated-hour failure; root
+`format:check` still names the two untouched generated Drizzle snapshots. Changed files
+are Prettier-clean. Version metadata moved to `0.1.3`; commit and tag are pending.

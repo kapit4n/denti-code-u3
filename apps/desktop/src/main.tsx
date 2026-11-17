@@ -1,11 +1,18 @@
-import { mountApp } from '@denti-code-u3/app';
+import { capabilitiesForTarget, mountApp, type PlatformCapabilities } from '@denti-code-u3/app';
 import '@denti-code-u3/app/styles';
 
 /**
- * The desktop shell's entire job: call the shared entry point.
- *
- * The API URL and the history type both come from the target rather than from
- * here, so this file stays identical to the web shell's apart from one string
- * (ADR-0008, ADR-0009).
+ * The desktop shell supplies the shared app with one extra capability: the
+ * first-run credentials injected by the embedded local server (ADR 0041).
+ * The API URL and the history type still come from the target, so the shell owns
+ * no routes, providers or business logic (ADR-0008, ADR-0009).
  */
-mountApp({ target: 'desktop' });
+const capabilities: PlatformCapabilities = {
+  ...capabilitiesForTarget('desktop'),
+  async getLocalClinicCredentials() {
+    const credentials = window.__DENTI_CODE_LOCAL_CREDENTIALS__;
+    return credentials ? { email: credentials.email, password: credentials.password } : undefined;
+  },
+};
+
+mountApp({ target: 'desktop', capabilities });

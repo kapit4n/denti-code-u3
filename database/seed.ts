@@ -26,6 +26,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import Database from 'better-sqlite3';
 import { drizzle as sqliteDrizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { isSqliteUrl, sqliteDatabasePath, ensureSqliteDatabaseDirectory } from './db-url.js';
+import { hashPassword } from './password-hash.js';
 
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as pgSchema from '@denti-code-u3/database/schema';
@@ -126,33 +127,6 @@ const now = new Date();
  * 0 Monday; the result is this week's Monday as a day offset from today.
  */
 const mondayDayOffset = -((now.getDay() + 6) % 7);
-
-/**
- * Hash a password the way the API's `ScryptPasswordHasher` does.
- *
- * Duplicated here rather than imported from `apps/api`, because the seed is part
- * of `database/` and must not depend on the API process. The format is the
- * contract (`scrypt$N$r$p$salt$hash`), and the API's own test proves it verifies
- * hashes in exactly this shape.
- */
-async function hashPassword(password: string): Promise<string> {
-  const { randomBytes, scrypt } = await import('node:crypto');
-  const { promisify } = await import('node:util');
-  const scryptAsync = promisify(scrypt) as (
-    password: string,
-    salt: Buffer,
-    keylen: number,
-    options: { N: number; r: number; p: number; maxmem: number },
-  ) => Promise<Buffer>;
-  const salt = randomBytes(16);
-  const derived = await scryptAsync(password, salt, 64, {
-    N: 16384,
-    r: 8,
-    p: 1,
-    maxmem: 64 * 1024 * 1024,
-  });
-  return ['scrypt', 16384, 8, 1, salt.toString('base64'), derived.toString('base64')].join('$');
-}
 
 function seedSummary(): string {
   return `clinic ${DEVELOPMENT_CLINIC_ID}, 10 patients, 2 dentists, 2 rooms, 4 chairs, ${ALL_APPOINTMENTS.length} appointments (this week + next), 10 visits (8 completed, 1 open, 1 cancelled), 1 plan (2 items), 4 treatments, 2 treatment executions, 1 clinical note, 1 prescription, 2 attachments, 10 odontogram entries, 3 charges, 2 issued invoices, 2 payments, 2 payment allocations`;

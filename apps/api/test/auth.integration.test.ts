@@ -29,7 +29,9 @@ const dentistId = 'b0b0b0b0-0000-4000-8000-000000000003';
 const otherDentistId = 'b0b0b0b0-0000-4000-8000-000000000009';
 const patientId = 'b0b0b0b0-0000-4000-8000-00000000000a';
 const otherPatientId = 'b0b0b0b0-0000-4000-8000-00000000000b';
+const passwordUserId = 'b0b0b0b0-0000-4000-8000-00000000000c';
 const PASSWORD = 'a-good-password';
+const NEW_PASSWORD = 'a-new-good-password';
 
 describe('authentication (SQLite)', () => {
   let dir: string;
@@ -223,6 +225,52 @@ describe('authentication (SQLite)', () => {
     expect((await login(email, 'wrong')).statusCode).toBe(401);
     expect((await login(email, 'wrong')).statusCode).toBe(401);
     expect((await login(email, PASSWORD)).statusCode).toBe(429);
+  });
+
+  it('changes a password only for its authenticated owner', async () => {
+    const token = (await login('password@auth.test')).json().token;
+    const headers = { authorization: `Bearer ${token}` };
+    const url = '/api/v1/auth/change-password';
+
+    const anonymous = await app.inject({ method: 'POST', url, payload: {} });
+    expect(anonymous.statusCode).toBe(401);
+
+    const malformed = await app.inject({
+      method: 'POST',
+      url,
+      headers,
+      payload: { currentPassword: PASSWORD, newPassword: 'short' },
+    });
+    expect(malformed.statusCode).toBe(422);
+
+    const wrong = await app.inject({
+      method: 'POST',
+      url,
+      headers,
+      payload: { currentPassword: 'not-the-password', newPassword: NEW_PASSWORD },
+    });
+    expect(wrong.statusCode).toBe(401);
+    expect(wrong.json().error.code).toBe('UNAUTHENTICATED');
+
+    const changed = await app.inject({
+      method: 'POST',
+      url,
+      headers,
+      payload: { currentPassword: PASSWORD, newPassword: NEW_PASSWORD },
+    });
+    expect(changed.statusCode).toBe(204);
+
+    const stillSignedIn = await app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      headers,
+    });
+    expect(stillSignedIn.statusCode).toBe(200);
+
+    expect((await login('password@auth.test', PASSWORD)).statusCode).toBe(401);
+    const relogin = await login('password@auth.test', NEW_PASSWORD);
+    expect(relogin.statusCode).toBe(200);
+    expect(relogin.json().user.email).toBe('password@auth.test');
   });
 
   it('gives a clinician only their own visits, and the manager the clinic’s', async () => {
@@ -421,6 +469,16 @@ async function seed(db: BetterSQLite3Database<typeof sqliteSchema>) {
     email: 'resettable@auth.test',
     passwordHash: await new ScryptPasswordHasher().hash(PASSWORD),
     fullName: 'Resettable',
+    role: 'RECEPTIONIST',
+    isActive: true,
+  });
+
+  await db.insert(sqliteSchema.users).values({
+    id: passwordUserId,
+    clinicId,
+    email: 'password@auth.test',
+    passwordHash: await new ScryptPasswordHasher().hash(PASSWORD),
+    fullName: 'Password Changer',
     role: 'RECEPTIONIST',
     isActive: true,
   });

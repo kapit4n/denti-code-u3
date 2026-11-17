@@ -51,6 +51,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build the embedded clinic server resources
+        run: pnpm run bundle:desktop-server
+
       - id: build_msi
         name: Build and publish the MSI
         uses: tauri-apps/tauri-action@v1
@@ -117,6 +120,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build the embedded clinic server resources
+        run: pnpm run bundle:desktop-server
 
       - id: build_deb
         name: Build and publish the DEB

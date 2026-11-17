@@ -1,12 +1,13 @@
 /**
  * Builds a self-contained clinic server bundle with an initial SQLite database.
  *
- * The desktop installer is only a webview (ADR 0038/0039): it expects an API on
- * localhost:3010. This script packages that API, its runtime dependencies, a Node
- * runtime and a migrated + seeded database, so an installed app has data on first
- * launch. Workspace packages ship as TypeScript source, which Node refuses to
- * strip under node_modules, so they are transpiled to JavaScript inside the
- * bundle and their export maps are repointed at the emitted files.
+ * The standalone bundle is the shared API for LAN clients and also supplies the
+ * resources embedded by the desktop installer (ADR 0040/0041). It packages that
+ * API, its runtime dependencies, a Node runtime and a migrated + seeded database,
+ * so an installed app has data on first launch. Workspace packages ship as
+ * TypeScript source, which Node refuses to strip under node_modules, so they are
+ * transpiled to JavaScript inside the bundle and their export maps are repointed
+ * at the emitted files.
  */
 
 import fs from 'node:fs';
@@ -43,7 +44,7 @@ function parseArgs(argv) {
   return args;
 }
 
-function run(command, args, options = {}) {
+export function run(command, args, options = {}) {
   const shell = options.shell ?? isWindows;
   const commandArgs = shell ? args.map((value) => (/\s/.test(value) ? `"${value}"` : value)) : args;
   const result = spawnSync(command, commandArgs, {
@@ -56,7 +57,7 @@ function run(command, args, options = {}) {
   if (result.status !== 0) throw new Error(`${command} exited with status ${result.status}`);
 }
 
-function readEnvTemplate() {
+export function readEnvTemplate() {
   const values = {};
   const text = fs.readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
   for (const line of text.split(/\r?\n/)) {
@@ -66,7 +67,7 @@ function readEnvTemplate() {
   return values;
 }
 
-function runtimeEnvironment(template) {
+export function runtimeEnvironment(template) {
   return {
     NODE_ENV: 'production',
     API_HOST: template.API_HOST ?? '0.0.0.0',
@@ -207,7 +208,7 @@ function writeReadme(bundleDir, env, password) {
     '## Scope and limits',
     '',
     '- `NODE_ENV=production`, so the password-free development sign-in endpoints are not registered.',
-    '- There is no password-change screen yet (OPEN QUESTION). Rotate this credential before real patient data is stored.',
+    '- Change this credential in Settings (Clinic settings → Change password) before real patient data is stored (ADR 0042).',
     '- The seed fixes appointment dates relative to the build date. A bundle kept for months will show an old calendar.',
     '- The Node runtime and npm dependencies are included; no separate Node installation is needed.',
     '- The API owns the database. Do not open it from the desktop app or edit it while the server runs.',
@@ -290,4 +291,7 @@ function main() {
   console.log(`Initial admin password: ${args.password}`);
 }
 
-main();
+const invokedDirectly = process.argv[1]
+  ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  : false;
+if (invokedDirectly) main();

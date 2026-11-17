@@ -18,6 +18,12 @@
 /** How the app is being presented. Useful for layout decisions, not branching logic. */
 export type RuntimeTarget = 'web' | 'desktop';
 
+/** First-run credentials injected by a desktop installer with an embedded clinic server. */
+export interface LocalClinicCredentials {
+  readonly email: string;
+  readonly password: string;
+}
+
 export interface PlatformCapabilities {
   readonly target: RuntimeTarget;
   /** True when the app runs inside the Tauri shell and can reach the OS. */
@@ -38,6 +44,8 @@ export interface PlatformCapabilities {
   readonly locale: string;
   /** Read the operator's time zone, e.g. `America/Lima`. */
   readonly timeZone: string;
+  /** First-run credentials for an embedded local server, when the shell has one. */
+  getLocalClinicCredentials(): Promise<LocalClinicCredentials | undefined>;
 }
 
 export class PlatformUnsupportedError extends Error {
@@ -69,6 +77,9 @@ export function capabilitiesForTarget(target: RuntimeTarget): PlatformCapabiliti
     hasNativeShell: target === 'desktop',
     locale,
     timeZone,
+    async getLocalClinicCredentials() {
+      return undefined;
+    },
     async openExternal(url) {
       // Both targets use the browser for now. The desktop shell will replace
       // this through mountApp({ capabilities }) when a real OS handler exists.

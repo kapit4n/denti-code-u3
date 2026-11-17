@@ -1,6 +1,6 @@
 # ADR 0040 — A separate server bundle carries the API and its initial database
 
-- **Status:** Accepted
+- **Status:** Superseded in part by [ADR 0041](./0041-desktop-installer-embeds-local-clinic-server.md) for single-workstation desktop installs; the separate bundle remains current for LAN servers
 - **Date:** 2026-11-17
 - **Decides:** how an installation gets a clinic API with data on first launch
 - **Related:** [ADR 0025](./0025-two-engines-sqlite-runs-postgresql-kept.md), [ADR 0028](./0028-authentication-is-opaque-bearer-sessions.md), [ADR 0030](./0030-development-login-as-is-gated-by-route-existence.md), [ADR 0038](./0038-tag-driven-windows-msi-release.md), [ADR 0039](./0039-ubuntu-deb-release.md)
@@ -73,9 +73,9 @@ notes.
   order does not matter as long as the server is running before sign-in.
 - The bundle is platform-specific: the native SQLite binding and the bundled
   Node binary match the runner that built it.
-- The initial password is per-build and there is no password-change screen yet
-  (**OPEN QUESTION**). The bundle README says to rotate it before storing real
-  patient data.
+- The initial password is per-build. [ADR 0042](./0042-password-change-and-first-admin-bootstrap.md)
+  adds a password-change screen, so the bundle README tells the operator to rotate it
+  before storing real patient data.
 - The seeded appointments are relative to the build date, so an old bundle has an
   old calendar. A future release can decide whether bundles should reseed on
   first launch instead.

@@ -1,6 +1,6 @@
 {
   "name": "denti-code-u3",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Denti-Code U3 — modern dental clinic management system (Web + Desktop)",
   "license": "UNLICENSED",
@@ -20,6 +20,7 @@
     "desktop:pins": "node scripts/desktop-pin.mjs pins",
     "desktop:forget": "node scripts/desktop-pin.mjs forget",
     "bundle:server": "node scripts/build-server-bundle.mjs",
+    "bundle:desktop-server": "node scripts/build-desktop-server-resources.mjs",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint && node scripts/check-boundaries.mjs",
     "lint:root": "eslint . --max-warnings 0",
@@ -34,6 +35,7 @@
     "db:reset": "docker compose down -v && docker compose up -d postgres",
     "db:migrate": "pnpm --filter @denti-code-u3/database run db:migrate",
     "db:seed": "pnpm --filter @denti-code-u3/database run db:seed",
+    "db:bootstrap-admin": "pnpm --filter @denti-code-u3/database run db:bootstrap-admin",
     "clean": "turbo run clean && rm -rf node_modules .turbo",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check",
     "db:generate": "pnpm --filter @denti-code-u3/database run db:generate",

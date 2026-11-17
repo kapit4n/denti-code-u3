@@ -20,6 +20,13 @@ export const loginSchema = z.object({
 
 export type LoginBody = z.infer<typeof loginSchema>;
 
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(1024),
+  newPassword: z.string().min(12).max(1024),
+});
+
+export type ChangePasswordBody = z.infer<typeof changePasswordSchema>;
+
 /**
  * The development-only "sign in as" request (ADR 0030).
  *

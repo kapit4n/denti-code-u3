@@ -77,6 +77,16 @@ const KEEP = 3;
 const commands = {
   async pin() {
     ensurePrerequisites();
+    say('Building the embedded clinic server resources for this desktop build.');
+    const resources = spawnSync('pnpm', ['run', 'bundle:desktop-server'], {
+      cwd: repoRoot,
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
+    });
+    if (resources.status !== 0) {
+      fail('The embedded server resources could not be built, so there is nothing to pin.');
+    }
+
     say('Building the desktop app with its frontend embedded. This takes a minute or two.');
 
     // `tauri build` rather than `cargo build`, because the difference is the whole

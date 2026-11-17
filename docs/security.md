@@ -53,6 +53,11 @@ details?, requestId } }`); unknown errors become a generic 500. Database driver
   is computed. The counter is in process, so it is per instance and resets on restart.
   Behind a reverse proxy, either trust the proxy's forwarded address per deployment or
   let the proxy do the limiting, otherwise every client shares the proxy's address.
+- **Password changes and first-admin bootstrap (ADR 0042).** `POST /api/v1/auth/change-password`
+  is authenticated, takes the user id from the session, verifies the current password with the
+  same scrypt hasher and refuses passwords shorter than 12 characters. Attempts use the same
+  limiter keyed by principal and address. `pnpm run db:bootstrap-admin` is a local CLI that only
+  creates the first administrator of an empty clinic; it never resets an existing password.
 - **Development sign-in is absent from production (ADR 0030).** When `NODE_ENV` is not
   `production`, two public routes exist for testing: `GET /auth/dev-users` (active users,
   no credentials) and `POST /auth/dev-login` (start a real session as one of them,
@@ -84,7 +89,7 @@ details?, requestId } }`); unknown errors become a generic 500. Database driver
   the session on logout/401; an `HttpOnly` cookie would be a new ADR and would need
   CSRF protection.
 - No session rotation on privilege change, and no "sign out everywhere" control beyond
-  revoking rows.
+  revoking rows; changing a password deliberately leaves existing sessions valid (ADR 0042).
 - Multi-clinic membership is not modelled: one session belongs to one clinic and the
   API refuses a session whose clinic differs from the configured one.
 - No encryption-at-rest policy, key management, or backup/retention procedures.
