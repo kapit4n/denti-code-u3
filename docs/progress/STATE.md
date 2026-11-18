@@ -4371,4 +4371,9 @@ the failed tag is left untouched.
 `pnpm run desktop:pin` passed. A fresh app-data launch of the built debug binary
 (parent of the embedded API) returned login **200** for the generated admin, and port
 3010 was free afterwards. The pinned binary is copied without adjacent resources, so the
-smoke uses the build binary that owns them. Commit and tag for `v0.1.4` are pending.
+smoke uses the build binary that owns them. Commit `4f4317b` and annotated tag `v0.1.4`
+were pushed. GitHub Actions
+[run `44224156550`](https://github.com/kapit4n/denti-code-u3/actions/runs/44224156550)
+succeeded in 15m 56s: `msi` 10m 58s, `deb` 4m 51s, `server-linux` 43s and
+`server-windows` 3m 21s. The draft `v0.1.4` release reports two visible assets to
+anonymous views; all four upload steps succeeded. Publishing that draft is manual.

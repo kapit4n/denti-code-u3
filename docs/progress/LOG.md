@@ -4877,4 +4877,10 @@ moving the pushed tag; all 14 package manifests, `Cargo.toml`, `Cargo.lock`,
 `apps/desktop/src-tauri/target/debug/denti-code-u3-desktop` started the embedded API and
 admin login returned **200**; port 3010 was free after the process group was stopped. The
 kept pin binary has no adjacent resources, so it is not the binary used for this smoke.
-Commit, tag and CI verification for `v0.1.4` are pending.
+Commit `4f4317b` and annotated tag `v0.1.4` were pushed. GitHub Actions
+[run `44224156550`](https://github.com/kapit4n/denti-code-u3/actions/runs/44224156550)
+finished **Success** in 15m 56s: `msi` 10m 58s, `deb` 4m 51s, `server-linux` 43s and
+`server-windows` 3m 21s. The draft release at
+`https://github.com/kapit4n/denti-code-u3/releases/tag/v0.1.4` reports **Assets 2** to
+anonymous views, while all four upload steps succeeded in the successful run. Publishing
+the draft remains manual.
