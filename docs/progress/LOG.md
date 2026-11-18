@@ -4850,3 +4850,31 @@ false positive), build **5/5**, boundary guard OK. Root `pnpm run test` still fa
 at the pre-existing `zoned-wall-clock.test.ts` repeated-hour case; root `format:check`
 still names the two untouched generated migration snapshots. Changed files are
 Prettier-clean. Commit, tag and CI verification are pending.
+
+---
+
+Session 97: fixed the Windows MSI resource failure and prepared `v0.1.4`.
+
+The `v0.1.3` commit `c77a40b` and annotated tag were pushed. CI
+[run `44184383515`](https://github.com/kapit4n/denti-code-u3/actions/runs/44184383515)
+failed after 9m 27s: the MSI step's `tauri build --bundles msi` exited 1, and the DEB and
+both bundle jobs were skipped by their `needs: msi` dependency. GitHub's annotation did
+not include the underlying error. Local inspection of the generated Tauri resources
+found the cause: `copyDereferencedTree` had copied pnpm's entire `.pnpm` virtual store,
+its `.bin` shims carried absolute paths to old build directories, and stray
+`server/apps` and `server/.artifacts` directories were included. The longest resource
+path was 288 characters, beyond the classic Win32 limit that the Windows runner uses.
+
+`scripts/build-desktop-server-resources.mjs` now removes `.pnpm`, all `.bin` directories,
+`server/apps` and `server/.artifacts` after hoisting the flat runtime modules, and throws
+if any resource path exceeds 240 characters. The rebuilt tree has 7,467 entries and a
+longest path of 148 characters. The user chose `"Bump to v0.1.4 (Recommended)"` instead of
+moving the pushed tag; all 14 package manifests, `Cargo.toml`, `Cargo.lock`,
+`tauri.conf.json` and current docs examples now say `0.1.4`.
+
+**Verification.** Changed files are Prettier-clean. `pnpm run bundle:desktop-server` and
+`pnpm run desktop:pin` passed. A fresh app-data launch of
+`apps/desktop/src-tauri/target/debug/denti-code-u3-desktop` started the embedded API and
+admin login returned **200**; port 3010 was free after the process group was stopped. The
+kept pin binary has no adjacent resources, so it is not the binary used for this smoke.
+Commit, tag and CI verification for `v0.1.4` are pending.

@@ -1,6 +1,6 @@
 # CURRENT STATE — Denti-Code U3
 
-> Last updated: session 96 (password change and first-admin bootstrap)
+> Last updated: session 97 (v0.1.4 Windows resource bundling fix)
 > This file is the resume point. Read `AGENTS.md` first, then this file.
 
 > **Session 89** reset the development SQLite database and reseeded it so the app has
@@ -4346,3 +4346,29 @@ change-password card + settings **6/6**, and e2e **182/182**. Typecheck **12/12*
 still stops at the known `zoned-wall-clock.test.ts` repeated-hour failure; root
 `format:check` still names the two untouched generated Drizzle snapshots. Changed files
 are Prettier-clean. Version metadata moved to `0.1.3`; commit and tag are pending.
+
+---
+
+Session 97: `v0.1.3` was cut and failed Windows bundling; `v0.1.4` fixes the resource tree.
+
+Commit `c77a40b` and annotated tag `v0.1.3` were pushed. GitHub Actions
+[run `44184383515`](https://github.com/kapit4n/denti-code-u3/actions/runs/44184383515)
+failed after 9m 27s in the MSI job; `deb`, `server-linux` and `server-windows` were skipped
+because they depend on `msi`. The annotation only reported that `tauri build --bundles msi`
+exited 1. Local inspection found the embedded resource tree copied pnpm's `.pnpm` virtual
+store, stale `.bin` shims with absolute old-build paths, and stray `server/apps` and
+`server/.artifacts` directories. Its longest path was 288 characters, above Win32
+`MAX_PATH`.
+
+`scripts/build-desktop-server-resources.mjs` now deletes `.pnpm`, the stray directories
+and every `.bin` directory after materialising the flat module tree, then asserts every
+resource path stays under 240 characters. The rebuilt tree has 7,467 entries and a
+longest path of 148 characters. The user chose `"Bump to v0.1.4 (Recommended)"` over
+rewriting the published tag, so all current version metadata moved from `0.1.3` to `0.1.4`;
+the failed tag is left untouched.
+
+**Tests.** Changed files are Prettier-clean. `pnpm run bundle:desktop-server` and
+`pnpm run desktop:pin` passed. A fresh app-data launch of the built debug binary
+(parent of the embedded API) returned login **200** for the generated admin, and port
+3010 was free afterwards. The pinned binary is copied without adjacent resources, so the
+smoke uses the build binary that owns them. Commit and tag for `v0.1.4` are pending.

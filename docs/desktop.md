@@ -187,12 +187,12 @@ release build is optimisation, not behaviour.
 
 Installers are made by a tag, not by a branch. The Windows MSI from `v0.1.0` was
 the first run, `v0.1.1` added the Ubuntu `.deb`, `v0.1.2` added the seeded
-separate server bundles, and `v0.1.3` adds the embedded local server to both
-MSI and DEB:
+separate server bundles, `v0.1.3` first added the embedded local server, and
+`v0.1.4` fixes its Windows resource bundling:
 
 ```bash
-git tag v0.1.3
-git push origin v0.1.3
+git tag v0.1.4
+git push origin v0.1.4
 ```
 
 `.github/workflows/release-desktop.yml` then checks that the tag equals `v` plus

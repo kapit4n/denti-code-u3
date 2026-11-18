@@ -63,6 +63,32 @@ function hoistPnpmPackages(nodeModules) {
   }
 }
 
+function removeBinDirectories(root) {
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const directory = path.join(root, entry.name);
+    if (entry.name === '.bin') {
+      fs.rmSync(directory, { recursive: true, force: true });
+      continue;
+    }
+    removeBinDirectories(directory);
+  }
+}
+
+function assertWin32SafePaths(root) {
+  const directories = [root];
+  while (directories.length > 0) {
+    const directory = directories.pop();
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const candidate = path.join(directory, entry.name);
+      if (candidate.length > 240) {
+        throw new Error(`Resource path is too long for Windows installers: ${candidate}`);
+      }
+      if (entry.isDirectory()) directories.push(candidate);
+    }
+  }
+}
+
 function findBundle(tempDir) {
   const matches = fs
     .readdirSync(tempDir, { withFileTypes: true })
@@ -90,6 +116,14 @@ function main() {
   fs.mkdirSync(resourceRoot, { recursive: true });
   copyDereferencedTree(source, targetDir);
   hoistPnpmPackages(path.join(targetDir, 'server/node_modules'));
+  fs.rmSync(path.join(targetDir, 'server/node_modules/.pnpm'), {
+    recursive: true,
+    force: true,
+  });
+  fs.rmSync(path.join(targetDir, 'server/apps'), { recursive: true, force: true });
+  fs.rmSync(path.join(targetDir, 'server/.artifacts'), { recursive: true, force: true });
+  removeBinDirectories(path.join(targetDir, 'server/node_modules'));
+  assertWin32SafePaths(targetDir);
   fs.writeFileSync(path.join(targetDir, '.gitkeep'), '');
   fs.writeFileSync(
     path.join(targetDir, 'desktop-server.json'),

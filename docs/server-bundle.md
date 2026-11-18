@@ -21,8 +21,8 @@ pnpm run bundle:server
 That writes a platform-specific directory and archive under `.artifacts/`:
 
 ```
-.artifacts/denti-code-u3-server-0.1.3-linux-x64/
-.artifacts/denti-code-u3-server-0.1.3-linux-x64.tar.gz
+.artifacts/denti-code-u3-server-0.1.4-linux-x64/
+.artifacts/denti-code-u3-server-0.1.4-linux-x64.tar.gz
 ```
 
 Useful options:
@@ -57,8 +57,8 @@ bundle and repoints their export maps. No repository source file is changed.
 On Linux/macOS:
 
 ```bash
-tar -xzf denti-code-u3-server-0.1.3-linux-x64.tar.gz
-cd denti-code-u3-server-0.1.3-linux-x64
+tar -xzf denti-code-u3-server-0.1.4-linux-x64.tar.gz
+cd denti-code-u3-server-0.1.4-linux-x64
 ./start.sh
 ```
 
